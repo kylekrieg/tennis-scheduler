@@ -1,0 +1,53 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Backup</h1>
+<p class="muted">Every player, blackout date, confirmation, sub, and email log entry lives in one SQLite file. A backup is a point-in-time copy of that file — restoring one puts the whole system back exactly as it was when the backup was taken.</p>
+
+<form method="post" action="/admin/backup" class="card">
+  <h2 style="margin-top:0;">Backup now</h2>
+  <p class="muted">Safe to run anytime, including while people are actively confirming/subbing — it doesn't pause the app.</p>
+  <div class="actions"><button class="btn green" type="submit">Create backup</button></div>
+</form>
+
+<div class="notice" style="margin-top:20px;">
+  <strong>Set this up once and forget about it:</strong> add a cron job on the Pi so a backup happens automatically every night. From the Pi's terminal: <code>crontab -e</code>, then add a line like
+  <pre style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:10px;margin:8px 0;overflow-x:auto;font-size:12px;">0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1</pre>
+  That runs a backup every night at 2am and automatically deletes anything beyond the most recent <%= retention %> (about a month at one a day). Full instructions, including how to restore one, are in README.md under "Backing up the database."
+</div>
+
+<div class="flag" style="margin-top:16px;">
+  <strong>A backup sitting on the same SD card as the Pi doesn't protect you if the Pi itself dies.</strong> Periodically download a backup below and save it somewhere else — your computer, a cloud drive, email it to yourself, anything off this device.
+</div>
+
+<h2>Existing backups</h2>
+<% if (backups.length === 0) { %>
+  <p class="muted">No backups yet — click "Create backup" above to make the first one.</p>
+<% } else { %>
+<table class="wide">
+  <thead><tr><th>File</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead>
+  <tbody>
+    <% backups.forEach(function(b) { %>
+      <tr>
+        <td><%= b.filename %></td>
+        <td><%= (b.size / 1024).toFixed(1) %> KB</td>
+        <td><%= b.mtime.toISOString().replace('T', ' ').slice(0, 19) %></td>
+        <td>
+          <a class="btn small neutral" href="/admin/backup/download/<%= b.filename %>">Download</a>
+          <form class="inline" method="post" action="/admin/backup/<%= b.filename %>/delete" onsubmit="return confirm('Delete this backup? This cannot be undone.');">
+            <button class="btn small neutral" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<h2>Restoring from a backup</h2>
+<p class="muted">If the Pi dies or the database gets corrupted, restoring is just swapping in the backup file in place of the live one:</p>
+<ol class="muted" style="line-height:1.8;">
+  <li>Stop the app: <code>pm2 stop tennis-scheduler</code></li>
+  <li>Move the backup file onto the Pi as <code>data/tennis.db</code> (overwriting whatever's there) — e.g. <code>cp tennis-backup-20260806-020000123.db data/tennis.db</code> from inside the project folder. Delete <code>data/tennis.db-wal</code> and <code>data/tennis.db-shm</code> if they exist, so nothing stale is left over.</li>
+  <li>Restart the app: <code>pm2 start tennis-scheduler</code></li>
+  <li>Check <code>/admin</code> loads and the roster/sessions look right.</li>
+</ol>
+<%- include('../partials/footer') %>

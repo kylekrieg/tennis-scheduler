@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets — never commit real credentials
+.env
+.env.local
+
+# Runtime data — the SQLite DB and its WAL/SHM files are generated at
+# runtime (schema.sql recreates the DB on first boot), not source
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Backups (src/services/backup.js writes here by default)
+backups/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

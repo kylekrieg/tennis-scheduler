@@ -1,0 +1,12 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1><%= heading %></h1>
+  <p class="<%= tone === 'error' ? '' : 'muted' %>"><%= body %></p>
+  <div class="actions">
+    <a class="btn neutral" href="/schedule">Back to schedule</a>
+    <% if (typeof myPageId !== 'undefined' && myPageId) { %>
+      <a class="btn neutral" href="/me/<%= myPageId %>">My Page</a>
+    <% } %>
+  </div>
+</div>
+<%- include('partials/footer') %>

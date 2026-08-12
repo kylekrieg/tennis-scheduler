@@ -1,0 +1,40 @@
+<%- include('partials/header', {title}) %>
+<h1>Blackout Dates</h1>
+<p class="muted">Pick your name, then check the dates you can't play, and save. This is a hard constraint — the scheduler will never put you down for a checked date.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<form method="get" class="card" style="max-width:320px;">
+  <input type="hidden" name="session" value="<%= session.id %>">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% players.forEach(function(p) { %>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+
+<% if (saved) { %><p class="notice">Blackout dates saved.</p><% } %>
+<% if (locked) { %><p class="flag error">This season's already been scheduled, so blackout dates can't be changed here anymore. Use <a href="/request-sub">Request a Sub</a> if you need to miss a specific week.</p><% } %>
+
+<% if (schedulingLocked) { %>
+  <p class="flag" style="margin-top:16px;">This season has already been scheduled, so blackout dates are locked in and can't be changed on this page. If you need to miss a specific week, use <a href="/request-sub">Request a Sub</a> for that week instead — either now or from the confirmation email closer to the date.</p>
+<% } %>
+
+<% if (selectedPlayerId) { %>
+  <form method="post" action="/blackout" class="card wide">
+    <input type="hidden" name="session_id" value="<%= session.id %>">
+    <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
+    <% weeks.forEach(function(w) { %>
+      <div class="checkbox-row">
+        <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>"
+          <%= existingBlackouts.has(w.match_date) ? 'checked' : '' %> <%= (w.locked || schedulingLocked) ? 'disabled' : '' %>>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (w.locked) { %> <span class="muted">(already played)</span><% } %></label>
+      </div>
+    <% }) %>
+    <% if (!schedulingLocked) { %>
+      <div class="actions"><button class="btn green" type="submit">Save blackout dates</button></div>
+    <% } %>
+  </form>
+<% } %>
+<%- include('partials/footer') %>

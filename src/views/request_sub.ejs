@@ -1,0 +1,51 @@
+<%- include('partials/header', {title}) %>
+<h1>Request a Sub</h1>
+<p class="muted">Already know you'll miss a week that's coming up? Pick your name and request a sub for it now — you don't have to wait for the reminder email.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<form method="get" class="card" style="max-width:320px;">
+  <input type="hidden" name="session" value="<%= session.id %>">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% players.forEach(function(p) { %>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+
+<% if (selectedPlayerId) { %>
+  <% if (upcomingAssignments.length === 0) { %>
+    <p class="notice">You're not currently down to play any upcoming week in this session.</p>
+  <% } else { %>
+    <table class="wide">
+      <thead><tr><th>Date</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <% upcomingAssignments.forEach(function(a) { %>
+          <tr>
+            <td><%= fmtDate(a.match_date) %></td>
+            <td>
+              <% if (a.doubleBooked) { %>
+                <span class="badge double_booked">double booked</span>
+                <div class="muted" style="font-size:11px;">also in <%= sessionPublicLabel(a.doubleBooked) %></div>
+              <% } else { %>
+                <span class="badge <%= a.status %>"><%= a.status.replace('_',' ') %></span>
+              <% } %>
+            </td>
+            <td>
+              <form method="post" action="/request-sub/start">
+                <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                <button class="btn small red" type="submit">Need a sub for this week</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <p class="muted">This takes you to the same confirmation step as the reminder email — nothing gets sent to the other players until you explicitly confirm on the next page.</p>
+    <% if (upcomingAssignments.some(a => a.doubleBooked)) { %>
+      <p class="muted">"Double booked" means you're also scheduled to play in another session on that same date — that's usually the week you'll want to request a sub for.</p>
+    <% } %>
+  <% } %>
+<% } %>
+<%- include('partials/footer') %>

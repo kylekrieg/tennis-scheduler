@@ -1,0 +1,86 @@
+<%- include('partials/header', {title}) %>
+<h1><%= player.name %>'s Page</h1>
+<p class="muted">Bookmark this page — the URL stays the same and always shows your current schedule across every session you're in.</p>
+
+<% if (draftSessions.length > 0) { %>
+  <% draftSessions.forEach(function(s) { %>
+    <p class="notice" style="border-left:4px solid <%= sessionColor(s) %>;">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(s) %>;margin-right:4px;"></span>
+      <strong><%= sessionPublicLabel(s) %></strong> hasn't been scheduled yet — blackout dates are open.
+      <a href="/blackout?session=<%= s.id %>&player=<%= player.id %>">Enter your blackout dates</a>.
+    </p>
+  <% }) %>
+<% } %>
+
+<% if (sessionCards.length === 0 && draftSessions.length === 0) { %>
+  <p class="muted">You're not currently enrolled in any session.</p>
+<% } %>
+
+<% sessionCards.forEach(function(card) { %>
+  <div class="card wide" style="margin-bottom:20px;border-left:6px solid <%= sessionColor(card.session) %>;">
+    <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:<%= sessionColor(card.session) %>;flex-shrink:0;"></span>
+      <%= sessionPublicLabel(card.session) %>
+    </h2>
+    <p class="muted" style="margin-top:-8px;">
+      <%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][card.session.match_day_of_week] %> <%= fmtTime(card.session.match_time) %>
+    </p>
+
+    <% if (card.upcoming.length === 0) { %>
+      <p class="muted">No upcoming matches scheduled for you in this session.</p>
+    <% } else { %>
+      <table class="wide">
+        <thead><tr><th>Date</th><th>Status</th><th>Ball duty</th><th></th></tr></thead>
+        <tbody>
+          <% card.upcoming.forEach(function(a) { %>
+            <tr>
+              <td>
+                <%= fmtDate(a.match_date) %>
+                <% if (a.doubleBooked) { %>
+                  <br><span class="badge double_booked">double booked</span>
+                <% } %>
+              </td>
+              <td>
+                <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= a.is_sub ? ' (sub)' : '' %></span>
+                <% if (a.doubleBooked) { %>
+                  <div class="muted" style="font-size:12px;margin-top:4px;">Also scheduled in <%= sessionPublicLabel(a.doubleBooked) %> this same date — sort this out ahead of time, not the week of.</div>
+                <% } %>
+              </td>
+              <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
+              <td>
+                <% if (!a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
+                  <form method="post" action="/request-sub/start" style="display:inline;">
+                    <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                    <button class="btn small red" type="submit">Need a sub</button>
+                  </form>
+                  <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>&assignment=<%= a.id %>">Propose a swap</a>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <div class="actions" style="margin-top:12px;">
+      <a class="btn small neutral" href="/schedule?session=<%= card.session.id %>">Full schedule</a>
+      <a class="btn small neutral" href="/lookahead?session=<%= card.session.id %>">Next 4 weeks</a>
+      <a class="btn small neutral" href="/pdf?session=<%= card.session.id %>">PDF</a>
+      <a class="btn small neutral" href="/request-sub?session=<%= card.session.id %>&player=<%= player.id %>">Request a sub</a>
+      <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>">Swap a week</a>
+    </div>
+  </div>
+<% }) %>
+
+<h2>Calendar</h2>
+<p class="muted">Subscribe once and it stays up to date automatically as re-schedules and subs happen — covers every session above, not just one.</p>
+<div class="card">
+  <div class="actions">
+    <a class="btn green" href="<%= feedUrlWebcal %>">Subscribe</a>
+  </div>
+  <p class="muted">Or add this URL directly in your calendar app (Google Calendar: Settings → Add calendar → From URL):<br>
+    <code><%= feedUrlHttps %></code>
+  </p>
+</div>
+
+<%- include('partials/footer') %>

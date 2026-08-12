@@ -1,0 +1,14 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>Sub needed</h1>
+  <p>A spot is open for <strong><%= fmtDate(week.match_date) %></strong> at <%= fmtTime(week.match_time) %>.</p>
+  <% if (alreadyClosed) { %>
+    <p class="flag error">This spot has already been claimed by someone else.</p>
+  <% } else { %>
+    <p class="muted">First to confirm gets the spot.</p>
+    <form method="post" action="/claim-sub/<%= token %>">
+      <div class="actions"><button class="btn green" type="submit">I'll play</button></div>
+    </form>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

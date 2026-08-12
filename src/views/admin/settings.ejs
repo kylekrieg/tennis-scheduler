@@ -1,0 +1,11 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Settings</h1>
+<form method="post" action="/admin/settings" class="card">
+  <label for="timezone">Timezone (IANA name, e.g. America/Chicago)</label>
+  <input type="text" name="timezone" id="timezone" value="<%= timezone %>">
+  <p class="muted">Used for all cron scheduling (reminders, escalations) and displayed times.</p>
+
+  <div class="actions"><button class="btn green" type="submit">Save</button></div>
+</form>
+<p class="muted" style="margin-top:16px;">Looking for club name or court location? Those are set per session now, since one install can run sessions for different clubs or courts — set them on each session's <strong>Edit session &amp; roster</strong> page.</p>
+<%- include('../partials/footer') %>

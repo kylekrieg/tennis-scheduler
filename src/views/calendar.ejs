@@ -1,0 +1,70 @@
+<%- include('partials/header', {title}) %>
+<h1>Personal Calendar</h1>
+<p class="muted">Two ways to get your schedule onto your own calendar: a one-time download of this season, or a standing subscription that keeps itself up to date automatically.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<h2>One-time download</h2>
+<p class="muted">A .ics file with just your scheduled weeks for the season selected above. If the schedule changes later (a re-schedule, a sub), this file won't update — download again to get the latest.</p>
+<form method="get" action="/calendar/download" class="card">
+  <input type="hidden" name="session" value="<%= session.id %>">
+  <label for="player">Your name</label>
+  <select name="player" id="player">
+    <option value="">Select…</option>
+    <% players.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= p.name %></option>
+    <% }) %>
+  </select>
+  <div class="actions"><button class="btn green" type="submit">Download .ics</button></div>
+</form>
+
+<h2 style="margin-top:32px;">Subscribe (stays up to date automatically)</h2>
+<p class="muted">Covers every session you're currently enrolled in, not just the one selected above. Your calendar app re-checks this link on its own schedule (typically every few hours, sometimes longer — that timing isn't something this app controls) and picks up re-schedules, subs, and new sessions without you doing anything.</p>
+<div class="card">
+  <label for="feed-player">Your name</label>
+  <select id="feed-player">
+    <option value="">Select…</option>
+    <% allPlayers.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= p.name %></option>
+    <% }) %>
+  </select>
+  <div class="actions">
+    <a id="feed-subscribe-btn" class="btn green disabled" href="#" aria-disabled="true">Subscribe</a>
+  </div>
+  <p class="muted" id="feed-url-wrap" style="display:none;">
+    Or add this URL directly in your calendar app (Google Calendar: Settings → Add calendar → From URL):<br>
+    <code id="feed-url"></code>
+  </p>
+</div>
+
+<script>
+  (function () {
+    var select = document.getElementById('feed-player');
+    var btn = document.getElementById('feed-subscribe-btn');
+    var urlWrap = document.getElementById('feed-url-wrap');
+    var urlCode = document.getElementById('feed-url');
+    var origin = window.location.origin;
+
+    select.addEventListener('change', function () {
+      var playerId = select.value;
+      if (!playerId) {
+        btn.href = '#';
+        btn.classList.add('disabled');
+        btn.setAttribute('aria-disabled', 'true');
+        urlWrap.style.display = 'none';
+        return;
+      }
+      var httpsUrl = origin + '/calendar/feed/' + playerId + '.ics';
+      // webcal:// is a scheme alias most calendar apps (Apple Calendar,
+      // many Android calendars) recognize as "open my subscribe-to-calendar
+      // flow" rather than "download a file" — same URL otherwise, just a
+      // different scheme so the OS routes the click differently.
+      var webcalUrl = httpsUrl.replace(/^https?:\/\//, 'webcal://');
+      btn.href = webcalUrl;
+      btn.classList.remove('disabled');
+      btn.setAttribute('aria-disabled', 'false');
+      urlCode.textContent = httpsUrl;
+      urlWrap.style.display = 'block';
+    });
+  })();
+</script>
+<%- include('partials/footer') %>

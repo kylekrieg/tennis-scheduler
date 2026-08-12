@@ -1,0 +1,57 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Blackout Dates — <%= session.name %></h1>
+
+<% if (session.status === 'draft') { %>
+  <div class="card wide">
+    <p class="muted" style="margin-top:0;">Players won't know to enter blackout dates unless you tell them — nothing in the app prompts them on its own. Send everyone currently enrolled a direct link to this session's blackout page.</p>
+    <form method="post" action="/admin/sessions/<%= session.id %>/notify-blackouts">
+      <button class="btn green" type="submit">Notify roster to enter blackout dates</button>
+    </form>
+  </div>
+<% } else { %>
+  <p class="muted">This session has already been scheduled, so blackout dates are locked for players — there's no need to notify anyone here anymore.</p>
+<% } %>
+
+<h2>All blackout dates, by player</h2>
+<% if (blackoutsByPlayer.length === 0) { %>
+  <p class="muted">No blackout dates on record for this session yet.</p>
+<% } else { %>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Dates</th></tr></thead>
+      <tbody>
+        <% blackoutsByPlayer.forEach(function(entry) { %>
+          <tr>
+            <td><%= entry.name %></td>
+            <td><%= entry.dates.join(', ') %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+
+<h2 style="margin-top:24px;">Edit a player's blackout dates</h2>
+<form method="get" class="card">
+  <label for="player">Player</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% roster.forEach(function(p) { %>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+
+<% if (selectedPlayerId) { %>
+  <form method="post" action="/admin/sessions/<%= session.id %>/blackouts" class="card wide">
+    <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
+    <% weeks.forEach(function(w) { %>
+      <div class="checkbox-row">
+        <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>" <%= existing.has(w.match_date) ? 'checked' : '' %>>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %></label>
+      </div>
+    <% }) %>
+    <div class="actions"><button class="btn green" type="submit">Save</button></div>
+  </form>
+<% } %>
+<%- include('../partials/footer') %>

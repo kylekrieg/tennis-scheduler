@@ -1,0 +1,8 @@
+<%- include('partials/header', {title}) %>
+<h1>Season PDF</h1>
+<p class="muted">One-page PDF of the full <%= sessionPublicLabel(session) %> schedule — every week, who's playing, and ball duty.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+<div class="actions">
+  <a class="btn green" href="/pdf?session=<%= session.id %>&download=1">Download PDF</a>
+</div>
+<%- include('partials/footer') %>

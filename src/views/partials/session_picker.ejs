@@ -1,0 +1,20 @@
+<% if (typeof session !== 'undefined' && session) { %>
+  <div class="card wide" style="border-left:6px solid <%= sessionColor(session) %>;padding:12px 16px;margin-bottom:16px;">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">You're viewing</div>
+    <div style="font-size:19px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:<%= sessionColor(session) %>;flex-shrink:0;"></span>
+      <%= sessionPublicLabel(session) %>
+    </div>
+    <div class="muted" style="margin-top:2px;"><%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %></div>
+    <% if (sessions && sessions.length > 1) { %>
+      <div class="muted" style="font-size:12px;margin-top:12px;">Also viewable — switch session:</div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;">
+        <% sessions.forEach(function(s) { %>
+          <a href="?session=<%= s.id %>" class="btn small <%= s.id === session.id ? 'green' : 'neutral' %>" style="border-left:4px solid <%= sessionColor(s) %>;">
+            <%= sessionPublicLabel(s) %> <span style="opacity:0.75;">(<%= s.status %>)</span>
+          </a>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+<% } %>

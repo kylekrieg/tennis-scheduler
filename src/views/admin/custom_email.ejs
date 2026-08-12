@@ -1,0 +1,14 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Send Custom Email</h1>
+<form method="post" action="/admin/email" class="card">
+  <label for="player_id">To</label>
+  <select name="player_id" id="player_id">
+    <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
+  </select>
+  <label for="subject">Subject</label>
+  <input type="text" name="subject" id="subject" required>
+  <label for="body">Message</label>
+  <textarea name="body" id="body" required></textarea>
+  <div class="actions"><button class="btn green" type="submit">Send</button></div>
+</form>
+<%- include('../partials/footer') %>

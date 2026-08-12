@@ -1,0 +1,39 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Players</h1>
+
+<h2>Add a player</h2>
+<form method="post" action="/admin/players" class="card">
+  <label for="name">Name</label>
+  <input type="text" name="name" id="name" required>
+  <label for="email">Email</label>
+  <input type="email" name="email" id="email" required>
+  <div class="actions"><button class="btn green" type="submit">Add player</button></div>
+</form>
+
+<h2>All players</h2>
+<table class="wide">
+  <thead><tr><th>Name / Email</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    <% players.forEach(function(p) { %>
+      <tr>
+        <td>
+          <form method="post" action="/admin/players/<%= p.id %>/edit" id="edit-<%= p.id %>">
+            <input type="text" name="name" value="<%= p.name %>" style="width:140px;display:inline-block;">
+            <input type="email" name="email" value="<%= p.email %>" style="width:200px;display:inline-block;">
+          </form>
+        </td>
+        <td><%= p.active ? 'active' : 'inactive' %></td>
+        <td>
+          <button class="btn small neutral" type="submit" form="edit-<%= p.id %>">Save (identity swap)</button>
+          <% if (p.active) { %>
+            <form class="inline" method="post" action="/admin/players/<%= p.id %>/deactivate"><button class="btn small neutral" type="submit">Deactivate</button></form>
+          <% } else { %>
+            <form class="inline" method="post" action="/admin/players/<%= p.id %>/activate"><button class="btn small neutral" type="submit">Activate</button></form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page.</p>
+<%- include('../partials/footer') %>

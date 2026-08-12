@@ -1,0 +1,60 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>Stats — <%= session.name %></h1>
+
+<h2>Games played vs. target</h2>
+<table>
+  <thead><tr><th>Player</th><th>Target</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
+  <tbody>
+    <% stats.forEach(function(s) { %>
+      <tr>
+        <td><%= s.player.name %></td>
+        <td><%= s.target %></td>
+        <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
+        <td><%= s.subBonus %></td>
+        <td><%= s.ballDuty %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<h2>Partner matrix</h2>
+<table>
+  <thead>
+    <tr><th></th><% roster.forEach(function(p) { %><th><%= p.name %></th><% }) %></tr>
+  </thead>
+  <tbody>
+    <% roster.forEach(function(p1) { %>
+      <tr>
+        <th><%= p1.name %></th>
+        <% roster.forEach(function(p2) { %>
+          <%
+            var count = '—';
+            if (p1.id !== p2.id) {
+              var key = p1.id < p2.id ? p1.id + '_' + p2.id : p2.id + '_' + p1.id;
+              count = partnerCounts.get(key) || 0;
+            }
+          %>
+          <td><%= count %></td>
+        <% }) %>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<h2>Sub history</h2>
+<table>
+  <thead><tr><th>Week</th><th>Original player</th><th>Status</th><th>Requested</th><th>Escalated</th></tr></thead>
+  <tbody>
+    <% subHistory.forEach(function(s) { %>
+      <tr>
+        <td><%= s.match_date %></td>
+        <td><%= s.original_player %></td>
+        <td><span class="badge <%= (s.status === 'filled' || s.status === 'resolved_manually') ? 'confirmed' : 'needs_sub' %>"><%= s.status.replace('_',' ') %></span></td>
+        <td class="muted"><%= s.created_at %></td>
+        <td class="muted"><%= s.escalated_at || '—' %></td>
+      </tr>
+    <% }) %>
+    <% if (subHistory.length === 0) { %><tr><td colspan="5" class="muted">No sub requests yet.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

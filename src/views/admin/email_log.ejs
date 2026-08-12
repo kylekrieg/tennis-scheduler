@@ -1,0 +1,62 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>Email Log</h1>
+<p class="muted">Every email the app has sent or attempted, most recent first (last 300).<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
+
+<div class="actions" style="margin-bottom:8px;">
+  <span class="badge confirmed">sent: <%= counts.sent || 0 %></span>
+  <span class="badge needs_sub">failed: <%= counts.failed || 0 %></span>
+  <span class="badge scheduled">logged only (no SMTP): <%= counts.logged_dev_mode || 0 %></span>
+</div>
+
+<form method="get" class="card wide" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+  <div style="flex:1;min-width:160px;">
+    <label for="q">Recipient contains</label>
+    <input type="text" name="q" id="q" value="<%= filters.q %>" placeholder="name@example.com">
+  </div>
+  <div style="min-width:160px;">
+    <label for="category">Category</label>
+    <select name="category" id="category">
+      <option value="">All</option>
+      <% categories.forEach(function(c) { %>
+        <option value="<%= c %>" <%= filters.category === c ? 'selected' : '' %>><%= c %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div style="min-width:160px;">
+    <label for="status">Status</label>
+    <select name="status" id="status">
+      <option value="">All</option>
+      <option value="sent" <%= filters.status === 'sent' ? 'selected' : '' %>>Sent</option>
+      <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+      <option value="logged_dev_mode" <%= filters.status === 'logged_dev_mode' ? 'selected' : '' %>>Logged only (no SMTP)</option>
+    </select>
+  </div>
+  <div><button class="btn neutral" type="submit">Filter</button></div>
+  <% if (filters.q || filters.category || filters.status) { %><div><a class="btn neutral" href="/admin/email-log">Clear</a></div><% } %>
+</form>
+
+<table class="wide">
+  <thead><tr><th>Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
+  <tbody>
+    <% rows.forEach(function(r) { %>
+      <tr>
+        <td class="muted"><%= r.sent_at %></td>
+        <td><%= r.to_email %></td>
+        <td><%= r.subject %></td>
+        <td><span class="badge scheduled"><%= r.category %></span></td>
+        <td>
+          <% if (r.status === 'sent') { %><span class="badge confirmed">sent</span>
+          <% } else if (r.status === 'failed') { %><span class="badge needs_sub">failed</span>
+          <% } else { %><span class="badge scheduled">logged only</span><% } %>
+        </td>
+        <td class="muted">
+          <% if (r.session_id) { %>
+            <a href="/admin/sessions/<%= r.session_id %>"><%= r.session_name %></a><% if (r.match_date) { %> — <%= r.match_date %><% } %>
+          <% } else { %>—<% } %>
+        </td>
+      </tr>
+    <% }) %>
+    <% if (rows.length === 0) { %><tr><td colspan="6" class="muted">No emails match this filter.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

@@ -1,0 +1,157 @@
+<%- include('partials/header', {title}) %>
+<h1>How It Works</h1>
+<p class="muted">A quick tour of everything on this site — bookmark this page if you ever forget where something lives. Everything below is self-service: you never need to email or call the admin to do any of it.</p>
+
+<div class="card wide">
+  <strong>Jump to:</strong>
+  <ul style="margin:8px 0 0; padding-left:20px;">
+    <li><a href="#confirming">Confirming you're playing</a></li>
+    <li><a href="#blackout">Blackout dates</a></li>
+    <li><a href="#request-sub">Request a Sub</a></li>
+    <li><a href="#swap">Swap a Week</a></li>
+    <li><a href="#my-page">My Page</a></li>
+    <li><a href="#schedule">Season Schedule &amp; Next 4 Weeks</a></li>
+    <li><a href="#calendar">Calendar</a></li>
+    <li><a href="#pdf">PDF</a></li>
+    <li><a href="#double-booked">What does "double booked" mean?</a></li>
+    <li><a href="#statuses">What do the badges mean?</a></li>
+  </ul>
+</div>
+
+<h2 id="confirming">Confirming you're playing</h2>
+<p>A few days before a match you're scheduled for, you'll get a reminder email with two links: one to confirm you're playing, one if you need a sub. Both links take you to a page on this site where you click an explicit button — nothing changes just from opening the email. If you don't respond to either one, you'll get a single follow-up nudge the morning of the match. Once the match's start time passes, both links stop working — the week is locked and treated as played.</p>
+<p class="muted" style="margin-bottom:0;">Here's what that email looks like:</p>
+<div class="email-mock">
+  <div class="email-mock-header">
+    <div class="to">To: jamie@example.com</div>
+    <div class="subject">Riverside Tennis Club — Wednesday Doubles, Sep 2, 6:00 PM, Court 2 — please confirm</div>
+  </div>
+  <div class="email-mock-body">
+    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
+      <div class="name">Wednesday Doubles — Riverside Tennis Club, Court 2</div>
+      <div class="date">Wednesday, Sep 2 &middot; 6:00 PM, Court 2</div>
+    </div>
+    <p>Hi Jamie Rivera,</p>
+    <p>You're scheduled to play doubles on <strong>Wednesday, Sep 2</strong> at 6:00 PM.</p>
+    <p>
+      <a href="#" class="btn-confirm">Confirm you're playing</a>
+      <a href="#" class="btn-needsub">Need a sub? Click here</a>
+    </p>
+    <p class="email-mock-flag"><strong>You're on ball duty this week</strong> &mdash; please bring the balls.</p>
+    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 2</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
+  </div>
+</div>
+
+<h2 id="blackout">Blackout dates</h2>
+<p>Already know a date won't work for you this season? Go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off every date you can't play — it saves the moment you click, no confirmation step. This only works while a session is still being set up (before the admin has clicked "Schedule these players"). Once a season's actual schedule exists, blackout dates lock — use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> below for anything that comes up after that.</p>
+<p class="muted" style="margin-bottom:0;">You don't have to wait to be told this page exists — when a new session is being set up, you'll get an email like this:</p>
+<div class="email-mock">
+  <div class="email-mock-header">
+    <div class="to">To: jamie@example.com</div>
+    <div class="subject">Riverside Tennis Club — Enter your blackout dates — Wednesday Doubles, 6:00 PM, Court 2</div>
+  </div>
+  <div class="email-mock-body">
+    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
+      <div class="name">Wednesday Doubles — Riverside Tennis Club, Court 2</div>
+      <div class="date">6:00 PM, Court 2</div>
+    </div>
+    <p>Hi Jamie Rivera,</p>
+    <p><strong>Wednesday Doubles</strong> is being scheduled. If there are any dates you already know you can't play, let us know before the schedule is generated:</p>
+    <p><a href="#" class="btn-confirm">Enter your blackout dates</a></p>
+    <p>That link will already have your name selected &mdash; just check off any dates you can't make. Nothing else to do if you don't have any &mdash; you'll be assumed available every week.</p>
+    <p>This only works until the schedule is generated &mdash; after that, use Request a Sub instead for any date you end up needing to miss.</p>
+    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 2</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
+  </div>
+</div>
+<p class="muted" style="margin-bottom:0;">Clicking the button takes you straight to the page below, with your name already selected:</p>
+<img class="screenshot" src="/img/help/blackout.png" alt="Blackout Dates page showing the session switcher banner, a name dropdown, and a checklist of match dates.">
+<p class="screenshot-caption">Pick your name, check off the dates you can't make, and save — that's the whole page.</p>
+
+<h2 id="request-sub">Request a Sub</h2>
+<p>Already know you're going to miss a match that's already on the schedule? Go to <a href="/request-sub">Request a Sub</a>, pick your name, and click "Need a sub for this week" next to the date — you don't have to wait for the reminder email to do this. It kicks off the exact same process as clicking "need a sub" from that email: everyone else on the roster who isn't already playing that week gets an offer, first to respond gets the spot. If a week shows a red "double booked" badge instead of a normal status, that's usually the one worth requesting a sub for — see below.</p>
+<p class="muted" style="margin-bottom:0;">Here's what the offer looks like to everyone else on the roster:</p>
+<div class="email-mock">
+  <div class="email-mock-header">
+    <div class="to">To: dan@example.com</div>
+    <div class="subject">Riverside Tennis Club — Sub needed — Wednesday, Sep 2, 6:00 PM, Court 2 doubles</div>
+  </div>
+  <div class="email-mock-body">
+    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
+      <div class="name">Wednesday Doubles — Riverside Tennis Club, Court 2</div>
+      <div class="date">Wednesday, Sep 2 &middot; 6:00 PM, Court 2</div>
+    </div>
+    <p>Hi Dan Ostrow,</p>
+    <p>Jamie Rivera needs a sub for <strong>Wednesday, Sep 2</strong> at 6:00 PM. First to confirm gets the spot.</p>
+    <p><a href="#" class="btn-confirm">I'll play</a></p>
+    <p><strong>Playing that week:</strong> Alice Chen, Marcus Lee, Priya Nair<br><strong>Bringing balls:</strong> Alice Chen</p>
+    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 2</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
+  </div>
+</div>
+<img class="screenshot" src="/img/help/request-sub.png" alt="Request a Sub page listing every upcoming week with a status badge and a red 'Need a sub for this week' button next to each date.">
+<p class="screenshot-caption">A red <span class="badge double_booked">double booked</span> badge next to a date is a strong hint that's the one worth requesting a sub for.</p>
+
+<h2 id="swap">Swap a Week</h2>
+<p>Prefer to trade with one specific person instead of opening it up to the whole roster? Go to <a href="/swap">Swap a Week</a>, pick your name, pick which of your own weeks you want to give up, then pick who you'd like to swap with and which of their weeks you want instead. They get an email and have to accept before anything actually changes — nothing happens automatically. You're both still playing the same number of games, just on different dates, so neither of you counts as a sub for the season.</p>
+<p class="muted" style="margin-bottom:0;">Here's what the other player sees:</p>
+<div class="email-mock">
+  <div class="email-mock-header">
+    <div class="to">To: alice@example.com</div>
+    <div class="subject">Riverside Tennis Club — Jamie Rivera wants to swap weeks with you — Wednesday Doubles, 6:00 PM, Court 2</div>
+  </div>
+  <div class="email-mock-body">
+    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
+      <div class="name">Wednesday Doubles — Riverside Tennis Club, Court 2</div>
+      <div class="date">6:00 PM, Court 2</div>
+    </div>
+    <p>Hi Alice Chen,</p>
+    <p>Jamie Rivera would like to swap with you in <strong>Wednesday Doubles</strong>:</p>
+    <ul>
+      <li>You'd give up <strong>Wednesday, Sep 9</strong></li>
+      <li>You'd take over <strong>Wednesday, Sep 2</strong> (currently Jamie's)</li>
+    </ul>
+    <p>You're still playing the same number of games either way &mdash; just trading which week.</p>
+    <p><a href="#" class="btn-confirm">Review and respond</a></p>
+    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 2</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
+  </div>
+</div>
+<img class="screenshot" src="/img/help/swap.png" alt="Swap a Week page showing 'Which week do you want to give up?' with a table of dates and a 'Give up this week' button next to each.">
+<p class="screenshot-caption">Step one: pick which of your own weeks you're offering up. The next page lets you pick who you want to swap with.</p>
+
+<h2 id="my-page">My Page</h2>
+<p>The fastest way to see everything at once. Go to <a href="/me">My Page</a>, pick your name once, and bookmark the link it gives you (or save it to your phone's home screen) — it always shows your current schedule across every session you're in, with no need to pick your name again. From there you can request a sub or propose a swap with one click on any upcoming match, and it's also where you'll find your calendar-subscribe link.</p>
+<img class="screenshot" src="/img/help/my-page.png" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
+<p class="screenshot-caption">Enrolled in more than one session? Each one gets its own colored card here — same color you'll see everywhere else that session shows up.</p>
+
+<h2 id="schedule">Season Schedule &amp; Next 4 Weeks</h2>
+<p><a href="/schedule">Season Schedule</a> shows the whole season at a glance — every date, who's playing, how they're paired up, and who's on ball duty. <a href="/lookahead">Next 4 Weeks</a> is the same idea trimmed down to just what's coming up soon, handy if the full season table feels like a lot.</p>
+<img class="screenshot" src="/img/help/next-four-weeks.png" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
+<p class="screenshot-caption">Team A and Team B for each date, plus who's bringing the balls that week.</p>
+
+<h2 id="calendar">Calendar</h2>
+<p>Go to <a href="/calendar">Calendar</a> to add your matches to your phone or computer's calendar app, two ways: a one-time download for the currently selected season, or <strong>Subscribe</strong>, which keeps itself up to date automatically if your schedule changes later — no need to redownload anything. Subscribe is the better choice if you want it to just stay correct on its own.</p>
+<img class="screenshot" src="/img/help/calendar.png" alt="Personal Calendar page with two sections: a one-time .ics download and a Subscribe option with a webcal link.">
+<p class="screenshot-caption">Subscribe once and re-schedules, subs, and swaps show up automatically — no need to come back and re-download.</p>
+
+<h2 id="pdf">PDF</h2>
+<p><a href="/pdf">PDF</a> gives you a single printable page with the whole season's schedule on it — handy to print and stick on the fridge or pass around at a gathering.</p>
+
+<h2 id="double-booked">What does "double booked" mean?</h2>
+<p>If you're enrolled in two sessions that happen to land you on the same date in both, you'll see a red <span class="badge double_booked">double booked</span> badge in place of your usual status everywhere you'd normally check your schedule — the season schedule, My Page, Request a Sub, Swap a Week, the printable PDF, even the calendar invite itself. This doesn't get fixed automatically — you'll need to pick which one you're actually playing and either request a sub or propose a swap for the other, ideally weeks before match day rather than waiting until the week of.</p>
+
+<h2 id="statuses">What do the badges mean?</h2>
+<table class="wide">
+  <thead><tr><th>Badge</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge scheduled">scheduled</span></td><td>You're down to play this week — you haven't confirmed yet, and you haven't been asked to.</td></tr>
+    <tr><td><span class="badge confirmed">confirmed</span></td><td>You've confirmed you're playing.</td></tr>
+    <tr><td><span class="badge needs_sub">needs sub</span></td><td>You (or someone) asked for a sub for this slot and it hasn't been filled yet.</td></tr>
+    <tr><td><span class="badge subbed_out">subbed out</span></td><td>Someone else took this spot — you're not playing this week after all.</td></tr>
+    <tr><td><span class="badge double_booked">double booked</span></td><td>You're scheduled to play in two different sessions on this same date — see above.</td></tr>
+  </tbody>
+</table>
+
+<%- include('partials/footer') %>

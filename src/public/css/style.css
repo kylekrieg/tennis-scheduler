@@ -1,0 +1,189 @@
+:root {
+  --green: #1a7f37;
+  --red: #b42318;
+  --ink: #1f2328;
+  --muted: #656d76;
+  --border: #d0d7de;
+  --bg: #ffffff;
+  --bg-soft: #f6f8fa;
+  --flagged-bg: #fff8e6;
+  --flag-bg: #fff8e6;
+  --flag-border: #ffd77a;
+  --flag-error-bg: #fff1f0;
+  --flag-error-border: #ffb0a8;
+  --badge-confirmed-bg: #dafbe1;
+  --badge-needs_sub-bg: #ffebe9;
+  --badge-subbed_out-bg: #eeeeee;
+  --shadow: none;
+}
+
+[data-theme="dark"] {
+  --green: #3fb950;
+  --red: #f85149;
+  --ink: #e6edf3;
+  --muted: #9198a1;
+  --border: #30363d;
+  --bg: #0d1117;
+  --bg-soft: #161b22;
+  --flagged-bg: #2b2410;
+  --flag-bg: #2b2410;
+  --flag-border: #9e7c1f;
+  --flag-error-bg: #2e1512;
+  --flag-error-border: #a13f34;
+  --badge-confirmed-bg: #0f2c1a;
+  --badge-needs_sub-bg: #2e1512;
+  --badge-subbed_out-bg: #21262d;
+}
+
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  margin: 0;
+  background: var(--bg);
+  line-height: 1.5;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+header.site {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+header.site .brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--ink); }
+header.site nav { display: flex; align-items: center; }
+header.site nav a {
+  color: var(--muted);
+  text-decoration: none;
+  margin-left: 16px;
+  font-size: 14px;
+}
+header.site nav a:hover { color: var(--ink); }
+#theme-toggle {
+  margin-left: 16px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+#theme-toggle:hover { background: var(--bg-soft); }
+main { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+main.wide { max-width: 1400px; }
+h1 { font-size: 22px; margin-bottom: 4px; }
+h2 { font-size: 17px; margin-top: 28px; }
+.muted { color: var(--muted); font-size: 14px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--bg-soft); font-weight: 600; }
+tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.confirmed { background: var(--badge-confirmed-bg); color: var(--green); }
+.badge.scheduled { background: var(--bg-soft); color: var(--muted); }
+.badge.needs_sub { background: var(--badge-needs_sub-bg); color: var(--red); }
+.badge.subbed_out { background: var(--badge-subbed_out-bg); color: var(--muted); text-decoration: line-through; }
+.badge.double_booked { background: var(--badge-needs_sub-bg); color: var(--red); }
+.btn {
+  display: inline-block;
+  padding: 9px 16px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn.green { background: var(--green); color: #fff; }
+.btn.red { background: var(--red); color: #fff; }
+.btn.neutral { background: var(--bg); color: var(--ink); border-color: var(--border); }
+
+/* Example-email mockups on the help page — deliberately not theme-aware in
+   the body: a real inbox reading pane is white regardless of the site's own
+   dark mode, so this mimics that rather than blending into the page. */
+.email-mock { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 14px 0 20px; }
+.email-mock-header { padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+.email-mock-header .to { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.email-mock-header .subject { font-size: 14px; font-weight: 600; color: var(--ink); }
+.email-mock-body { padding: 20px; background: #ffffff; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 17px; line-height: 1.6; }
+.email-mock-body p { margin: 0 0 12px; }
+.email-mock-body ul { margin: 0 0 12px; }
+.email-mock-body a.btn-confirm { display: inline-block; background: #1a7f37; color: #fff; padding: 10px 16px; border-radius: 6px; text-decoration: none; margin-right: 8px; }
+.email-mock-body a.btn-needsub { display: inline-block; background: #b42318; color: #fff; padding: 10px 16px; border-radius: 6px; text-decoration: none; }
+.email-mock-banner { border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; }
+.email-mock-banner .name { font-weight: 700; font-size: 18px; color: #1a1a1a; }
+.email-mock-banner .date { font-size: 15px; color: #444; margin-top: 2px; }
+.email-mock-flag { border: 1px solid #ffd77a; background: #fff8e6; border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+.email-mock-footer { color: #888; font-size: 12px; }
+
+/* Real screenshots on the help/guide pages — bordered like a browser
+   window so they read as "a picture of the site", not decoration. */
+.screenshot { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; display: block; margin: 10px 0 4px; }
+.screenshot-caption { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+.btn.disabled { opacity: 0.5; pointer-events: none; cursor: default; }
+form.inline { display: inline; }
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 16px;
+  max-width: 480px;
+}
+.card.wide { max-width: none; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=number], select, textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--ink);
+}
+textarea { min-height: 100px; }
+.flags { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.flag {
+  border: 1px solid var(--flag-border);
+  background: var(--flag-bg);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+.flag.error { border-color: var(--flag-error-border); background: var(--flag-error-bg); }
+.session-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+.session-card h3 { margin: 0 0 4px; }
+.actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.checkbox-row input { width: auto; }
+.notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: 14px; }
+table.compact th, table.compact td { padding: 6px 10px; font-size: 13px; }
+table.compact td { vertical-align: middle; }
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.player-row:last-child { border-bottom: none; }
+.player-row .pname { min-width: 130px; flex-shrink: 0; }
+.player-row form.inline { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.player-row select { width: auto; min-width: 110px; padding: 4px 6px; font-size: 12px; }

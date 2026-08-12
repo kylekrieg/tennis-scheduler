@@ -1,0 +1,15 @@
+<%- include('partials/header', {title}) %>
+<h1>My Page</h1>
+<p class="muted">Pick your name to get your own bookmarkable page — every upcoming match, sub status, and ball duty across every session you're in, all in one place.</p>
+
+<form method="get" action="/me" class="card" style="max-width:320px;">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% allPlayers.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+<p class="muted">Once you're on your page, bookmark it (or save it to your phone's home screen) — the URL stays the same and always shows your current schedule.</p>
+<%- include('partials/footer') %>

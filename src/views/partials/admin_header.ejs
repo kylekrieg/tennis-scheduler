@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' ? title + ' — Admin' : 'Admin' %></title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script>
+    // Set the theme before first paint so there's no light-then-dark flash.
+    (function () {
+      try {
+        var stored = localStorage.getItem('theme');
+        var theme = stored || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) { /* private browsing, etc. — default light */ }
+    })();
+  </script>
+  <script src="/js/theme.js" defer></script>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/admin">🎾 Admin</a>
+  <nav>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/guide">Guide</a>
+    <a href="/admin/status">Status</a>
+    <a href="/admin/players">Players</a>
+    <a href="/admin/sub-list">Sub List</a>
+    <a href="/admin/email">Send Email</a>
+    <a href="/admin/email-log">Email Log</a>
+    <a href="/admin/activity-log">Activity Log</a>
+    <a href="/admin/admins">Admins</a>
+    <a href="/admin/backup">Backup</a>
+    <a href="/admin/settings">Settings</a>
+    <a href="/schedule">Public Site</a>
+    <form class="inline" method="post" action="/admin/logout"><button class="btn small neutral" type="submit">Log out</button></form>
+    <button id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+  </nav>
+</header>
+<main class="<%= typeof wideMain !== 'undefined' && wideMain ? 'wide' : '' %>">
+<% if (typeof flashMsg !== 'undefined' && flashMsg) { %>
+  <div class="flag <%= flashMsg.type === 'error' ? 'error' : '' %>"><%= flashMsg.message %></div>
+<% } %>

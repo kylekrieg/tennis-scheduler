@@ -1,0 +1,19 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>Confirm your blackout dates</h1>
+  <p class="notice" style="font-size:16px;">Confirming for <strong><%= player.name %></strong> — <strong><%= session.name %></strong>.</p>
+  <% if (dates.length) { %>
+    <ul>
+      <% dates.forEach(function(d) { %><li><%= fmtDate(d) %></li><% }) %>
+    </ul>
+  <% } else { %>
+    <p class="muted">No blackout dates selected — you'll be marked available every week.</p>
+  <% } %>
+  <p class="muted">Not you? Ignore this page — nothing changes unless you click confirm below.</p>
+  <form method="post" action="/blackout/confirm/<%= token %>">
+    <div class="actions">
+      <button class="btn green" type="submit">Confirm these blackout dates</button>
+    </div>
+  </form>
+</div>
+<%- include('partials/footer') %>

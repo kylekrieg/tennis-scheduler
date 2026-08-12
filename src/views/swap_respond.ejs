@@ -1,0 +1,26 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>Swap request</h1>
+  <% if (alreadyResolved) { %>
+    <% if (swapRequest.status === 'expired') { %>
+      <p class="notice">This swap request expired before anyone answered it — the week it was for has already passed.</p>
+    <% } else { %>
+      <p class="notice">This swap request has already been <%= swapRequest.status %> — nothing more to do here.</p>
+    <% } %>
+    <div class="actions"><a class="btn neutral" href="/schedule">Back to schedule</a></div>
+  <% } else { %>
+    <p class="notice" style="font-size:16px;"><strong><%= initiatorCtx.player.name %></strong> would like to swap with <strong><%= targetCtx.player.name %></strong> in <strong><%= sessionPublicLabel(initiatorCtx.session) %></strong>:</p>
+    <ul>
+      <li>You'd give up <strong><%= fmtDate(targetCtx.week.match_date) %></strong></li>
+      <li>You'd take over <strong><%= fmtDate(initiatorCtx.week.match_date) %></strong> (currently <%= initiatorCtx.player.name %>'s)</li>
+    </ul>
+    <p class="muted">You're still playing the same number of games either way — just trading which week.</p>
+    <form method="post" action="/swap/respond/<%= token %>">
+      <div class="actions">
+        <button class="btn green" type="submit" name="action" value="accept">Accept swap</button>
+        <button class="btn red" type="submit" name="action" value="decline">Decline</button>
+      </div>
+    </form>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

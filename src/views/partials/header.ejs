@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' ? title + ' — Tennis Doubles' : 'Tennis Doubles' %></title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script>
+    // Set the theme before first paint so there's no light-then-dark flash.
+    (function () {
+      try {
+        var stored = localStorage.getItem('theme');
+        var theme = stored || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) { /* private browsing, etc. — default light */ }
+    })();
+  </script>
+  <script src="/js/theme.js" defer></script>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/schedule">🎾 Doubles Schedule</a>
+  <nav>
+    <a href="/help">How It Works</a>
+    <a href="/me">My Page</a>
+    <a href="/schedule">Season</a>
+    <a href="/lookahead">Next 4 Weeks</a>
+    <a href="/blackout">Blackout Dates</a>
+    <a href="/request-sub">Request a Sub</a>
+    <a href="/swap">Swap a Week</a>
+    <a href="/calendar">Calendar</a>
+    <a href="/pdf">PDF</a>
+    <a href="/admin">Admin</a>
+    <button id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+  </nav>
+</header>
+<main class="<%= typeof wideMain !== 'undefined' && wideMain ? 'wide' : '' %>">

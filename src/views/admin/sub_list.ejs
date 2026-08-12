@@ -1,0 +1,26 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Broader Sub List</h1>
+<p class="muted">Escalation list used when none of that week's non-playing regulars confirm within 24 hours of match time.</p>
+
+<form method="post" action="/admin/sub-list" class="card">
+  <label for="name">Name</label>
+  <input type="text" name="name" id="name" required>
+  <label for="email">Email</label>
+  <input type="email" name="email" id="email" required>
+  <div class="actions"><button class="btn green" type="submit">Add</button></div>
+</form>
+
+<table class="wide">
+  <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+  <tbody>
+    <% list.forEach(function(l) { %>
+      <tr>
+        <td><%= l.name %></td>
+        <td><%= l.email %></td>
+        <td><form method="post" action="/admin/sub-list/<%= l.id %>/remove"><button class="btn small neutral" type="submit">Remove</button></form></td>
+      </tr>
+    <% }) %>
+    <% if (list.length === 0) { %><tr><td colspan="3" class="muted">Empty.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

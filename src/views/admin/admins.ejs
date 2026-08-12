@@ -1,0 +1,47 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Admins</h1>
+<p class="muted">Everyone here can do everything in this admin panel — there are no permission levels, just who's allowed in. The login page only asks for a password (no username); whoever's password matches is who gets logged in.</p>
+
+<h2>Add an admin</h2>
+<form method="post" action="/admin/admins" class="card">
+  <label for="name">Name</label>
+  <input type="text" name="name" id="name" required>
+  <label for="email">Email (optional)</label>
+  <input type="email" name="email" id="email">
+  <label for="password">Password</label>
+  <input type="password" name="password" id="password" minlength="8" required>
+  <p class="muted">At least 8 characters. Share it with them directly — it's not emailed anywhere.</p>
+  <div class="actions"><button class="btn green" type="submit">Add admin</button></div>
+</form>
+
+<h2>All admins</h2>
+<table class="wide">
+  <thead><tr><th>Name / Email</th><th>Status</th><th>Reset password</th><th>Actions</th></tr></thead>
+  <tbody>
+    <% admins.forEach(function(a) { %>
+      <tr>
+        <td>
+          <%= a.name %><% if (a.id === currentAdminId) { %> <span class="muted">(you)</span><% } %>
+          <% if (a.email) { %><div class="muted"><%= a.email %></div><% } %>
+        </td>
+        <td><%= a.active ? 'active' : 'inactive' %></td>
+        <td>
+          <form class="inline" method="post" action="/admin/admins/<%= a.id %>/reset-password">
+            <input type="password" name="password" placeholder="new password" minlength="8" style="width:140px;display:inline-block;" required>
+            <button class="btn small neutral" type="submit">Set</button>
+          </form>
+        </td>
+        <td>
+          <% if (a.active) { %>
+            <form class="inline" method="post" action="/admin/admins/<%= a.id %>/deactivate">
+              <button class="btn small neutral" type="submit"><%= a.id === currentAdminId ? 'Deactivate (logs you out)' : 'Deactivate' %></button>
+            </form>
+          <% } else { %>
+            <form class="inline" method="post" action="/admin/admins/<%= a.id %>/activate"><button class="btn small neutral" type="submit">Activate</button></form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

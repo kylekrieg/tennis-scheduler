@@ -1,0 +1,185 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1><%= session ? 'Edit Session' : 'New Session' %></h1>
+<form method="post" action="<%= session ? '/admin/sessions/' + session.id : '/admin/sessions' %>" class="card wide">
+  <label for="name">Session name</label>
+  <input type="text" name="name" id="name" value="<%= session ? session.name : '' %>" required>
+
+  <label for="start_date">Start date</label>
+  <input type="date" name="start_date" id="start_date" value="<%= session ? session.start_date : '' %>" required>
+
+  <label for="end_date">End date</label>
+  <input type="date" name="end_date" id="end_date" value="<%= session ? session.end_date : '' %>" required>
+
+  <label for="match_day_of_week">Match day of week</label>
+  <select name="match_day_of_week" id="match_day_of_week">
+    <% ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach(function(d, i) { %>
+      <option value="<%= i %>" <%= session && session.match_day_of_week === i ? 'selected' : (!session && i === 3 ? 'selected' : '') %>><%= d %></option>
+    <% }) %>
+  </select>
+
+  <label for="match_time">Match time</label>
+  <input type="time" name="match_time" id="match_time" value="<%= session ? session.match_time : '17:30' %>" required>
+
+  <label for="reminder_time">Reminder email time-of-day</label>
+  <input type="time" name="reminder_time" id="reminder_time" value="<%= session ? session.reminder_time : '09:00' %>" required>
+
+  <label for="reminder_days_before">Reminder sent (days before match)</label>
+  <input type="number" name="reminder_days_before" id="reminder_days_before" value="<%= session ? session.reminder_days_before : 2 %>" min="0">
+
+  <div class="checkbox-row" style="margin-top:8px;">
+    <input type="checkbox" name="reminders_enabled" id="reminders_enabled" value="1" <%= (!session || session.reminders_enabled) ? 'checked' : '' %>>
+    <label for="reminders_enabled" style="margin:0;font-weight:400;">Send automatic reminders</label>
+  </div>
+  <p class="muted">Uncheck to pause the automatic reminder and follow-up emails for this session — e.g. while testing. Manual sends (Resend link, Send reminders now on the session page) still work either way.</p>
+
+  <label for="players_per_week">Players per week</label>
+  <input type="number" name="players_per_week" id="players_per_week" value="<%= session ? session.players_per_week : 4 %>" min="4" step="4">
+  <p class="muted">Must be a multiple of 4 — one doubles court is 4 players. 8 for 2 courts running at once, 12 for 3, and so on.</p>
+
+  <label for="courts">Courts</label>
+  <input type="number" name="courts" id="courts" value="<%= session ? session.courts : 1 %>" min="1">
+
+  <label for="lookahead_weeks">Look-ahead weeks (player-facing)</label>
+  <input type="number" name="lookahead_weeks" id="lookahead_weeks" value="<%= session ? session.lookahead_weeks : 4 %>" min="1">
+
+  <label for="club_name">Club / group name</label>
+  <input type="text" name="club_name" id="club_name" value="<%= session ? session.club_name : '' %>" placeholder="e.g. Riverside Tennis Club">
+  <p class="muted">Shown in the subject line and footer of every email this session sends. Different sessions can use different clubs — this isn't shared across sessions.</p>
+
+  <label for="court_info">Court / location</label>
+  <input type="text" name="court_info" id="court_info" value="<%= session ? session.court_info : '' %>" placeholder="e.g. Court 3 or North courts 1-2">
+  <p class="muted">Shown in the footer of every email this session sends, so players know exactly where to go. Leave blank to omit.</p>
+
+  <label for="color">Color</label>
+  <input type="color" name="color" id="color" value="<%= session && session.color ? session.color : sessionColor(session || {id: 0}) %>" style="width:70px;height:38px;padding:2px;cursor:pointer;">
+  <p class="muted">Shown next to this session's name on the schedule pages, session switcher, and match emails — pick something distinct if you're running two sessions at the same club, day, and time (e.g. Court 2 vs. Court 4), so a player can tell them apart at a glance instead of having to read the fine print. Defaults to an automatically assigned color if you don't set one.</p>
+
+  <h2>Roster &amp; target games</h2>
+  <p class="muted">Set a target &gt; 0 to enroll a player this session. Setting an enrolled player's target to 0 removes them (structural change — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>
+  <p class="muted">Priority is a note, not a rule — the scheduler <strong>does not</strong> use it to automatically prevent anything. It only matters for a player enrolled in another session that meets the <strong>same day of week</strong> with <strong>overlapping dates</strong> (e.g. two Wednesday sessions at the same club): if that player ends up scheduled in both on the same date, priority just records which session you'd expect to win, so whoever fixes it by hand (reassigning a slot, or the player finding their own sub) knows where to start. Lower number wins. Leave it blank for everyone else. A real double-booking is flagged everywhere once it happens — the schedule page, PDF, calendar, and the player's own upcoming matches — regardless of whether priority is set.</p>
+  <table>
+    <thead><tr><th>Player</th><% if (lockedWeeksCount > 0) { %><th>Already played</th><% } %><th>Target games (remaining)</th><th>Priority</th></tr></thead>
+    <tbody>
+      <% players.forEach(function(p) { %>
+        <tr>
+          <td>
+            <%= p.name %>
+            <input type="hidden" name="player_id" value="<%= p.id %>">
+          </td>
+          <% if (lockedWeeksCount > 0) { %><td class="muted"><%= playedCounts.has(p.id) ? playedCounts.get(p.id) : 0 %></td><% } %>
+          <td><input type="number" name="target_games" min="0" style="width:80px;" value="<%= enrolled.has(p.id) ? enrolled.get(p.id) : 0 %>"></td>
+          <td>
+            <input type="number" name="priority" style="width:70px;" placeholder="—" value="<%= (typeof enrolledPriority !== 'undefined' && enrolledPriority.get(p.id) != null) ? enrolledPriority.get(p.id) : '' %>">
+            <% if (typeof collidingSessionsByPlayer !== 'undefined' && collidingSessionsByPlayer.has(p.id)) { %>
+              <div class="muted" style="font-size:12px;">
+                also in <%= collidingSessionsByPlayer.get(p.id).map(function(c) { return c.sessionName; }).join(', ') %> (same day) — set priority here and there
+              </div>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <p class="muted">Need a new player? Add them on the <a href="/admin/players">Players</a> page first. <strong>Priority</strong> only matters if a player is enrolled in two sessions that meet on the same day of week with overlapping dates (flagged above the player's name when that's the case) — lower number wins that player on any date the two sessions share; leave blank if not applicable. See the "Overlapping session enrollment" warning for details once both sessions are saved.</p>
+
+  <div class="notice" id="roster-summary">
+    <div>Match weeks in the date range above: <strong id="sum-total-weeks">–</strong><% if (lockedWeeksCount > 0) { %> (<%= lockedWeeksCount %> already completed and locked)<% } %></div>
+    <div>Open weeks left to schedule: <strong id="sum-open-weeks">–</strong></div>
+    <div>Target slots needed for those weeks: <strong id="sum-required">–</strong> <span class="muted">(open weeks &times; players per week)</span></div>
+    <div>Total you've entered below: <strong id="sum-entered">0</strong></div>
+    <div id="sum-status" style="margin-top:8px;font-weight:600;">—</div>
+  </div>
+
+  <div class="actions"><button class="btn green" type="submit">Save session</button></div>
+</form>
+
+<% if (session) { %>
+<div class="card wide" style="margin-top:24px; border-color:#b42318;">
+  <h2 style="margin-top:0;">Regenerate schedule</h2>
+  <p class="muted">Runs the scheduler against this session's <strong>currently saved</strong> roster and targets, filling in only the open (not yet completed) weeks — locked weeks are never touched. Typically only needed once at the start of a session, or after a structural roster change (a player added, removed, or with a changed target). Save any edits above first — this button uses what's already saved, not unsaved changes on this page.</p>
+  <form method="post" action="/admin/sessions/<%= session.id %>/schedule">
+    <button class="btn green" type="submit">Schedule these players</button>
+  </form>
+</div>
+
+<div class="card wide" style="margin-top:24px; border-color:#b42318;">
+  <h2 style="margin-top:0;">Delete session</h2>
+  <p class="muted">Permanently deletes this session: its schedule, roster enrollment, blackout dates, and sub-request history. Sent-email records are kept (just unlinked) for your records. <strong>Players are not deleted</strong> — they're shared across sessions, so anyone enrolled here who's also in another session is untouched there. This cannot be undone.</p>
+  <form method="post" action="/admin/sessions/<%= session.id %>/delete" onsubmit="return confirm('Delete this session? This permanently removes its schedule, roster enrollment, blackout dates, and sub history. Players themselves will not be deleted. This cannot be undone.');">
+    <button class="btn red" type="submit">Delete this session</button>
+  </form>
+</div>
+<% } %>
+
+<script>
+(function () {
+  var LOCKED_WEEKS = <%= lockedWeeksCount %>;
+
+  // Mirrors the server's datesForDayOfWeek logic (src/services/scheduleRun.js)
+  // so this preview matches exactly what "Schedule these players" will do.
+  function countMatchingWeeks(startStr, endStr, dow) {
+    if (!startStr || !endStr) return 0;
+    var start = new Date(startStr + 'T00:00:00Z');
+    var end = new Date(endStr + 'T00:00:00Z');
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return 0;
+    var count = 0;
+    var cur = new Date(start.getTime());
+    var diff = (dow - cur.getUTCDay() + 7) % 7;
+    cur.setUTCDate(cur.getUTCDate() + diff);
+    while (cur <= end) {
+      count++;
+      cur.setUTCDate(cur.getUTCDate() + 7);
+    }
+    return count;
+  }
+
+  function recalc() {
+    var startEl = document.getElementById('start_date');
+    var endEl = document.getElementById('end_date');
+    var dowEl = document.getElementById('match_day_of_week');
+    var ppwEl = document.getElementById('players_per_week');
+
+    var totalWeeks = countMatchingWeeks(startEl.value, endEl.value, Number(dowEl.value));
+    var openWeeks = Math.max(0, totalWeeks - LOCKED_WEEKS);
+    var playersPerWeek = Number(ppwEl.value) || 0;
+    var required = openWeeks * playersPerWeek;
+
+    var entered = 0;
+    document.querySelectorAll('input[name="target_games"]').forEach(function (input) {
+      entered += Number(input.value) || 0;
+    });
+
+    document.getElementById('sum-total-weeks').textContent = totalWeeks;
+    document.getElementById('sum-open-weeks').textContent = openWeeks;
+    document.getElementById('sum-required').textContent = required;
+    document.getElementById('sum-entered').textContent = entered;
+
+    var statusEl = document.getElementById('sum-status');
+    if (totalWeeks === 0) {
+      statusEl.textContent = 'Set start/end dates and a match day to see the target.';
+      statusEl.style.color = '#656d76';
+    } else if (entered === required) {
+      statusEl.textContent = '✓ Targets add up correctly — ready to save and schedule.';
+      statusEl.style.color = '#1a7f37';
+    } else if (entered < required) {
+      statusEl.textContent = '⚠ ' + (required - entered) + ' more game(s) need to be assigned to someone before this will schedule cleanly.';
+      statusEl.style.color = '#b42318';
+    } else {
+      statusEl.textContent = '⚠ ' + (entered - required) + ' too many game(s) assigned — reduce someone’s target.';
+      statusEl.style.color = '#b42318';
+    }
+  }
+
+  ['start_date', 'end_date', 'match_day_of_week', 'players_per_week'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', recalc);
+    el.addEventListener('change', recalc);
+  });
+  document.querySelectorAll('input[name="target_games"]').forEach(function (input) {
+    input.addEventListener('input', recalc);
+  });
+
+  recalc();
+})();
+</script>
+<%- include('../partials/footer') %>

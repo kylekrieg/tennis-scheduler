@@ -1,0 +1,140 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Status</h1>
+<p class="muted">Everything across every session that needs a human, in one list — plus a preview of what the reminder system is about to do on its own, so you can check it's actually working without waiting for match day.</p>
+
+<h2>Needs attention</h2>
+<%
+  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length;
+%>
+<% if (totalAttention === 0) { %>
+  <p class="notice">All clear across every session — nothing needs attention right now.</p>
+<% } %>
+
+<% if (attention.conflicts.length > 0) { %>
+  <div class="card wide" style="border-color:#b42318;">
+    <h3 style="margin-top:0;">Scheduling conflicts</h3>
+    <p class="muted">An entire "Schedule these players" run failed for these sessions — nothing was written for their open weeks. Open the session to see the full conflict details and fix them.</p>
+    <% attention.conflicts.forEach(function(c) { %>
+      <div class="flag error"><a href="/admin/sessions/<%= c.session.id %>"><strong><%= c.session.name %></strong></a> — <%= c.detail %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.needsAttentionWeeks.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Flagged weeks</h3>
+    <p class="muted">Usually a short-staffed week the scheduler filled with who was available instead of blocking the season — see "Add a player" on the session page. Sometimes a ball-duty reassignment after a sub request.</p>
+    <% attention.needsAttentionWeeks.forEach(function(w) { %>
+      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %>: <%= w.notes %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.unfilledSubs.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Unfilled sub requests</h3>
+    <% attention.unfilledSubs.forEach(function(s) { %>
+      <div class="flag"><a href="/admin/sessions/<%= s.session_id %>"><strong><%= s.session_name %></strong></a> — <%= fmtDate(s.match_date) %>: <%= s.original_player_name %>'s slot <span class="badge needs_sub"><%= s.status.replace('_',' ') %></span></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.unconfirmed.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Not yet confirmed</h3>
+    <p class="muted">Already been sent a reminder, haven't clicked either link yet.</p>
+    <% attention.unconfirmed.forEach(function(u) { %>
+      <div class="flag"><a href="/admin/sessions/<%= u.session_id %>"><strong><%= u.session_name %></strong></a> — <%= fmtDate(u.match_date) %>: <%= u.player_name %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.missingBallDuty.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Missing ball duty</h3>
+    <% attention.missingBallDuty.forEach(function(w) { %>
+      <div class="flag"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.overlappingEnrollments.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Overlapping session enrollment</h3>
+    <p class="muted">Enrolled in two sessions that meet the same day of week with overlapping dates. Priority (set on each session's Edit page) is advisory only — the scheduler doesn't auto-exclude anyone based on it, so this is a risk to keep an eye on, not something that resolves itself. If it turns into an actual double-booking, it'll show up under "Double-booked" below.</p>
+    <% attention.overlappingEnrollments.forEach(function(c) { %>
+      <div class="flag error"><%= c.player.name %> — <a href="/admin/sessions/<%= c.sessionA.id %>"><strong><%= c.sessionA.name %></strong></a> &amp; <a href="/admin/sessions/<%= c.sessionB.id %>"><strong><%= c.sessionB.name %></strong></a> (<%= c.resolution === 'unresolved' ? 'no priority set' : c.resolution === 'tied' ? 'priority tied' : 'priority set' %>)</div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.doubleBookings.length > 0) { %>
+  <div class="card wide" style="border-color:#b42318;">
+    <h3 style="margin-top:0;">Double-booked</h3>
+    <p class="muted">Actually assigned to play in two different sessions on the same date — a confirmed conflict, not just a risk. Often the result of an accepted player-to-player swap that happened to collide with another session. Fix by reassigning one of the two slots.</p>
+    <% attention.doubleBookings.forEach(function(d) { %>
+      <div class="flag error"><%= d.player.name %> — <%= fmtDate(d.date) %>: <a href="/admin/sessions/<%= d.sessionA.id %>"><strong><%= d.sessionA.name %></strong></a> &amp; <a href="/admin/sessions/<%= d.sessionB.id %>"><strong><%= d.sessionB.name %></strong></a></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.staleSwaps.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Pending swaps awaiting a response</h3>
+    <p class="muted">Nudged once already and still no answer — the target player hasn't accepted or declined. Open the session to check in, or cancel it from the week's card.</p>
+    <% attention.staleSwaps.forEach(function(sw) { %>
+      <div class="flag"><a href="/admin/sessions/<%= sw.session_id %>"><strong><%= sw.session_name %></strong></a> — <%= sw.initiator_name %> (<%= fmtDate(sw.initiator_match_date) %>) wants to swap with <%= sw.target_name %> (<%= fmtDate(sw.target_match_date) %>), nudged on <%= sw.nudged_at.split(' ')[0] %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.pausedSessions.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Automatic reminders paused</h3>
+    <p class="muted">Not necessarily a problem — e.g. deliberately off during testing — but easy to forget about. Manual sends still work regardless.</p>
+    <% attention.pausedSessions.forEach(function(s) { %>
+      <div class="flag"><a href="/admin/sessions/<%= s.id %>"><strong><%= s.name %></strong></a></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<h2 style="margin-top:32px;">Upcoming automated actions</h2>
+<p class="muted">What the reminder system is going to do on its own over the next <%= days %> days — reminders and week-locks are exact; follow-up nudges and sub-escalations depend on who's still unconfirmed or unfilled by the time they'd actually fire, so those are "as of right now," not a guarantee.</p>
+<div class="actions" style="margin-top:0;">
+  <% [7, 14, 21, 30].forEach(function(d) { %>
+    <a class="btn small <%= d === days ? 'green' : 'neutral' %>" href="/admin/status?days=<%= d %>"><%= d %> days</a>
+  <% }) %>
+</div>
+
+<% if (upcoming.length === 0) { %>
+  <p class="muted" style="margin-top:16px;">Nothing scheduled to happen automatically in the next <%= days %> days.</p>
+<% } else { %>
+  <table class="compact" style="margin-top:16px;">
+    <thead>
+      <tr><th>When</th><th>Action</th><th>Session / week</th><th>Who</th></tr>
+    </thead>
+    <tbody>
+      <% upcoming.forEach(function(e) { %>
+        <tr>
+          <td class="<%= e.overdue ? '' : 'muted' %>">
+            <%= fmtDate(e.atDate) %> <%= fmtTime(e.atTime) %>
+            <% if (e.overdue) { %><br><span class="badge needs_sub">overdue</span><% } %>
+          </td>
+          <td>
+            <% if (e.type === 'reminder') { %>Reminder email
+            <% } else if (e.type === 'followup') { %>Follow-up nudge <span class="muted">(as of now)</span>
+            <% } else if (e.type === 'escalation') { %>Sub escalation <span class="muted">(as of now)</span>
+            <% } else if (e.type === 'lock') { %>Week locks
+            <% } %>
+          </td>
+          <td><a href="/admin/sessions/<%= e.session.id %>"><%= e.session.name %></a> <span class="muted"><%= fmtDate(e.week.match_date) %></span></td>
+          <td>
+            <% if (e.recipients.length === 0) { %><span class="muted">—</span>
+            <% } else { %><%= e.recipients.join(', ') %><% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+<%- include('../partials/footer') %>

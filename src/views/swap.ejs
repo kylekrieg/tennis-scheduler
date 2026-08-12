@@ -1,0 +1,89 @@
+<%- include('partials/header', {title}) %>
+<h1>Swap a Week</h1>
+<p class="muted">Trade one of your upcoming weeks for one of another player's — you're still playing the same number of games either way, just on a different date. They'll need to accept before anything changes.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<form method="get" class="card" style="max-width:420px;">
+  <input type="hidden" name="session" value="<%= session.id %>">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% players.forEach(function(p) { %>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+
+<% if (selectedPlayerId && !selectedAssignmentId) { %>
+  <% if (ownAssignments.length === 0) { %>
+    <p class="notice">You don't have any upcoming weeks available to swap right now.</p>
+  <% } else { %>
+    <h2>Which week do you want to give up?</h2>
+    <table class="wide">
+      <thead><tr><th>Date</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <% ownAssignments.forEach(function(a) { %>
+          <tr>
+            <td><%= fmtDate(a.week.match_date) %></td>
+            <td>
+              <% if (a.doubleBooked) { %>
+                <span class="badge double_booked">double booked</span>
+                <div class="muted" style="font-size:11px;">also in <%= sessionPublicLabel(a.doubleBooked) %></div>
+              <% } else { %>
+                <span class="muted">—</span>
+              <% } %>
+            </td>
+            <td>
+              <a class="btn small neutral" href="/swap?session=<%= session.id %>&player=<%= selectedPlayerId %>&assignment=<%= a.id %>">Give up this week</a>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <% if (ownAssignments.some(a => a.doubleBooked)) { %>
+      <p class="muted">"Double booked" means you're also scheduled to play in another session on that same date — that's usually the week worth trading away.</p>
+    <% } %>
+  <% } %>
+<% } %>
+
+<% if (selectedAssignment) { %>
+  <h2>Swap <%= fmtDate(selectedAssignment.week.match_date) %> for…</h2>
+  <p class="muted">Not what you meant? <a href="/swap?session=<%= session.id %>&player=<%= selectedPlayerId %>">Pick a different week</a>.</p>
+  <form method="get" class="card" style="max-width:420px;">
+    <input type="hidden" name="session" value="<%= session.id %>">
+    <input type="hidden" name="player" value="<%= selectedPlayerId %>">
+    <input type="hidden" name="assignment" value="<%= selectedAssignmentId %>">
+    <label for="target_player">Swap with</label>
+    <select name="target_player" id="target_player" onchange="this.form.submit()">
+      <option value="">Select…</option>
+      <% players.filter(function(p) { return p.id !== selectedPlayerId; }).forEach(function(p) { %>
+        <option value="<%= p.id %>" <%= selectedTargetPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+      <% }) %>
+    </select>
+  </form>
+
+  <% if (selectedTargetPlayerId) { %>
+    <% if (targetAssignments.length === 0) { %>
+      <p class="notice">No workable trade with that player right now — they may not have an upcoming week that's free for both of you (blackout dates, an already-locked week, or a slot already in flight all rule a week out).</p>
+    <% } else { %>
+      <table class="wide">
+        <thead><tr><th>Their date</th><th></th></tr></thead>
+        <tbody>
+          <% targetAssignments.forEach(function(a) { %>
+            <tr>
+              <td><%= fmtDate(a.week.match_date) %></td>
+              <td>
+                <form method="post" action="/swap/start">
+                  <input type="hidden" name="assignment_id" value="<%= selectedAssignmentId %>">
+                  <input type="hidden" name="target_assignment_id" value="<%= a.id %>">
+                  <button class="btn small green" type="submit">Propose this swap</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  <% } %>
+<% } %>
+<%- include('partials/footer') %>

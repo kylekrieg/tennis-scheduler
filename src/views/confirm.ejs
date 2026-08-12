@@ -1,0 +1,13 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>Confirm your spot</h1>
+  <p>Hi <%= assignment.name %> — you're scheduled to play doubles on <strong><%= fmtDate(week.match_date) %></strong> at <%= fmtTime(week.match_time) %>.</p>
+  <p class="muted">Current status: <span class="badge <%= assignment.status %>"><%= assignment.status.replace('_',' ') %></span></p>
+  <form method="post" action="/confirm/<%= token %>">
+    <div class="actions">
+      <button class="btn green" type="submit">Confirm you're playing</button>
+      <a class="btn red" href="/need-sub/<%= token %>">Need a sub instead?</a>
+    </div>
+  </form>
+</div>
+<%- include('partials/footer') %>

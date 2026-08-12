@@ -1,0 +1,169 @@
+<%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
+<h1><%= session.name %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %></h1>
+<p class="muted"><%= session.start_date %> – <%= session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %></p>
+
+<div class="actions">
+  <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a>
+  <a class="btn neutral" href="/admin/sessions/<%= session.id %>/blackouts">Manage blackout dates</a>
+  <a class="btn neutral" href="/admin/sessions/<%= session.id %>/stats">Stats</a>
+  <% if (session.archived_at) { %>
+    <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/unarchive">
+      <button class="btn neutral" type="submit">Unarchive</button>
+    </form>
+  <% } else { %>
+    <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/archive">
+      <button class="btn neutral" type="submit">Archive session</button>
+    </form>
+  <% } %>
+</div>
+<p class="muted" style="margin-top:8px;">Need to (re)generate the schedule? That's on <a href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a> — kept off this page on purpose so it's not a click away from the buttons you'll use every week.</p>
+
+<% if (conflicts.length) { %>
+  <h2>Scheduling conflicts</h2>
+  <% conflicts.forEach(function(c) { %>
+    <div class="flag error"><strong><%= c.type %>:</strong> <%= c.detail %></div>
+  <% }) %>
+<% } %>
+
+<% if (overlapConflicts.length) { %>
+  <h2>Overlapping session enrollment</h2>
+  <p class="muted">These players are also enrolled in another session that meets the same day of week with overlapping dates. This is advisory only — the scheduler doesn't auto-exclude anyone based on it, so nothing stops them from actually being scheduled in both. Setting a <strong>priority</strong> for each on the <a href="/admin/sessions/<%= session.id %>/edit">Edit session</a> roster just records who should probably yield if it turns into a real conflict — it's a note for whoever fixes it by hand, not an automatic rule. Check "Double-booked" below (or the player's own schedule) once both sessions are actually generated.</p>
+  <% overlapConflicts.forEach(function(c) { %>
+    <% var other = c.sessionA.id === session.id ? c.sessionB : c.sessionA; %>
+    <% var thisPriority = c.sessionA.id === session.id ? c.priorityA : c.priorityB; %>
+    <% var otherPriority = c.sessionA.id === session.id ? c.priorityB : c.priorityA; %>
+    <% var thisWins = (c.resolution === 'a_wins' && c.sessionA.id === session.id) || (c.resolution === 'b_wins' && c.sessionB.id === session.id); %>
+    <div class="flag error">
+      <%= c.player.name %> — also in <a href="/admin/sessions/<%= other.id %>"><strong><%= other.name %></strong></a> (<%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][other.match_day_of_week] %> <%= fmtTime(other.match_time) %>, <%= other.start_date %> – <%= other.end_date %>)
+      <br>
+      <span class="muted">
+        Priority here: <%= thisPriority != null ? thisPriority : 'not set' %>, priority there: <%= otherPriority != null ? otherPriority : 'not set' %> —
+        <% if (c.resolution === 'unresolved') { %>no priority set
+        <% } else if (c.resolution === 'tied') { %>priority tied
+        <% } else if (thisWins) { %>this session flagged as higher priority
+        <% } else { %><%= other.name %> flagged as higher priority<% } %>
+      </span>
+    </div>
+  <% }) %>
+<% } %>
+
+<% if (doubleBookings.length) { %>
+  <h2>Double-booked</h2>
+  <p class="muted">These players are actually assigned to play in two different sessions on the same date — not a risk, a confirmed conflict. Fix by reassigning one of the two slots below.</p>
+  <% doubleBookings.forEach(function(d) { %>
+    <div class="flag error">
+      <%= d.player.name %> is scheduled in both <a href="/admin/sessions/<%= d.sessionA.id %>"><strong><%= d.sessionA.name %></strong></a> and <a href="/admin/sessions/<%= d.sessionB.id %>"><strong><%= d.sessionB.name %></strong></a> on <%= fmtDate(d.date) %>.
+    </div>
+  <% }) %>
+<% } %>
+
+<h2>Weeks</h2>
+<% weekRows.forEach(function(r) { %>
+  <div class="session-card <%= r.week.needs_attention ? 'flagged' : '' %>" style="padding:12px 16px;margin-top:10px;">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;justify-content:space-between;">
+      <div>
+        <strong><%= r.week.match_date %></strong>
+        <% if (r.week.locked) { %><span class="muted">locked</span><% } %>
+        <% if (r.week.needs_attention) { %><span class="muted">⚠ <%= r.week.notes %></span><% } %>
+        <% if (r.openSubRequest) { %>
+          <span class="badge needs_sub">sub <%= r.openSubRequest.status %></span>
+          <% if (!r.week.locked) { %>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/clear-sub-request" style="display:inline;">
+              <button class="btn small neutral" type="submit">Clear sub request</button>
+            </form>
+          <% } %>
+        <% } %>
+        <% if (r.openSwapRequest) { %>
+          <span class="badge needs_sub">swap pending<%= r.openSwapRequest.nudged_at ? ' (nudged)' : '' %></span>
+          <% if (!r.week.locked) { %>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/cancel-swap" style="display:inline;">
+              <button class="btn small neutral" type="submit">Cancel swap request</button>
+            </form>
+          <% } %>
+        <% } %>
+      </div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="muted">Ball duty:</span>
+          <% if (r.week.locked) { %>
+            <%= r.ballDutyName || '—' %>
+          <% } else if (r.assignments.length === 0) { %>
+            <span class="muted">— no players scheduled</span>
+          <% } else { %>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/ball-duty" style="display:flex;align-items:center;gap:4px;">
+              <select name="player_id" style="width:auto;min-width:110px;padding:4px 6px;font-size:12px;">
+                <% r.assignments.forEach(function(a) { %><option value="<%= a.player_id %>" <%= a.player_id === r.week.ball_duty_player_id ? 'selected' : '' %>><%= a.name %></option><% }) %>
+              </select>
+              <button class="btn small neutral" type="submit">Set</button>
+            </form>
+          <% } %>
+        </div>
+        <% if (!r.week.locked) { %>
+          <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-reminders">
+            <button class="btn small neutral" type="submit">Send reminders now</button>
+          </form>
+        <% } else { %>
+          <span class="muted">completed</span>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (r.blackedOutNames.length) { %>
+      <div class="muted" style="margin-top:6px;font-size:12px;">Blacked out this week: <%= r.blackedOutNames.join(', ') %></div>
+    <% } %>
+
+    <div style="margin-top:8px;">
+      <% if (r.assignments.length === 0) { %>
+        <p class="muted">No players scheduled this week — use Add a player below once the roster's sorted out.</p>
+      <% } %>
+      <% r.assignments.forEach(function(a) { %>
+        <div class="player-row">
+          <span class="pname"><strong><%= a.name %></strong> <span class="muted">(<% if (multiCourt) { %>Court <%= a.court %> · <% } %>Team <%= a.team %>)</span><% if (a.is_sub) { %> <span class="muted">sub</span><% } %></span>
+          <% if (a.doubleBooked) { %>
+            <span class="badge double_booked">double booked</span>
+            <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= a.doubleBooked.name %></a></span>
+          <% } else { %>
+            <span class="badge <%= a.status %>"><%= a.status.replace('_',' ') %></span>
+          <% } %>
+          <% if (a.status === 'scheduled' && a.reminded) { %>
+            <span class="muted" style="font-size:11px;">(<%= a.followedUp ? 'reminded ×2' : 'reminded' %>)</span>
+          <% } %>
+          <% if (!r.week.locked) { %>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/reassign">
+              <input type="hidden" name="assignment_id" value="<%= a.id %>">
+              <select name="new_player_id">
+                <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= p.name %></option><% }) %>
+              </select>
+              <button class="btn small neutral" type="submit">Reassign</button>
+            </form>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/resend/<%= a.id %>">
+              <button class="btn small neutral" type="submit">Resend link</button>
+            </form>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/mark-confirmed/<%= a.id %>">
+              <button class="btn small neutral" type="submit">Mark confirmed</button>
+            </form>
+          <% } %>
+        </div>
+      <% }) %>
+      <% if (!r.week.locked && r.assignments.length < session.players_per_week) { %>
+        <%
+          var assignedIds = r.assignments.map(function (a) { return a.player_id; });
+          var addable = roster.filter(function (p) { return assignedIds.indexOf(p.id) === -1; });
+        %>
+        <% if (addable.length > 0) { %>
+          <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/add-player" style="margin-top:8px;">
+            <select name="player_id">
+              <option value="">Add a player…</option>
+              <% addable.forEach(function (p) { %>
+                <option value="<%= p.id %>"><%= p.name %><%= r.blackedOutNames.indexOf(p.name) !== -1 ? ' (blackout)' : '' %></option>
+              <% }) %>
+            </select>
+            <button class="btn small neutral" type="submit">Add to this week</button>
+          </form>
+          <p class="muted" style="margin-top:4px;font-size:12px;">Adds them as a manual/sub slot for this week only — doesn't change their season target. Anyone flagged "(blackout)" marked that date unavailable; adding them anyway is an admin override, same as Reassign.</p>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+<% }) %>
+<%- include('../partials/footer') %>

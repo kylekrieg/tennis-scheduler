@@ -1,0 +1,62 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>Activity Log</h1>
+<p class="muted">Every change made by an admin, most recent first (last 300). Any admin can do anything in this app (no permission tiers) — this is the record of who did what.</p>
+
+<form method="get" class="card wide" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+  <div style="flex:1;min-width:160px;">
+    <label for="q">Description contains</label>
+    <input type="text" name="q" id="q" value="<%= filters.q %>" placeholder="e.g. Reassigned">
+  </div>
+  <div style="min-width:160px;">
+    <label for="session">Session</label>
+    <select name="session" id="session">
+      <option value="">All</option>
+      <% sessions.forEach(function(s) { %>
+        <option value="<%= s.id %>" <%= String(filters.session) === String(s.id) ? 'selected' : '' %>><%= s.name %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div style="min-width:160px;">
+    <label for="action">Action</label>
+    <select name="action" id="action">
+      <option value="">All</option>
+      <% actions.forEach(function(a) { %>
+        <option value="<%= a %>" <%= filters.action === a ? 'selected' : '' %>><%= a %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div style="min-width:160px;">
+    <label for="admin">Admin</label>
+    <select name="admin" id="admin">
+      <option value="">All</option>
+      <% admins.forEach(function(name) { %>
+        <option value="<%= name %>" <%= filters.admin === name ? 'selected' : '' %>><%= name %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div><button class="btn neutral" type="submit">Filter</button></div>
+  <% if (filters.q || filters.session || filters.action || filters.admin) { %><div><a class="btn neutral" href="/admin/activity-log">Clear</a></div><% } %>
+</form>
+
+<table class="wide">
+  <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Description</th><th>Session</th></tr></thead>
+  <tbody>
+    <% rows.forEach(function(r) { %>
+      <tr>
+        <td class="muted"><%= r.created_at %></td>
+        <td><%= r.admin_name %></td>
+        <td><span class="badge scheduled"><%= r.action %></span></td>
+        <td><%= r.description %></td>
+        <td class="muted">
+          <% if (r.session_id && r.session_name) { %>
+            <a href="/admin/sessions/<%= r.session_id %>"><%= r.session_name %></a>
+          <% } else if (r.session_id) { %>
+            (deleted session)
+          <% } else { %>—<% } %>
+        </td>
+      </tr>
+    <% }) %>
+    <% if (rows.length === 0) { %><tr><td colspan="5" class="muted">No activity matches this filter.</td></tr><% } %>
+  </tbody>
+</table>
+<%- include('../partials/footer') %>

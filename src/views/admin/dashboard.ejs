@@ -1,0 +1,42 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Dashboard</h1>
+<div class="actions"><a class="btn green" href="/admin/sessions/new">+ New session</a></div>
+
+<% flags.forEach(function(f) { %>
+  <div class="session-card">
+    <h3><a href="/admin/sessions/<%= f.session.id %>"><%= f.session.name %></a> <span class="badge scheduled"><%= f.session.status %></span></h3>
+    <p class="muted"><%= f.session.start_date %> – <%= f.session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][f.session.match_day_of_week] %> <%= fmtTime(f.session.match_time) %></p>
+    <div class="flags">
+      <% if (f.conflicts.length) { %><div class="flag error"><%= f.conflicts.length %> scheduling conflict(s) — open the session to resolve.</div><% } %>
+      <% if (f.needsAttention > 0) { %><div class="flag error"><%= f.needsAttention %> week(s) need attention — short-staffed or otherwise flagged, open the session to review.</div><% } %>
+      <% if (!f.session.reminders_enabled) { %><div class="flag">Automatic reminders are off for this session.</div><% } %>
+      <% if (f.unconfirmed > 0) { %><div class="flag"><%= f.unconfirmed %> upcoming assignment(s) not yet confirmed.</div><% } %>
+      <% if (f.unfilledSubs > 0) { %><div class="flag"><%= f.unfilledSubs %> unfilled sub request(s).</div><% } %>
+      <% if (f.unfilledBallDuty > 0) { %><div class="flag"><%= f.unfilledBallDuty %> upcoming week(s) missing ball duty.</div><% } %>
+      <% if (f.overlapping > 0) { %><div class="flag error"><%= f.overlapping %> player(s) enrolled in another overlapping session — the scheduler won't prevent a double-booking on its own, open the session to check.</div><% } %>
+      <% if (f.doubleBooked > 0) { %><div class="flag error"><%= f.doubleBooked %> player(s) actually double-booked into another session on the same date — open the session to fix.</div><% } %>
+      <% if (f.staleSwaps > 0) { %><div class="flag"><%= f.staleSwaps %> pending swap request(s) nudged but still unanswered — open the session to check or cancel.</div><% } %>
+      <% if (!f.conflicts.length && f.needsAttention === 0 && f.session.reminders_enabled && f.unconfirmed === 0 && f.unfilledSubs === 0 && f.unfilledBallDuty === 0 && f.overlapping === 0 && f.doubleBooked === 0 && f.staleSwaps === 0) { %><p class="muted">All clear.</p><% } %>
+    </div>
+  </div>
+<% }) %>
+<% if (flags.length === 0) { %><p class="muted">No sessions yet.</p><% } %>
+
+<% if (archivedSessions.length > 0) { %>
+  <h2 style="margin-top:32px;">Archived sessions</h2>
+  <p class="muted">Hidden from the list above and from players — nothing here was deleted.</p>
+  <% archivedSessions.forEach(function(s) { %>
+    <div class="session-card" style="opacity:0.75;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <a href="/admin/sessions/<%= s.id %>"><%= s.name %></a> <span class="badge scheduled"><%= s.status %></span>
+          <p class="muted" style="margin:4px 0 0;"><%= s.start_date %> – <%= s.end_date %></p>
+        </div>
+        <form method="post" action="/admin/sessions/<%= s.id %>/unarchive">
+          <button class="btn small neutral" type="submit">Unarchive</button>
+        </form>
+      </div>
+    </div>
+  <% }) %>
+<% } %>
+<%- include('../partials/footer') %>

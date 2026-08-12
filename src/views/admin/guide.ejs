@@ -1,0 +1,45 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>Admin Guide</h1>
+<p class="muted">The whole process, start to finish, for running a session — not visible to players, since it lives here under Admin. See the player-facing <a href="/help">How It Works</a> page for what they see on their end.</p>
+
+<div class="card wide">
+  <strong>Jump to:</strong>
+  <ul style="margin:8px 0 0; padding-left:20px;">
+    <li><a href="#new-session">1. Create a new session</a></li>
+    <li><a href="#roster">2. Build the roster &amp; set targets</a></li>
+    <li><a href="#blackouts">3. Collect blackout dates</a></li>
+    <li><a href="#schedule">4. Schedule the players</a></li>
+    <li><a href="#week-to-week">5. Running it week to week</a></li>
+    <li><a href="#monitoring">6. Keeping an eye on things</a></li>
+    <li><a href="#multi-session">7. Running more than one session at once</a></li>
+    <li><a href="#wrapping-up">8. Wrapping up a session</a></li>
+  </ul>
+</div>
+
+<h2 id="new-session">1. Create a new session</h2>
+<p>From the <a href="/admin">Dashboard</a>, click <strong>+ New session</strong>. Fill in the match day of week, match time, reminder time/lead, players per week (must be a multiple of 4 — 8 for two courts, 12 for three), and the club name / court info that'll show up in every email and on every player-facing page for this session. A new session starts in <strong>draft</strong> — nothing player-facing exists yet until you build the roster and click Schedule.</p>
+
+<h2 id="roster">2. Build the roster &amp; set targets</h2>
+<p>On the same Edit page, add each player and their <strong>target games</strong> for the season — these have to sum to exactly <em>(number of match weeks) &times; (players per week)</em>; the page does this math live for you as you type so you can see whether it adds up before saving. New players get created from <a href="/admin/players">Players</a> first if they're not already in the system — a player is shared across every session, so someone already in another session just needs enrolling here, not re-creating. <strong>Priority</strong> is optional and only matters if this player is also enrolled in another session on the same day of week with overlapping dates — it's a note for whoever resolves a real conflict by hand, not something the scheduler enforces automatically (see §7 below).</p>
+
+<h2 id="blackouts">3. Collect blackout dates</h2>
+<p>Before running the schedule, give players a chance to mark dates they already know they can't make. Go to the session's <strong>Manage blackout dates</strong> page and click <strong>Notify roster</strong> — this emails everyone currently enrolled a direct link to go check off their dates, pre-filled with their own name so there's no dropdown mix-up. This is a manual, repeatable action (not automatic on session creation), since you may still be adjusting the roster right after creating it. Players can keep updating their own blackout dates right up until you schedule — after that, the page locks and they switch to <strong>Request a Sub</strong> for anything that comes up later.</p>
+
+<h2 id="schedule">4. Schedule the players</h2>
+<p>Once the roster and blackout dates are ready, go to the session's Edit page and click <strong>Schedule these players</strong>. This runs the scheduling engine against whatever's currently saved — every player hits their exact target, partner pairings get spread out evenly, and ball duty rotates proportional to games played. If something can't work out (targets don't add up, a week doesn't have enough available players, a player's own blackout dates make their target impossible), you'll get a specific, actionable message instead of a silent failure — most of these degrade gracefully (a short-staffed week gets flagged and filled with who's available, rather than blocking the rest of the season) rather than requiring you to fix everything by hand before anything schedules. Re-running this later (after a roster change, or once blackout dates settle) only touches open weeks — anything already played stays locked and untouched.</p>
+
+<h2 id="week-to-week">5. Running it week to week</h2>
+<p>Most weeks need nothing from you — reminders, follow-ups, and sub-request fan-outs all run automatically in the background. When something does need a human: the session detail page lets you <strong>Reassign</strong> a slot, <strong>Mark confirmed</strong> on someone's behalf, edit <strong>ball duty</strong>, or <strong>Add a player</strong> to a week that's short-staffed. A player's own self-service actions (blackout dates, Request a Sub, Swap a Week) don't need you at all unless something gets stuck — a sub request nobody claims, or a swap nobody responds to, both get flagged for you automatically (see §6).</p>
+
+<h2 id="monitoring">6. Keeping an eye on things</h2>
+<p>The <a href="/admin/status">Status page</a> is the single best place to check — it flattens everything that needs a human across every session (unfilled sub requests, short-staffed weeks, unconfirmed players, stale swaps, double-bookings) into one list, plus a preview of what the reminder system is about to do on its own over the next several days, so you can confirm it's actually running without waiting for match day. The <a href="/admin">Dashboard</a> shows the same flags per-session. The <a href="/admin/activity-log">Activity Log</a> and <a href="/admin/email-log">Email Log</a> give you a full history of who changed what and every email the app has sent, in case a player says "I never got that."</p>
+<img class="screenshot" src="/img/admin-guide/dashboard.png" alt="Admin dashboard showing three session cards, two of them with red-bordered flags for players enrolled in or actually double-booked into another overlapping session.">
+<p class="screenshot-caption">Each session card on the dashboard flags its own trouble spots directly — here, two sessions sharing players on overlapping dates. Click into the session to fix it.</p>
+
+<h2 id="multi-session">7. Running more than one session at once</h2>
+<p>Multiple concurrent sessions are fully supported — different clubs, different courts, or a first-half/second-half split. If the same player ends up enrolled in two sessions that meet the same day of week with overlapping dates, that's flagged for you as a risk the moment you save the roster. It's a warning only — the scheduler doesn't automatically prevent it — so it's worth actually checking whether the two schedules end up colliding once both are generated. If a player really does end up double-booked, it's flagged everywhere: the session detail page, dashboard, Status page, and — just as importantly — directly to the player themselves on their own schedule, PDF, and calendar, so they can sort it out (request a sub or a swap) without needing you to catch it first.</p>
+
+<h2 id="wrapping-up">8. Wrapping up a session</h2>
+<p>Once a session's over, <strong>Archive</strong> it from the session detail page — this hides it from the dashboard and every player-facing page and stops all further reminder emails, without deleting anything; you can always unarchive it later to look something up. If a session was only ever test/dummy data, <strong>Delete</strong> it instead from the Edit page (permanent, with confirmation) — this never deletes the players themselves, since they're shared across sessions.</p>
+
+<%- include('../partials/footer') %>
