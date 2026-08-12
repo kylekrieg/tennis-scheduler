@@ -7,7 +7,9 @@ const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { findAdminByPassword, hashPassword } = require('../services/auth');
 const { getTimezone, setTimezone } = require('../services/settings');
+const { zonedTimeToUtc } = require('../services/tz');
 const { runScheduler, ensureWeeksExist } = require('../services/scheduleRun');
+const adhocFlow = require('../services/adhocFlow');
 const { generateRawToken, hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const email = require('../services/email');
@@ -84,7 +86,25 @@ router.use(requireAdmin);
 // --- Dashboard ----------------------------------------------------------
 
 router.get('/', (req, res) => {
-  const sessions = db.prepare('SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY start_date DESC').all();
+  const sessions = db.prepare("SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' ORDER BY start_date DESC").all();
+  // Ad-hoc sessions have none of the flags below (no targets, no blackout,
+  // no confirm/sub flow) — a simpler, separate section instead of trying to
+  // force them through the same flags shape. See "Ad-hoc sessions" in
+  // CLAUDE.md.
+  const adhocSessions = db
+    .prepare("SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'adhoc' ORDER BY start_date DESC")
+    .all()
+    .map((s) => {
+      const upcomingWeeks = db
+        .prepare(`SELECT * FROM weeks WHERE session_id = ? AND locked = 0 AND match_date >= date('now') ORDER BY match_date LIMIT 4`)
+        .all(s.id);
+      const weekSummaries = upcomingWeeks.map((w) => {
+        const groups = adhocFlow.courtGroupsForWeek(w.id);
+        const finalized = db.prepare('SELECT COUNT(*) as n FROM week_assignments WHERE week_id = ?').get(w.id).n > 0;
+        return { week: w, courts: groups.courts.length, waiting: groups.waiting.length, finalized };
+      });
+      return { session: s, weekSummaries };
+    });
   // Archived sessions aren't deleted — just hidden from the main list above.
   // Shown in their own muted section at the bottom so they're still findable
   // (to view stats/history or to unarchive), without cluttering the primary
@@ -171,7 +191,7 @@ router.get('/', (req, res) => {
     return { session: s, unconfirmed, unfilledSubs, unfilledBallDuty, needsAttention, conflicts, overlapping, doubleBooked, staleSwaps };
   });
 
-  res.render('admin/dashboard', { title: 'Admin', flags, archivedSessions, flashMsg: popFlash(req) });
+  res.render('admin/dashboard', { title: 'Admin', flags, adhocSessions, archivedSessions, flashMsg: popFlash(req) });
 });
 
 // Admin-only process walkthrough — static content, no DB queries needed. The
@@ -414,8 +434,54 @@ function invalidPlayerFields(b) {
   return null;
 }
 
+// Ad-hoc sessions (session_type = 'adhoc') have no target-games math to
+// validate, but do have three lead-hour fields (see "Ad-hoc sessions" in
+// CLAUDE.md) that need to count down in the same order Kyle actually runs
+// them — invite, then a reminder if sign-ups are still short, then the
+// final roster/"not enough" email — or the timing wouldn't make sense
+// (e.g. a "reminder" that fires after the "final" email already went out).
+function invalidAdhocLeadHours(b) {
+  const invite = Number(b.adhoc_invite_lead_hours);
+  const reminder = Number(b.adhoc_reminder_lead_hours);
+  const final = Number(b.adhoc_final_lead_hours);
+  if (![invite, reminder, final].every((n) => Number.isInteger(n) && n > 0)) {
+    return 'Ad-hoc email timing must be whole numbers of hours before match time, greater than 0.';
+  }
+  if (!(invite > reminder && reminder > final)) {
+    return 'Ad-hoc email timing must count down toward match time: invite lead time > reminder lead time > final roster lead time (e.g. 56 / 30 / 24).';
+  }
+  return null;
+}
+
+// Ad-hoc roster management is deliberately simpler than saveRoster() below —
+// just "who's in the pool that gets invited," no target_games/priority math
+// (session_players.target_games is stored as 0 and ignored for adhoc rows;
+// the column stays NOT NULL so it's set rather than left out). Can be edited
+// at any time, unlike the regular roster's draft-only enrollment window —
+// ad-hoc has no draft/scheduled lock-in step to begin with.
+function saveAdhocRoster(sessionId, body) {
+  const playerIds = new Set([].concat(body.adhoc_player_id || []).map(Number).filter(Boolean));
+  const existing = new Set(
+    db.prepare('SELECT player_id FROM session_players WHERE session_id = ?').all(sessionId).map((r) => r.player_id)
+  );
+  for (const pid of playerIds) {
+    if (!existing.has(pid)) {
+      db.prepare('INSERT INTO session_players (session_id, player_id, target_games, priority) VALUES (?, ?, 0, NULL)').run(
+        sessionId,
+        pid
+      );
+    }
+  }
+  for (const pid of existing) {
+    if (!playerIds.has(pid)) {
+      db.prepare('DELETE FROM session_players WHERE session_id = ? AND player_id = ?').run(sessionId, pid);
+    }
+  }
+}
+
 router.post('/sessions', (req, res) => {
   const b = req.body;
+  const sessionType = b.session_type === 'adhoc' ? 'adhoc' : 'regular';
   const ppwError = invalidPlayersPerWeek(b.players_per_week || 4);
   if (ppwError) {
     flash(req, ppwError, 'error');
@@ -431,11 +497,19 @@ router.post('/sessions', (req, res) => {
     flash(req, dateError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  if (sessionType === 'adhoc') {
+    const leadError = invalidAdhocLeadHours(b);
+    if (leadError) {
+      flash(req, leadError, 'error');
+      return res.redirect('/admin/sessions/new');
+    }
+  }
   const info = db
     .prepare(
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
-        reminder_days_before, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        reminder_days_before, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
+        session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -451,13 +525,32 @@ router.post('/sessions', (req, res) => {
       Number(b.lookahead_weeks || 4),
       b.club_name || '',
       b.court_info || '',
-      b.color || null
+      b.color || null,
+      sessionType,
+      Number(b.adhoc_invite_lead_hours || 56),
+      Number(b.adhoc_reminder_lead_hours || 30),
+      Number(b.adhoc_final_lead_hours || 24),
+      // Ad-hoc has no "Schedule these players" step to promote it out of
+      // draft — it's ready to start inviting the moment it's saved, so it
+      // skips straight to 'active'. Regular sessions keep starting 'draft'.
+      sessionType === 'adhoc' ? 'active' : 'draft'
     );
   const sessionId = info.lastInsertRowid;
-  saveRoster(sessionId, b);
-  logActivity(req, { action: 'session.create', description: `Created session "${b.name}"`, sessionId });
+  if (sessionType === 'adhoc') {
+    saveAdhocRoster(sessionId, b);
+  } else {
+    saveRoster(sessionId, b);
+  }
+  logActivity(req, {
+    action: 'session.create',
+    description: `Created ${sessionType === 'adhoc' ? 'ad-hoc ' : ''}session "${b.name}"`,
+    sessionId,
+  });
   const overlapWarning = overlapWarningText(sessionId);
-  const baseMsg = 'Session created. Add blackout dates, then click "Schedule these players" when ready.';
+  const baseMsg =
+    sessionType === 'adhoc'
+      ? 'Ad-hoc session created. Sign-up invites go out automatically before each match based on the timing you set — nothing else to click.'
+      : 'Session created. Add blackout dates, then click "Schedule these players" when ready.';
   flash(req, overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg, overlapWarning ? 'error' : 'ok');
   res.redirect(`/admin/sessions/${sessionId}`);
 });
@@ -565,6 +658,13 @@ router.get('/sessions/:id/edit', (req, res) => {
 
 router.post('/sessions/:id', (req, res) => {
   const b = req.body;
+  const existingSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!existingSession) return res.status(404).send('Session not found');
+  // session_type is fixed for the life of a session (see "Ad-hoc sessions"
+  // in CLAUDE.md) — read from the DB, never from the submitted form, so
+  // there's no path to flip a session's type after creation.
+  const sessionType = existingSession.session_type;
+
   const ppwError = invalidPlayersPerWeek(b.players_per_week || 4);
   if (ppwError) {
     flash(req, ppwError, 'error');
@@ -580,9 +680,17 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, dateError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  if (sessionType === 'adhoc') {
+    const leadError = invalidAdhocLeadHours(b);
+    if (leadError) {
+      flash(req, leadError, 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+    }
+  }
   db.prepare(
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
-     reminder_days_before=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=? WHERE id=?`
+     reminder_days_before=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
+     adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -598,12 +706,22 @@ router.post('/sessions/:id', (req, res) => {
     b.club_name || '',
     b.court_info || '',
     b.color || null,
+    Number(b.adhoc_invite_lead_hours || 56),
+    Number(b.adhoc_reminder_lead_hours || 30),
+    Number(b.adhoc_final_lead_hours || 24),
     req.params.id
   );
-  saveRoster(req.params.id, b);
+  if (sessionType === 'adhoc') {
+    saveAdhocRoster(req.params.id, b);
+  } else {
+    saveRoster(req.params.id, b);
+  }
   logActivity(req, { action: 'session.update', description: `Updated session "${b.name}" (dates, roster, or settings)`, sessionId: Number(req.params.id) });
   const overlapWarning = overlapWarningText(req.params.id);
-  const baseMsg = 'Session updated. Click "Schedule these players" to (re)generate the schedule for open weeks.';
+  const baseMsg =
+    sessionType === 'adhoc'
+      ? 'Ad-hoc session updated.'
+      : 'Session updated. Click "Schedule these players" to (re)generate the schedule for open weeks.';
   flash(req, overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg, overlapWarning ? 'error' : 'ok');
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
@@ -708,6 +826,45 @@ router.post('/sessions/:id/delete', (req, res) => {
 router.get('/sessions/:id', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
+
+  // Ad-hoc sessions have a completely different shape (no targets, no
+  // blackout dates, no confirm/sub flow) — rather than threading isAdhoc
+  // conditionals through the already-large regular session_detail.ejs,
+  // this branches to its own dedicated view+route data. See
+  // "Ad-hoc sessions" in CLAUDE.md.
+  if (session.session_type === 'adhoc') {
+    ensureWeeksExist(session.id);
+    const weeks = db.prepare('SELECT * FROM weeks WHERE session_id = ? ORDER BY match_date').all(session.id);
+    const roster = db
+      .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? AND p.active = 1 ORDER BY p.name`)
+      .all(session.id);
+    const tz = getTimezone();
+    const weekRows = weeks.map((w) => {
+      const groups = adhocFlow.courtGroupsForWeek(w.id);
+      const finalized = db.prepare('SELECT COUNT(*) as n FROM week_assignments WHERE week_id = ?').get(w.id).n > 0;
+      const finalizedAssignments = finalized
+        ? db
+            .prepare(
+              `SELECT wa.*, p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
+            )
+            .all(w.id)
+        : [];
+      let matchAt = null;
+      try {
+        matchAt = zonedTimeToUtc(w.match_date, session.match_time, tz);
+      } catch (e) {
+        matchAt = null;
+      }
+      return { week: w, ...groups, finalized, finalizedAssignments, matchAt };
+    });
+    return res.render('admin/adhoc_session_detail', {
+      title: session.name,
+      session,
+      roster,
+      weekRows,
+      flashMsg: popFlash(req),
+    });
+  }
 
   const weeks = db.prepare('SELECT * FROM weeks WHERE session_id = ? ORDER BY match_date').all(session.id);
   const roster = db
@@ -1219,6 +1376,68 @@ router.post('/sessions/:id/blackouts', (req, res) => {
   });
   flash(req, 'Blackout dates updated.');
   res.redirect(`/admin/sessions/${sessionId}/blackouts?player=${playerId}`);
+});
+
+// --- Ad-hoc sign-up manual overrides -----------------------------------
+//
+// Deliberately narrower than the regular session's Reassign flow: covers
+// "someone told me in person they're in" (before a court fills — same
+// self-service-plus-admin-override shape as everything else in this app)
+// and undoing that. Once a week is finalized (real week_assignments rows
+// exist), editing who's on a court goes through no dedicated UI yet —
+// noted as a gap in CLAUDE.md rather than built here, given how narrow the
+// need is (a finalized ad-hoc week is a firm pickup game, not something
+// that gets reshuffled the way a season-long roster does).
+
+router.post('/sessions/:id/weeks/:weekId/adhoc/signup', (req, res) => {
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(req.params.weekId);
+  if (!week) return res.status(404).send('Week not found');
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(req.body.player_id) || 0);
+  if (!player) {
+    flash(req, 'Pick a player to sign up.', 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  let signupRow = db
+    .prepare('SELECT * FROM adhoc_signups WHERE week_id = ? AND player_id = ?')
+    .get(week.id, player.id);
+  if (!signupRow) {
+    const raw = generateRawToken();
+    db.prepare('INSERT INTO adhoc_signups (week_id, player_id, token) VALUES (?, ?, ?)').run(week.id, player.id, hashToken(raw));
+    signupRow = db.prepare('SELECT * FROM adhoc_signups WHERE week_id = ? AND player_id = ?').get(week.id, player.id);
+  }
+  if (!signupRow.signed_up_at) {
+    db.prepare("UPDATE adhoc_signups SET signed_up_at = datetime('now') WHERE id = ?").run(signupRow.id);
+  }
+  logActivity(req, {
+    action: 'adhoc.manual_signup',
+    description: `Manually signed up ${player.name} for ${week.match_date}`,
+    sessionId: Number(req.params.id),
+  });
+  flash(req, `${player.name} is signed up for ${week.match_date}.`);
+  res.redirect(`/admin/sessions/${req.params.id}`);
+});
+
+router.post('/sessions/:id/weeks/:weekId/adhoc/withdraw', (req, res) => {
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(req.params.weekId);
+  if (!week) return res.status(404).send('Week not found');
+  const alreadyFinalized = db.prepare('SELECT COUNT(*) as n FROM week_assignments WHERE week_id = ?').get(week.id).n > 0;
+  if (alreadyFinalized) {
+    flash(req, 'This week already finalized — withdrawing a sign-up here no longer has anything to do.', 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(req.body.player_id) || 0);
+  if (!player) {
+    flash(req, 'Pick a player to withdraw.', 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  db.prepare('UPDATE adhoc_signups SET signed_up_at = NULL WHERE week_id = ? AND player_id = ?').run(week.id, player.id);
+  logActivity(req, {
+    action: 'adhoc.manual_withdraw',
+    description: `Withdrew ${player.name} from ${week.match_date}`,
+    sessionId: Number(req.params.id),
+  });
+  flash(req, `${player.name} withdrawn from ${week.match_date}.`);
+  res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
 // --- Stats ------------------------------------------------------------

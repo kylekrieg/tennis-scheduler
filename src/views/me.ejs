@@ -48,7 +48,7 @@
               </td>
               <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
               <td>
-                <% if (!a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
+                <% if (card.session.session_type !== 'adhoc' && !a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                   <form method="post" action="/request-sub/start" style="display:inline;">
                     <input type="hidden" name="assignment_id" value="<%= a.id %>">
                     <button class="btn small red" type="submit">Need a sub</button>

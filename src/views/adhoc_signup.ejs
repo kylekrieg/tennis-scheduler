@@ -1,0 +1,16 @@
+<%- include('partials/header', {title}) %>
+<div class="card" style="border-left:6px solid <%= sessionColor(session) %>;">
+  <h1>Want in?</h1>
+  <p><%= sessionPublicLabel(session) %> &mdash; <strong><%= fmtDate(signup.match_date) %></strong> at <%= fmtTime(session.match_time) %>.</p>
+  <p class="muted">First come, first served &mdash; the first 4 to sign up get the first court, the next 4 get a second court, and so on. <%= totalSignedUp %> player<%= totalSignedUp === 1 ? '' : 's' %> signed up so far.</p>
+  <% if (signup.signed_up_at) { %>
+    <p class="notice">You're already signed up for this one &mdash; no need to do anything else.</p>
+  <% } else { %>
+    <form method="post" action="/adhoc-signup/<%= token %>">
+      <div class="actions">
+        <button class="btn green" type="submit">I'm in</button>
+      </div>
+    </form>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

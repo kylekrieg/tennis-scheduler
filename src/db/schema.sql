@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   color               TEXT,    -- optional hex color (e.g. '#0969da') the admin can set to visually tell same-club/same-time sessions apart; NULL falls back to a deterministic palette pick keyed by session id (see email.js's sessionColor())
   schedule_conflicts  TEXT,    -- JSON array of conflict objects from the last "Schedule these players" run, if infeasible
   archived_at         TEXT,    -- NULL = active/visible; set = hidden from the dashboard and public session picker, but not deleted (see "Archiving" in CLAUDE.md)
+  session_type        TEXT NOT NULL DEFAULT 'regular', -- 'regular' | 'adhoc' — see "Ad-hoc sessions" in CLAUDE.md. Fixed for the life of a session; everything downstream (session detail page, dashboard section, cron behavior, which emails fire) branches on this.
+  adhoc_invite_lead_hours   INTEGER NOT NULL DEFAULT 56, -- adhoc only: hours before match_time the first sign-up invite goes out to the whole roster
+  adhoc_reminder_lead_hours INTEGER NOT NULL DEFAULT 30, -- adhoc only: hours before match_time a reminder goes to whoever on the roster hasn't signed up yet, but only if there's currently an incomplete trailing group (not a multiple of 4)
+  adhoc_final_lead_hours    INTEGER NOT NULL DEFAULT 24, -- adhoc only: hours before match_time full courts get a "here's your court" email and any leftover incomplete group gets a "not enough signed up" email
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -172,7 +176,7 @@ CREATE TABLE IF NOT EXISTS email_log (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   to_email        TEXT NOT NULL,
   subject         TEXT NOT NULL,
-  category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation
+  category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation | adhoc_invite | adhoc_reminder | adhoc_final | adhoc_not_enough
   status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only)
   sent_at         TEXT NOT NULL DEFAULT (datetime('now')),
   related_week_id INTEGER REFERENCES weeks(id)
@@ -196,6 +200,30 @@ CREATE TABLE IF NOT EXISTS admin_activity_log (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_log_session ON admin_activity_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON admin_activity_log(created_at);
+
+-- Ad-hoc pickup-game sign-ups (session_type = 'adhoc' — see CLAUDE.md). One
+-- row per (week, roster player), created up front when the T-56h invite goes
+-- out so the invite list and the sign-up state live in the same place.
+-- `signed_up_at` is NULL until the player clicks their "I'm in" link — the
+-- timestamp IS the first-come-first-served order, so court assignment is
+-- always `ORDER BY signed_up_at` chunked into groups of 4, computed live
+-- (see adhocFlow.js's courtGroupsForWeek()) rather than stored anywhere.
+-- Reuses the same hashed-token pattern as every other emailed link in this
+-- app (see tokens.js) — only the SHA-256 hash is stored, the raw value only
+-- ever exists in the outbound email.
+CREATE TABLE IF NOT EXISTS adhoc_signups (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_id             INTEGER NOT NULL REFERENCES weeks(id) ON DELETE CASCADE,
+  player_id           INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  token               TEXT UNIQUE NOT NULL,
+  reminder_token      TEXT UNIQUE, -- a second, additionally-valid token minted only if/when the T-30h stragglers reminder fires (see adhocFlow.js's mintReminderToken()) — the original invite's raw token can't be reused since only its hash is ever stored, same "don't kill a link that's already out" reasoning as swap_requests.nudge_token. NULL until a reminder is actually sent.
+  invited_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  signed_up_at        TEXT,   -- NULL = hasn't clicked "I'm in" yet
+  reminded_at         TEXT,   -- set once the T-30h stragglers-only reminder has gone out to this player for this week
+  result_notified_at  TEXT,   -- set once the T-24h final email (their court, or "not enough signed up") has gone out
+  UNIQUE(week_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_adhoc_signups_week ON adhoc_signups(week_id);
 
 CREATE INDEX IF NOT EXISTS idx_weeks_session ON weeks(session_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_week ON week_assignments(week_id);

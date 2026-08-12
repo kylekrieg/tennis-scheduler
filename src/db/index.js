@@ -90,6 +90,19 @@ if ((sessionsGotClubCol || sessionsGotCourtCol) && hasColumn('app_settings', 'cl
 
 ensureColumn('sessions', 'color', 'TEXT');
 
+// Ad-hoc pickup-game sessions (Kyle, 2026-08-12) — a second session shape
+// alongside the original fairness-scheduled "regular" one. Every existing
+// row predates this, so 'regular' is exactly the right default to preserve
+// current behavior; the three lead-hour fields default to the exact routine
+// Kyle described (56h initial invite, 30h stragglers-only reminder, 24h
+// final roster/"not enough" email) so a freshly-created ad-hoc session works
+// out of the box without the admin having to know to configure them. See
+// "Ad-hoc sessions" in CLAUDE.md and adhocFlow.js.
+ensureColumn('sessions', 'session_type', "TEXT NOT NULL DEFAULT 'regular'");
+ensureColumn('sessions', 'adhoc_invite_lead_hours', 'INTEGER NOT NULL DEFAULT 56');
+ensureColumn('sessions', 'adhoc_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 30');
+ensureColumn('sessions', 'adhoc_final_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
+
 // One-time seed: the app used to support exactly one admin, via
 // ADMIN_PASSWORD_HASH in .env. Now that logins live in the `admins` table
 // (so more than one person can have their own password), an upgrade with no

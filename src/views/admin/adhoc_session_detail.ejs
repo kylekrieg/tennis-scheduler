@@ -1,0 +1,65 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <h1 style="margin-bottom:0;"><%= session.name %> <span class="badge scheduled">ad-hoc</span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %></h1>
+  <div class="actions">
+    <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit / roster</a>
+    <% if (!session.archived_at) { %>
+      <form method="post" action="/admin/sessions/<%= session.id %>/archive" style="display:inline;"><button class="btn neutral" type="submit">Archive</button></form>
+    <% } else { %>
+      <form method="post" action="/admin/sessions/<%= session.id %>/unarchive" style="display:inline;"><button class="btn neutral" type="submit">Unarchive</button></form>
+    <% } %>
+  </div>
+</div>
+<p class="muted">
+  <%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %>
+  &middot; Invite <%= session.adhoc_invite_lead_hours %>h before &middot; Reminder <%= session.adhoc_reminder_lead_hours %>h before (if short) &middot; Final roster <%= session.adhoc_final_lead_hours %>h before
+</p>
+<p class="muted">Roster: <%= roster.length %> player(s) currently invited to every match. First-come-first-served — 4 sign-ups locks in a court immediately, no waiting for any deadline. See <a href="/help#double-booked">How It Works</a> for what players see.</p>
+
+<% weekRows.forEach(function (wr) { %>
+  <div class="session-card">
+    <h3><%= fmtDate(wr.week.match_date) %><% if (wr.week.locked) { %> <span class="badge subbed_out">locked</span><% } %></h3>
+
+    <% if (wr.finalized) { %>
+      <p class="muted">Finalized &mdash; courts below are the real, materialized schedule.</p>
+      <% var byCourt = {}; wr.finalizedAssignments.forEach(function (a) { (byCourt[a.court] = byCourt[a.court] || []).push(a); }); %>
+      <% Object.keys(byCourt).forEach(function (courtNum) { %>
+        <p><strong>Court <%= courtNum %>:</strong> <%= byCourt[courtNum].map(function (a) { return a.name; }).join(', ') %></p>
+      <% }) %>
+    <% } else { %>
+      <% if (wr.courts.length === 0 && wr.waiting.length === 0 && wr.notSignedUp.length === 0) { %>
+        <p class="muted">Invite hasn't gone out yet &mdash; goes out automatically <%= session.adhoc_invite_lead_hours %> hours before match time.</p>
+      <% } else { %>
+        <% wr.courts.forEach(function (group, idx) { %>
+          <p><strong>Court <%= idx + 1 %> (filled):</strong> <%= group.map(function (r) { return r.name; }).join(', ') %></p>
+        <% }) %>
+        <% if (wr.waiting.length > 0) { %>
+          <p><strong>Waiting for a full court (<%= wr.waiting.length %> of 4):</strong> <%= wr.waiting.map(function (r) { return r.name; }).join(', ') %></p>
+        <% } %>
+        <% if (wr.notSignedUp.length > 0) { %>
+          <p class="muted">Invited, not yet signed up: <%= wr.notSignedUp.map(function (r) { return r.name; }).join(', ') %></p>
+        <% } %>
+      <% } %>
+
+      <div class="actions" style="margin-top:8px;">
+        <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/adhoc/signup" style="display:inline-flex;gap:6px;align-items:center;">
+          <select name="player_id" style="width:auto;">
+            <option value="">Sign up a player…</option>
+            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+          </select>
+          <button class="btn small green" type="submit">Sign up</button>
+        </form>
+        <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/adhoc/withdraw" style="display:inline-flex;gap:6px;align-items:center;">
+          <select name="player_id" style="width:auto;">
+            <option value="">Withdraw a player…</option>
+            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+          </select>
+          <button class="btn small red" type="submit">Withdraw</button>
+        </form>
+      </div>
+    <% } %>
+  </div>
+<% }) %>
+<% if (weekRows.length === 0) { %><p class="muted">No match weeks in this session's date range yet.</p><% } %>
+
+<%- include('../partials/footer') %>

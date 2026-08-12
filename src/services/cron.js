@@ -6,6 +6,8 @@ const tokenStore = require('./tokenStore');
 const email = require('./email');
 const subFlow = require('./subFlow');
 const swapFlow = require('./swapFlow');
+const adhocFlow = require('./adhocFlow');
+const { ensureWeeksExist } = require('./scheduleRun');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 
@@ -180,6 +182,139 @@ async function processFollowUps() {
   }
 }
 
+// --- Ad-hoc pickup-game sessions (session_type = 'adhoc') ------------------
+//
+// Three independent timing passes, each tied to a week's own match time via
+// one of the three per-session lead-hour fields (adhoc_invite_lead_hours/
+// adhoc_reminder_lead_hours/adhoc_final_lead_hours — see "Ad-hoc sessions"
+// in CLAUDE.md and adhocFlow.js for the full model). Deliberately NOT gated
+// on reminders_enabled — that toggle is specific to the regular session
+// confirm/follow-up flow; ad-hoc sign-ups are a different mechanism
+// entirely and have no equivalent "pause" switch. Gated on archived_at IS
+// NULL only, same as every other cron pass.
+
+function adhocSessions() {
+  return db.prepare(`SELECT * FROM sessions WHERE session_type = 'adhoc' AND archived_at IS NULL`).all();
+}
+
+/**
+ * Sends the opening "want in?" invite to every roster player who doesn't
+ * already have one, once a week crosses T-minus-(adhoc_invite_lead_hours).
+ * Calls ensureWeeksExist() first (idempotent, same as the blackout-dates
+ * page does for a draft regular session) since ad-hoc sessions have no
+ * "Schedule these players" step to have generated week rows already.
+ */
+async function processAdhocInvites() {
+  const tz = getTimezone();
+  const now = new Date();
+  for (const session of adhocSessions()) {
+    try {
+      ensureWeeksExist(session.id);
+      const weeks = db.prepare(`SELECT * FROM weeks WHERE session_id = ? AND locked = 0 ORDER BY match_date`).all(session.id);
+      for (const week of weeks) {
+        const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const inviteAt = new Date(matchAt.getTime() - session.adhoc_invite_lead_hours * 60 * 60 * 1000);
+        if (now < inviteAt) continue;
+
+        const created = adhocFlow.ensureInvitesForWeek(week.id);
+        for (const { player, token } of created) {
+          await email.sendAdhocInvite({ recipient: player, week, session, signupToken: token });
+        }
+      }
+    } catch (err) {
+      console.error(`[cron] processAdhocInvites failed for session ${session.id} (${session.name}):`, err.message);
+    }
+  }
+}
+
+/**
+ * Once a week crosses T-minus-(adhoc_reminder_lead_hours), nudges only
+ * roster players who haven't signed up yet — and only if there's currently
+ * something worth nudging about: either nobody's signed up at all, or
+ * sign-ups so far leave an incomplete trailing group (not a clean multiple
+ * of 4). A clean multiple of 4 means every court that's going to form,
+ * already has — nothing to remind anyone about. Mints a fresh
+ * `reminder_token` per player (the original invite's raw token can't be
+ * reused — only its hash was ever stored) and marks `reminded_at` so this
+ * never re-sends on a later tick.
+ */
+async function processAdhocReminders() {
+  const tz = getTimezone();
+  const now = new Date();
+  for (const session of adhocSessions()) {
+    try {
+      const weeks = db.prepare(`SELECT * FROM weeks WHERE session_id = ? AND locked = 0 ORDER BY match_date`).all(session.id);
+      for (const week of weeks) {
+        const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const reminderAt = new Date(matchAt.getTime() - session.adhoc_reminder_lead_hours * 60 * 60 * 1000);
+        if (now < reminderAt) continue;
+
+        const { waiting, notSignedUp, totalSignedUp } = adhocFlow.courtGroupsForWeek(week.id);
+        const needsReminder = totalSignedUp === 0 || waiting.length > 0;
+        if (!needsReminder) continue;
+        const stillNeeded = totalSignedUp === 0 ? 4 : 4 - waiting.length;
+
+        for (const row of notSignedUp) {
+          if (row.reminded_at) continue;
+          const raw = adhocFlow.mintReminderToken(row.id);
+          await email.sendAdhocReminder({ recipient: row, week, session, signupToken: raw, stillNeeded });
+          adhocFlow.markReminded([row.id]);
+        }
+      }
+    } catch (err) {
+      console.error(`[cron] processAdhocReminders failed for session ${session.id} (${session.name}):`, err.message);
+    }
+  }
+}
+
+/**
+ * Once a week crosses T-minus-(adhoc_final_lead_hours), materializes every
+ * currently-complete court into real week_assignments rows and emails each
+ * player who's on one; anyone left in an incomplete trailing group gets the
+ * "not enough signed up" email instead. adhocFlow.finalizeWeek() is
+ * idempotent once courts actually form (a week with real week_assignments
+ * rows is skipped on every later tick) — but a week that *never* forms a
+ * single complete court has no such signal to stop on, so `waiting` is
+ * explicitly filtered to `result_notified_at IS NULL` here before emailing,
+ * otherwise a permanently-incomplete week would re-send "not enough" on
+ * every tick forever.
+ */
+async function processAdhocFinalization() {
+  const tz = getTimezone();
+  const now = new Date();
+  for (const session of adhocSessions()) {
+    try {
+      const weeks = db.prepare(`SELECT * FROM weeks WHERE session_id = ? AND locked = 0 ORDER BY match_date`).all(session.id);
+      for (const week of weeks) {
+        const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const finalAt = new Date(matchAt.getTime() - session.adhoc_final_lead_hours * 60 * 60 * 1000);
+        if (now < finalAt) continue;
+
+        const { courts, waiting, alreadyFinalized } = adhocFlow.finalizeWeek(week.id);
+        if (alreadyFinalized) continue;
+
+        for (let idx = 0; idx < courts.length; idx++) {
+          const group = courts[idx];
+          const courtNum = idx + 1;
+          for (const row of group) {
+            const teammates = group.filter((r) => r.id !== row.id);
+            await email.sendAdhocFinalRoster({ recipient: row, week, session, teammates, court: courtNum });
+          }
+        }
+        if (courts.length) adhocFlow.markResultNotified(courts.flat().map((r) => r.id));
+
+        const freshWaiting = waiting.filter((r) => !r.result_notified_at);
+        for (const row of freshWaiting) {
+          await email.sendAdhocNotEnough({ recipient: row, week, session });
+        }
+        if (freshWaiting.length) adhocFlow.markResultNotified(freshWaiting.map((r) => r.id));
+      }
+    } catch (err) {
+      console.error(`[cron] processAdhocFinalization failed for session ${session.id} (${session.name}):`, err.message);
+    }
+  }
+}
+
 async function processEscalations() {
   await subFlow.escalateOverdueRequests();
   subFlow.flagStillUnfilled();
@@ -249,6 +384,9 @@ async function tick() {
     await processReminders();
     await processFollowUps();
     await processEscalations();
+    await processAdhocInvites();
+    await processAdhocReminders();
+    await processAdhocFinalization();
     processWeekLocking();
   } catch (err) {
     console.error('[cron] tick error:', err);
@@ -269,6 +407,9 @@ module.exports = {
   processReminders,
   processFollowUps,
   processEscalations,
+  processAdhocInvites,
+  processAdhocReminders,
+  processAdhocFinalization,
   processWeekLocking,
   sendRemindersNowForWeek,
   // Exported so statusPage.js's read-only preview of upcoming automated

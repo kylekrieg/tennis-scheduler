@@ -514,6 +514,86 @@ async function sendSwapGroupNotice({ recipient, week, session }) {
   return sendMail({ to: recipient.email, subject, html, category: 'swap_group_notice', relatedWeekId: week.id, session });
 }
 
+// --- Ad-hoc pickup-game sign-ups (adhocFlow.js) -----------------------------
+
+/**
+ * The T-minus-(adhoc_invite_lead_hours) opening invite — sent to every
+ * currently-enrolled roster player at once, each with their own single-use
+ * "I'm in" link. First-come-first-served: the first 4 clicks form a court
+ * immediately, no waiting for any deadline (see adhocFlow.js's doc comment).
+ */
+async function sendAdhocInvite({ recipient, week, session, signupToken }) {
+  const signupUrl = `${siteUrl()}/adhoc-signup/${signupToken}`;
+  const subject = `Pickup game ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — want in?`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>Looking for players for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. First come, first served — the first 4 to sign up get the first court, the next 4 get a second court, and so on.</p>
+    <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'm in</a></p>
+    <p>If you're not free this time, no need to do anything — you'll get invited again for the next one.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'adhoc_invite', relatedWeekId: week.id, session });
+}
+
+/**
+ * The T-minus-(adhoc_reminder_lead_hours) nudge — only sent when there's
+ * currently an incomplete trailing group (sign-ups not a clean multiple of
+ * 4), and only to roster players who haven't signed up yet (adhocFlow.js's
+ * courtGroupsForWeek().notSignedUp). Reuses the same token minted for the
+ * original invite rather than issuing a new one — that link was never used
+ * (they haven't signed up), so it's still perfectly valid.
+ */
+async function sendAdhocReminder({ recipient, week, session, signupToken, stillNeeded }) {
+  const signupUrl = `${siteUrl()}/adhoc-signup/${signupToken}`;
+  const subject = `Still need players — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>We're ${stillNeeded} player${stillNeeded === 1 ? '' : 's'} short of a full court for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Still want in?</p>
+    <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'm in</a></p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'adhoc_reminder', relatedWeekId: week.id, session });
+}
+
+/**
+ * The T-minus-(adhoc_final_lead_hours) wrap-up for anyone who landed in a
+ * completed court — tells them who else is on their court. Sent once a
+ * court has actually been materialized into real week_assignments rows (see
+ * adhocFlow.js's finalizeWeek()), so this doubles as their only confirmation
+ * — there's no separate confirm step for ad-hoc sign-ups.
+ */
+async function sendAdhocFinalRoster({ recipient, week, session, teammates, court }) {
+  const subject = `You're in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
+  const names = teammates.map((p) => p.name).join(', ');
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>You're set for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}${court ? `, Court ${court}` : ''}.</p>
+    <p><strong>Playing with:</strong> ${names}</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'adhoc_final', relatedWeekId: week.id, session });
+}
+
+/**
+ * Sent instead of sendAdhocFinalRoster to anyone left in an incomplete
+ * trailing group once the T-minus-(adhoc_final_lead_hours) cutoff arrives —
+ * they don't play this time. No further action needed from them; they'll be
+ * invited again for the next week same as everyone else on the roster.
+ */
+async function sendAdhocNotEnough({ recipient, week, session }) {
+  const subject = `Not enough signed up — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>Thanks for signing up for <strong>${fmtDate(week.match_date)}</strong> — we didn't get enough players to fill a full court this time, so this one's not happening. Hope to see you at the next one.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'adhoc_not_enough', relatedWeekId: week.id, session });
+}
+
 // No session context — this is the admin's freeform email tool, not tied to
 // any particular session/week, so there's no club/court to show here.
 async function sendCustomEmail({ to, subject, body }) {
@@ -537,6 +617,10 @@ module.exports = {
   sendSwapDeclinedNotice,
   sendSwapAcceptedNotice,
   sendSwapGroupNotice,
+  sendAdhocInvite,
+  sendAdhocReminder,
+  sendAdhocFinalRoster,
+  sendAdhocNotEnough,
   sendCustomEmail,
   siteUrl,
   fmtDate,

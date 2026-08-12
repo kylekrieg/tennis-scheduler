@@ -18,8 +18,11 @@ function getViewableSessions() {
  * request-sub) has nothing to show until a real schedule exists, so they
  * stick with getViewableSessions(). */
 function getBlackoutViewableSessions() {
+  // session_type = 'regular' only — ad-hoc sessions have no blackout-dates
+  // concept at all (no draft phase, no target-games math to protect); see
+  // "Ad-hoc sessions" in CLAUDE.md.
   return db
-    .prepare(`SELECT * FROM sessions WHERE status IN ('draft', 'scheduled', 'active') AND archived_at IS NULL ORDER BY start_date DESC`)
+    .prepare(`SELECT * FROM sessions WHERE status IN ('draft', 'scheduled', 'active') AND archived_at IS NULL AND session_type = 'regular' ORDER BY start_date DESC`)
     .all();
 }
 
@@ -27,9 +30,15 @@ function getBlackoutViewableSessions() {
  * query param if valid, otherwise the most relevant viewable session.
  * Since overlapping/concurrent sessions are allowed, more than one may be
  * viewable at once — the picker in the view lets the visitor switch.
- * Pass includeDraft: true for the blackout-dates page. */
-function resolveSession(req, { includeDraft = false } = {}) {
-  const sessions = includeDraft ? getBlackoutViewableSessions() : getViewableSessions();
+ * Pass includeDraft: true for the blackout-dates page. Pass regularOnly:
+ * true for Request a Sub / Swap a Week — ad-hoc sessions have no sub/swap
+ * concept at all (no fixed roster to sub out of — see "Ad-hoc sessions" in
+ * CLAUDE.md), so they're excluded from the pool entirely rather than just
+ * hidden after the fact, which could otherwise leave `session` resolved to
+ * an ad-hoc one with no regular fallback available. */
+function resolveSession(req, { includeDraft = false, regularOnly = false } = {}) {
+  let sessions = includeDraft ? getBlackoutViewableSessions() : getViewableSessions();
+  if (regularOnly) sessions = sessions.filter((s) => s.session_type === 'regular');
   if (sessions.length === 0) return { session: null, sessions };
 
   const requestedId = Number(req.query.session);

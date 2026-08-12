@@ -20,7 +20,33 @@
     </div>
   </div>
 <% }) %>
-<% if (flags.length === 0) { %><p class="muted">No sessions yet.</p><% } %>
+<% if (flags.length === 0) { %><p class="muted">No regular sessions yet.</p><% } %>
+
+<% if (adhocSessions.length > 0) { %>
+  <h2 style="margin-top:32px;">Ad-hoc sessions</h2>
+  <p class="muted">Pickup games — no targets or blackout dates, courts fill first-come-first-served by email sign-up.</p>
+  <% adhocSessions.forEach(function (a) { %>
+    <div class="session-card">
+      <h3><a href="/admin/sessions/<%= a.session.id %>"><%= a.session.name %></a> <span class="badge scheduled">ad-hoc</span></h3>
+      <p class="muted"><%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][a.session.match_day_of_week] %> <%= fmtTime(a.session.match_time) %></p>
+      <% if (a.weekSummaries.length === 0) { %>
+        <p class="muted">No upcoming match weeks.</p>
+      <% } else { %>
+        <% a.weekSummaries.forEach(function (ws) { %>
+          <div class="flags">
+            <% if (ws.finalized) { %>
+              <div class="flag">✓ <%= fmtDate(ws.week.match_date) %> &mdash; finalized</div>
+            <% } else if (ws.courts > 0 || ws.waiting > 0) { %>
+              <div class="flag"><%= fmtDate(ws.week.match_date) %> &mdash; <%= ws.courts %> court(s) filled<% if (ws.waiting > 0) { %>, <%= ws.waiting %> waiting for a full court<% } %></div>
+            <% } else { %>
+              <div class="flag"><%= fmtDate(ws.week.match_date) %> &mdash; no sign-ups yet</div>
+            <% } %>
+          </div>
+        <% }) %>
+      <% } %>
+    </div>
+  <% }) %>
+<% } %>
 
 <% if (archivedSessions.length > 0) { %>
   <h2 style="margin-top:32px;">Archived sessions</h2>

@@ -11,6 +11,7 @@ const subFlow = require('../services/subFlow');
 const swapFlow = require('../services/swapFlow');
 const email = require('../services/email');
 const { ensureWeeksExist } = require('../services/scheduleRun');
+const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 // Stamps each assignment row with `doubleBooked` (the other session it
@@ -244,7 +245,7 @@ router.get('/pdf', (req, res) => {
 // email) -------------------------------------------------------------------
 
 router.get('/request-sub', (req, res) => {
-  const { session, sessions } = resolveSession(req);
+  const { session, sessions } = resolveSession(req, { regularOnly: true });
   if (!session) return res.render('no_session', { title: 'Request a Sub' });
 
   const players = db
@@ -313,7 +314,7 @@ router.post('/request-sub/start', (req, res) => {
 // doc comment for the full design (Kyle, 2026-08-11).
 
 router.get('/swap', (req, res) => {
-  const { session, sessions } = resolveSession(req);
+  const { session, sessions } = resolveSession(req, { regularOnly: true });
   if (!session) return res.render('no_session', { title: 'Swap a Week' });
 
   const players = db
@@ -624,5 +625,36 @@ router.post('/claim-sub/:token', asyncHandler(async (req, res) => {
   }
   res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.id });
 }));
+
+// Ad-hoc pickup-game sign-up (see adhocFlow.js) — GET renders a landing page
+// with an "I'm in" button, POST records the click. First-come-first-served:
+// there's no status to change here beyond the one-time timestamp, so unlike
+// /confirm there's nothing to "undo" from this page — a player who's already
+// signed up just sees that back to them.
+router.get('/adhoc-signup/:token', (req, res) => {
+  const signup = adhocFlow.findSignupByToken(req.params.token);
+  if (!signup) return res.render('message', { title: 'Sign up', heading: 'Link not found', body: 'This sign-up link is invalid or has expired.', tone: 'error' });
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(signup.session_id);
+  const groups = adhocFlow.courtGroupsForWeek(signup.week_id);
+  res.render('adhoc_signup', { title: 'Sign up', signup, session, token: req.params.token, totalSignedUp: groups.totalSignedUp });
+});
+
+router.post('/adhoc-signup/:token', (req, res) => {
+  const signup = adhocFlow.findSignupByToken(req.params.token);
+  if (!signup) return res.render('message', { title: 'Sign up', heading: 'Link not found', body: 'This sign-up link is invalid or has expired.', tone: 'error' });
+
+  const alreadySignedUp = !!signup.signed_up_at;
+  adhocFlow.recordSignup(req.params.token);
+
+  res.render('message', {
+    title: 'Sign up',
+    heading: alreadySignedUp ? "You're already in" : "You're in!",
+    body: alreadySignedUp
+      ? "You'd already signed up for this one — no action needed."
+      : "Thanks — you're in the running. You'll get an email once courts are finalized closer to match day, either with who you're playing with or letting you know if it didn't fill this time.",
+    tone: 'ok',
+    myPageId: signup.player_id,
+  });
+});
 
 module.exports = router;
