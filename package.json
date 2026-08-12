@@ -11,7 +11,8 @@
     "backup": "node src/scripts/backup-db.js",
     "reset-data": "node src/scripts/reset-data.js"
   },
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Kyle Krieg",
   "private": true,
   "engines": {
     "node": ">=22.5.0"
