@@ -192,6 +192,17 @@ input[type="checkbox"]:disabled {
   cursor: default;
 }
 .notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: 14px; }
+/* Order-of-operations cheat sheet on the session form (Kyle, 2026-08-12) —
+   sessions only get created a couple times a year, easy to forget the exact
+   sequence (roster, sub list, blackout dates, schedule) in between. A native
+   <details>/<summary> needs no JS to collapse/expand; the form's existing
+   inline script only toggles which of the two (regular vs ad-hoc) is shown
+   and whether it starts open, same pattern as the regular/adhoc field groups. */
+.cheatsheet { background: var(--bg-soft); }
+.cheatsheet summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.cheatsheet[open] summary { margin-bottom: 10px; }
+.cheatsheet ol { margin: 0; padding-left: 20px; font-size: 14px; }
+.cheatsheet ol li { margin-bottom: 6px; }
 /* Row-level action buttons (e.g. My Page's "Need a sub" / "Propose a swap"
    per upcoming match) were sitting right up against each other inside a
    table cell with no explicit spacing — cramped, especially once wrapping

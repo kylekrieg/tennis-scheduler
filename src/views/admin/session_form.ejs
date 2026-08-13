@@ -2,6 +2,30 @@
 <h1><%= session ? 'Edit Session' : 'New Session' %></h1>
 
 <% var isAdhoc = session ? session.session_type === 'adhoc' : false; %>
+
+<details class="card wide cheatsheet" id="cheatsheet-regular" <%= !session ? 'open' : '' %>>
+  <summary>Order of operations — regular session</summary>
+  <ol>
+    <li>Fill in the session details below, then check off the roster and enter each player's target games (and priority, if they're also enrolled in another overlapping session).</li>
+    <li>Make sure anyone willing to sub is in the master <a href="/admin/sub-list">Sub List</a> — skip if they're already on it.</li>
+    <li>Save this session, then use <strong>Manage subs</strong> on its detail page to pick which of them apply here.</li>
+    <li>Save the roster, then click <strong>Notify roster</strong> on the Blackout Dates page (or enter dates yourself as admin).</li>
+    <li>Once blackout dates are in, click <strong>Schedule these players</strong> below.</li>
+    <li>Check the session detail page and the <a href="/admin/status">Status page</a> for anything flagged — understaffed weeks, unreachable targets, overlapping-session warnings.</li>
+    <li>From there it mostly runs itself — reminders, follow-ups, and escalations fire automatically.</li>
+  </ol>
+  <p class="muted" style="margin-bottom:0;">Full walkthrough with more detail: <a href="/admin/guide">Admin Guide</a>.</p>
+</details>
+
+<details class="card wide cheatsheet" id="cheatsheet-adhoc" style="display:none;" <%= !session ? 'open' : '' %>>
+  <summary>Order of operations — ad-hoc session</summary>
+  <ol>
+    <li>Fill in the session details and sign-up email timing below.</li>
+    <li>Check off the invite-list roster — no targets or priority needed, everyone checked gets invited every week.</li>
+    <li>Save. Invite, reminder, and final-roster emails fire automatically from here on, based on the timing you set.</li>
+  </ol>
+  <p class="muted" style="margin-bottom:0;">Full walkthrough with more detail: <a href="/admin/guide">Admin Guide</a>.</p>
+</details>
 <form method="post" action="<%= session ? '/admin/sessions/' + session.id : '/admin/sessions' %>" class="card wide">
 
   <% if (session) { %>
@@ -174,10 +198,14 @@
     var adhocOnly = document.getElementById('adhoc-only-fields');
     var regularRoster = document.getElementById('regular-roster');
     var adhocRoster = document.getElementById('adhoc-roster');
+    var cheatRegular = document.getElementById('cheatsheet-regular');
+    var cheatAdhoc = document.getElementById('cheatsheet-adhoc');
     if (regularOnly) regularOnly.style.display = isAdhoc ? 'none' : '';
     if (adhocOnly) adhocOnly.style.display = isAdhoc ? '' : 'none';
     if (regularRoster) regularRoster.style.display = isAdhoc ? 'none' : '';
     if (adhocRoster) adhocRoster.style.display = isAdhoc ? '' : 'none';
+    if (cheatRegular) cheatRegular.style.display = isAdhoc ? 'none' : '';
+    if (cheatAdhoc) cheatAdhoc.style.display = isAdhoc ? '' : 'none';
   }
 
   var typeRadios = document.querySelectorAll('input[name="session_type"]');
