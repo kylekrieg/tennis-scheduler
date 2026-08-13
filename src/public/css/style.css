@@ -192,6 +192,13 @@ input[type="checkbox"]:disabled {
   cursor: default;
 }
 .notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: 14px; }
+/* Row-level action buttons (e.g. My Page's "Need a sub" / "Propose a swap"
+   per upcoming match) were sitting right up against each other inside a
+   table cell with no explicit spacing — cramped, especially once wrapping
+   kicked in on a narrower screen. A small flex gap gives them breathing
+   room without needing the wider .actions class's margin-top, which isn't
+   appropriate inside a table row. */
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 table.compact th, table.compact td { padding: 6px 10px; font-size: 13px; }
 table.compact td { vertical-align: middle; }
 .player-row {

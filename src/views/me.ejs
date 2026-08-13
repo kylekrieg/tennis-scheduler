@@ -1,4 +1,4 @@
-<%- include('partials/header', {title}) %>
+<%- include('partials/header', {title, wideMain: true}) %>
 <h1><%= player.name %>'s Page</h1>
 <p class="muted">Bookmark this page — the URL stays the same and always shows your current schedule across every session you're in.</p>
 
@@ -30,11 +30,11 @@
       <p class="muted">No upcoming matches scheduled for you in this session.</p>
     <% } else { %>
       <table class="wide">
-        <thead><tr><th>Date</th><th>Status</th><th>Ball duty</th><th></th></tr></thead>
+        <thead><tr><th style="white-space:nowrap;">Date</th><th>Status</th><th>Ball duty</th><th></th></tr></thead>
         <tbody>
           <% card.upcoming.forEach(function(a) { %>
             <tr>
-              <td>
+              <td style="white-space:nowrap;">
                 <%= fmtDate(a.match_date) %>
                 <% if (a.doubleBooked) { %>
                   <br><span class="badge double_booked">double booked</span>
@@ -49,11 +49,13 @@
               <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
               <td>
                 <% if (card.session.session_type !== 'adhoc' && !a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
-                  <form method="post" action="/request-sub/start" style="display:inline;">
-                    <input type="hidden" name="assignment_id" value="<%= a.id %>">
-                    <button class="btn small red" type="submit">Need a sub</button>
-                  </form>
-                  <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>&assignment=<%= a.id %>">Propose a swap</a>
+                  <div class="row-actions">
+                    <form method="post" action="/request-sub/start" style="display:inline;">
+                      <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                      <button class="btn small red" type="submit">Need a sub</button>
+                    </form>
+                    <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>&assignment=<%= a.id %>">Propose a swap</a>
+                  </div>
                 <% } %>
               </td>
             </tr>
