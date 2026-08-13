@@ -122,6 +122,21 @@ router.get('/blackout', (req, res) => {
 
   const carriedOverMap = carriedOverBlackoutsForSession(session.id);
 
+  // Once a season's scheduled, the checkbox grid below is read-only (every
+  // box disabled) — easy to misread at a glance, especially for someone
+  // scanning a long season for the handful of dates that matter. A plain
+  // comma-joined list (own blackout dates + anything carried over from
+  // another session, merged and sorted) gives an unambiguous answer to
+  // "what did I actually block off" without having to scan every row.
+  let myBlackoutDatesList = null;
+  if (selectedPlayerId) {
+    const merged = new Set(existingBlackouts);
+    for (const w of weeks) {
+      if (carriedOverMap.has(`${selectedPlayerId}|${w.match_date}`)) merged.add(w.match_date);
+    }
+    myBlackoutDatesList = [...merged].sort();
+  }
+
   res.render('blackout', {
     title: 'Blackout Dates',
     session,
@@ -131,6 +146,7 @@ router.get('/blackout', (req, res) => {
     selectedPlayerId,
     existingBlackouts,
     carriedOverMap,
+    myBlackoutDatesList,
     schedulingLocked: session.status !== 'draft',
     saved: req.query.saved === '1',
     locked: req.query.locked === '1',

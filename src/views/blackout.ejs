@@ -19,6 +19,13 @@
 
 <% if (schedulingLocked) { %>
   <p class="flag" style="margin-top:16px;">This season has already been scheduled, so blackout dates are locked in and can't be changed on this page. If you need to miss a specific week, use <a href="/request-sub">Request a Sub</a> for that week instead — either now or from the confirmation email closer to the date.</p>
+  <% if (selectedPlayerId) { %>
+    <% if (myBlackoutDatesList.length === 0) { %>
+      <p class="notice">You have no blackout dates on record for this season.</p>
+    <% } else { %>
+      <p class="notice">Your blackout dates for this season: <strong><%= myBlackoutDatesList.join(', ') %></strong></p>
+    <% } %>
+  <% } %>
 <% } %>
 
 <% if (selectedPlayerId) { %>

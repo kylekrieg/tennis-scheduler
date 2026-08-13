@@ -172,6 +172,25 @@ textarea { min-height: 100px; }
 .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .checkbox-row input { width: auto; }
+/* Native checkboxes were relying entirely on browser/OS default rendering
+   with no accent-color set, which made the checkmark hard to see against
+   this site's own light/dark backgrounds (Kyle, 2026-08-12) — especially a
+   disabled-but-checked box (carried-over blackout dates, a locked season's
+   read-only checklist), since browsers dim disabled controls by default.
+   Explicit accent-color (theme-aware, same green used for "confirmed"
+   elsewhere) plus a slightly larger box and opacity:1 on disabled fixes
+   both: the check now stands out in both themes, and staying checked after
+   scheduling locks it doesn't make it fade into the background. */
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+input[type="checkbox"]:disabled {
+  opacity: 1;
+  cursor: default;
+}
 .notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: 14px; }
 table.compact th, table.compact td { padding: 6px 10px; font-size: 13px; }
 table.compact td { vertical-align: middle; }
