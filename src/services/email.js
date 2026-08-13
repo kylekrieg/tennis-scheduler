@@ -594,11 +594,19 @@ async function sendAdhocNotEnough({ recipient, week, session }) {
   return sendMail({ to: recipient.email, subject, html, category: 'adhoc_not_enough', relatedWeekId: week.id, session });
 }
 
-// No session context — this is the admin's freeform email tool, not tied to
-// any particular session/week, so there's no club/court to show here.
-async function sendCustomEmail({ to, subject, body }) {
-  const html = `<p>${body.replace(/\n/g, '<br>')}</p>${footer(null)}`;
-  return sendMail({ to, subject, html, category: 'custom' });
+// `session` is optional — the original one-off "email a single player"
+// flow has no session in scope, so this stays plain (no club/court prefix,
+// no banner) for that path, same as before. The "email a whole session's
+// roster" flow (admin.js's POST /email, added 2026-08-13) passes the
+// chosen session through so the bulk send looks consistent with every
+// other session-tied email in this app rather than being the one
+// exception — same matchBanner(session, null) treatment as the swap
+// templates use when there's no single date to show (a session-wide
+// message isn't about one specific match either).
+async function sendCustomEmail({ to, subject, body, session = null }) {
+  const banner = session ? matchBanner(session, null) : '';
+  const html = `${banner}<p>${body.replace(/\n/g, '<br>')}</p>${footer(session)}`;
+  return sendMail({ to, subject, html, category: 'custom', session });
 }
 
 module.exports = {

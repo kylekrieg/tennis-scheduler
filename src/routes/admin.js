@@ -1661,16 +1661,49 @@ router.post('/sub-list/:id/remove', (req, res) => {
 
 router.get('/email', (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
-  res.render('admin/custom_email', { title: 'Send Email', players, flashMsg: popFlash(req) });
+  const sessions = db.prepare('SELECT * FROM sessions ORDER BY start_date DESC').all();
+  res.render('admin/custom_email', { title: 'Send Email', players, sessions, flashMsg: popFlash(req) });
 });
 
+// recipient_type='session' fans the same message out to every active
+// player currently on that session's roster (session_players — the same
+// "who's the roster" query used everywhere else in this app: blackout
+// notices, ad-hoc invites, etc.), instead of a single player_id. One
+// sendCustomEmail() call per recipient, so email_log gets one row per
+// person same as any other bulk send — nothing new to reconcile there.
 router.post('/email', asyncHandler(async (req, res) => {
+  const subject = req.body.subject;
+  const body = req.body.body;
+
+  if (req.body.recipient_type === 'session') {
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.body.session_id) || 0);
+    if (!session) {
+      flash(req, 'Session not found.', 'error');
+      return res.redirect('/admin/email');
+    }
+    const roster = db
+      .prepare(
+        `SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id
+         WHERE sp.session_id = ? AND p.active = 1 ORDER BY p.name`
+      )
+      .all(session.id);
+    if (roster.length === 0) {
+      flash(req, `No active players enrolled in "${session.name}" — nothing sent.`, 'error');
+      return res.redirect('/admin/email');
+    }
+    for (const player of roster) {
+      await email.sendCustomEmail({ to: player.email, subject, body, session });
+    }
+    flash(req, `Email sent to ${roster.length} player(s) in "${session.name}".`);
+    return res.redirect('/admin/email');
+  }
+
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(req.body.player_id);
   if (!player) {
     flash(req, 'Player not found.', 'error');
     return res.redirect('/admin/email');
   }
-  await email.sendCustomEmail({ to: player.email, subject: req.body.subject, body: req.body.body });
+  await email.sendCustomEmail({ to: player.email, subject, body });
   flash(req, `Email sent to ${player.name}.`);
   res.redirect('/admin/email');
 }));

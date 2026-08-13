@@ -1,14 +1,49 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <h1>Send Custom Email</h1>
 <form method="post" action="/admin/email" class="card">
-  <label for="player_id">To</label>
-  <select name="player_id" id="player_id">
-    <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
-  </select>
+  <label>Send to</label>
+  <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="player" id="type_player" checked>
+    <label for="type_player" style="margin:0;font-weight:400;">One player</label>
+  </div>
+  <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="session" id="type_session">
+    <label for="type_session" style="margin:0;font-weight:400;">Whole session roster</label>
+  </div>
+
+  <div id="player-picker">
+    <label for="player_id">Player</label>
+    <select name="player_id" id="player_id">
+      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
+    </select>
+  </div>
+
+  <div id="session-picker" style="display:none;">
+    <label for="session_id">Session</label>
+    <select name="session_id" id="session_id">
+      <% sessions.forEach(function(s) { %><option value="<%= s.id %>"><%= s.name %><%= s.archived_at ? ' (archived)' : '' %></option><% }) %>
+    </select>
+    <p class="muted" style="margin-top:4px;">Goes to every active player currently on this session's roster — the same list "Notify roster" or ad-hoc invites would use.</p>
+  </div>
+
   <label for="subject">Subject</label>
   <input type="text" name="subject" id="subject" required>
   <label for="body">Message</label>
   <textarea name="body" id="body" required></textarea>
   <div class="actions"><button class="btn green" type="submit">Send</button></div>
 </form>
+
+<script>
+  (function () {
+    var playerPicker = document.getElementById('player-picker');
+    var sessionPicker = document.getElementById('session-picker');
+    document.querySelectorAll('input[name="recipient_type"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        var toSession = this.value === 'session';
+        playerPicker.style.display = toSession ? 'none' : '';
+        sessionPicker.style.display = toSession ? '' : 'none';
+      });
+    });
+  })();
+</script>
 <%- include('../partials/footer') %>
