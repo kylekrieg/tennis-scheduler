@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession } = require('../services/sessionHelper');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const { buildPlayerICS, buildPlayerFeedICS } = require('../services/ics');
@@ -120,6 +120,8 @@ router.get('/blackout', (req, res) => {
     );
   }
 
+  const carriedOverMap = carriedOverBlackoutsForSession(session.id);
+
   res.render('blackout', {
     title: 'Blackout Dates',
     session,
@@ -128,6 +130,7 @@ router.get('/blackout', (req, res) => {
     weeks,
     selectedPlayerId,
     existingBlackouts,
+    carriedOverMap,
     schedulingLocked: session.status !== 'draft',
     saved: req.query.saved === '1',
     locked: req.query.locked === '1',

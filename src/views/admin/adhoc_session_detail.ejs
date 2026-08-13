@@ -14,7 +14,7 @@
   <%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %>
   &middot; Invite <%= session.adhoc_invite_lead_hours %>h before &middot; Reminder <%= session.adhoc_reminder_lead_hours %>h before (if short) &middot; Final roster <%= session.adhoc_final_lead_hours %>h before
 </p>
-<p class="muted">Roster: <%= roster.length %> player(s) currently invited to every match. First-come-first-served — 4 sign-ups locks in a court immediately, no waiting for any deadline. See <a href="/help#double-booked">How It Works</a> for what players see.</p>
+<p class="muted">Roster: <%= roster.length %> player(s) currently invited to every match. First-come-first-served — 4 sign-ups locks in a court immediately, no waiting for any deadline. See <a href="/help#adhoc">How It Works</a> for what players see.</p>
 
 <% weekRows.forEach(function (wr) { %>
   <div class="session-card">

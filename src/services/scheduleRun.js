@@ -1,6 +1,7 @@
 'use strict';
 const db = require('../db');
 const { generateSeasonSchedule } = require('../scheduler/engine');
+const { carriedOverBlackoutsForSession } = require('./sessionHelper');
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10);
@@ -83,6 +84,19 @@ function ensureWeeksExist(sessionId) {
  * shows up in the overlap-warning text ("priority set here") so whoever
  * resolves an actual conflict by hand has a documented steer on who should
  * probably yield — it just doesn't drive any automatic behavior anymore.
+ *
+ * Blackout dates *carried over* from another session (see
+ * sessionHelper.js's carriedOverBlackoutsForSession(), added 2026-08-12) are
+ * a different thing entirely and ARE consulted below, folded straight into
+ * blackoutSet — don't confuse this with the reverted priority-exclusion
+ * feature above. The difference is what's being excluded: priority reserved
+ * *every* calendar date two sessions happened to share, regardless of actual
+ * need, which could manufacture a large deficit out of nothing. Carryover
+ * only ever includes dates someone deliberately entered as a real blackout
+ * somewhere — a small, sparse, genuine set of "this player truly cannot play
+ * this date" facts — so it behaves exactly like the player's own blackout
+ * dates always have, and gets the same graceful understaffed-week/
+ * auto-absorb handling as a result. Nothing new to break.
  */
 
 /**
@@ -115,10 +129,17 @@ function runScheduler(sessionId) {
     .all(sessionId);
   const blackoutSet = new Set(blackoutRows.map((b) => `${b.player_id}|${b.date}`));
 
+  // Carried-over blackout dates from other sessions (see doc comment above
+  // and sessionHelper.js's carriedOverBlackoutsForSession()) — folded
+  // straight into the same set, so from here on a carried-over date is
+  // indistinguishable from one entered directly in this session.
+  for (const key of carriedOverBlackoutsForSession(sessionId).keys()) blackoutSet.add(key);
+
   // Cross-session priority is deliberately NOT consulted here — see the doc
   // comment above (removed 2026-08-11 after it took down a whole session's
   // scheduling run over one player's conflict). Only a player's own real
-  // blackout dates affect scheduling.
+  // blackout dates, plus carryover from another session's real blackout
+  // dates, affect scheduling.
   const weekDateById = new Map(openWeeks.map((w) => [w.id, w.match_date]));
   const isBlackedOut = (playerId, weekId) => {
     const key = `${playerId}|${weekDateById.get(weekId)}`;

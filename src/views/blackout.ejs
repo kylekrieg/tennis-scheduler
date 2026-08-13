@@ -1,6 +1,6 @@
 <%- include('partials/header', {title}) %>
 <h1>Blackout Dates</h1>
-<p class="muted">Pick your name, then check the dates you can't play, and save. This is a hard constraint — the scheduler will never put you down for a checked date.</p>
+<p class="muted">Pick your name, then check the dates you can't play, and save. This is a hard constraint — the scheduler will never put you down for a checked date. If you're enrolled in more than one session that lands on the same date, a blackout date you've already entered for one carries over automatically — you'll see it here already checked.</p>
 <%- include('partials/session_picker', {sessions, session}) %>
 
 <form method="get" class="card" style="max-width:320px;">
@@ -26,10 +26,15 @@
     <input type="hidden" name="session_id" value="<%= session.id %>">
     <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
     <% weeks.forEach(function(w) { %>
+      <% var carriedOver = carriedOverMap.get(selectedPlayerId + '|' + w.match_date); %>
       <div class="checkbox-row">
-        <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>"
-          <%= existingBlackouts.has(w.match_date) ? 'checked' : '' %> <%= (w.locked || schedulingLocked) ? 'disabled' : '' %>>
-        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (w.locked) { %> <span class="muted">(already played)</span><% } %></label>
+        <% if (carriedOver) { %>
+          <input type="checkbox" id="d<%= w.id %>" checked disabled title="Carried over — edit this at the other session's blackout page instead.">
+        <% } else { %>
+          <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>"
+            <%= existingBlackouts.has(w.match_date) ? 'checked' : '' %> <%= (w.locked || schedulingLocked) ? 'disabled' : '' %>>
+        <% } %>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (w.locked) { %> <span class="muted">(already played)</span><% } else if (carriedOver) { %> <span class="muted">(already blacked out in <%= carriedOver.name %> — no need to check it here)</span><% } %></label>
       </div>
     <% }) %>
     <% if (!schedulingLocked) { %>

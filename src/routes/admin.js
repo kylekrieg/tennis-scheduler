@@ -17,7 +17,7 @@ const subFlow = require('../services/subFlow');
 const cron = require('../services/cron');
 const backup = require('../services/backup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
@@ -1356,7 +1356,43 @@ router.get('/sessions/:id/blackouts', (req, res) => {
     entry.dates.push(row.date);
   }
 
-  res.render('admin/blackouts', { title: 'Blackout Dates', session, roster, weeks, selectedPlayerId, existing, blackoutsByPlayer, flashMsg: popFlash(req) });
+  // Carried over from another session's real blackout dates (see
+  // sessionHelper.js's carriedOverBlackoutsForSession()) — a player doesn't
+  // need to re-enter a date here if it's already blacked out for them
+  // elsewhere on the same calendar date. Grouped by player for the summary
+  // list, same shape as blackoutsByPlayer above, plus a flat Map for the
+  // per-player edit checklist below.
+  const carriedOverMap = carriedOverBlackoutsForSession(session.id);
+  const carriedOverByPlayer = [];
+  if (carriedOverMap.size > 0) {
+    const nameById = new Map(roster.map((p) => [p.id, p.name]));
+    const byPlayer = new Map();
+    for (const [key, srcSession] of carriedOverMap.entries()) {
+      const [playerId, date] = key.split('|');
+      const name = nameById.get(Number(playerId));
+      if (!name) continue; // not on this session's current roster
+      let entry = byPlayer.get(playerId);
+      if (!entry) {
+        entry = { name, items: [] };
+        byPlayer.set(playerId, entry);
+        carriedOverByPlayer.push(entry);
+      }
+      entry.items.push({ date, sourceName: srcSession.name });
+    }
+  }
+
+  res.render('admin/blackouts', {
+    title: 'Blackout Dates',
+    session,
+    roster,
+    weeks,
+    selectedPlayerId,
+    existing,
+    blackoutsByPlayer,
+    carriedOverByPlayer,
+    carriedOverMap,
+    flashMsg: popFlash(req),
+  });
 });
 
 router.post('/sessions/:id/blackouts', (req, res) => {

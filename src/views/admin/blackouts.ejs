@@ -31,6 +31,27 @@
   </div>
 <% } %>
 
+<% if (carriedOverByPlayer.length > 0) { %>
+  <h2 style="margin-top:24px;">Carried over from other sessions</h2>
+  <p class="muted" style="margin-top:0;">These players don't need to be blacked out here again — the date's already off-limits for them in another session, so the scheduler already treats it as a real blackout for this session too.</p>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Date</th><th>Also blacked out in</th></tr></thead>
+      <tbody>
+        <% carriedOverByPlayer.forEach(function(entry) { %>
+          <% entry.items.forEach(function(item) { %>
+            <tr>
+              <td><%= entry.name %></td>
+              <td><%= item.date %></td>
+              <td><%= item.sourceName %></td>
+            </tr>
+          <% }) %>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+
 <h2 style="margin-top:24px;">Edit a player's blackout dates</h2>
 <form method="get" class="card">
   <label for="player">Player</label>
@@ -46,9 +67,14 @@
   <form method="post" action="/admin/sessions/<%= session.id %>/blackouts" class="card wide">
     <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
     <% weeks.forEach(function(w) { %>
+      <% var carriedOver = carriedOverMap.get(selectedPlayerId + '|' + w.match_date); %>
       <div class="checkbox-row">
-        <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>" <%= existing.has(w.match_date) ? 'checked' : '' %>>
-        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %></label>
+        <% if (carriedOver) { %>
+          <input type="checkbox" id="d<%= w.id %>" checked disabled title="Carried over — edit this at the source session instead.">
+        <% } else { %>
+          <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>" <%= existing.has(w.match_date) ? 'checked' : '' %>>
+        <% } %>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (carriedOver) { %> <span class="muted">(carried over from <%= carriedOver.name %> — edit it there)</span><% } %></label>
       </div>
     <% }) %>
     <div class="actions"><button class="btn green" type="submit">Save</button></div>

@@ -204,6 +204,58 @@ function doubleBookingMapForSession(sessionId) {
   return map;
 }
 
+/**
+ * Blackout carryover (Kyle, 2026-08-12): if a player is enrolled in two
+ * regular sessions that happen to land a match on the exact same calendar
+ * date, and an admin/player has already entered a real blackout_dates row
+ * for one of them, the other session shouldn't require re-entering the same
+ * fact about the player's actual availability. Finds every such date for
+ * `sessionId`'s own current roster/weeks, sourced from any *other*
+ * non-archived, session_type = 'regular' session (ad-hoc sessions have no
+ * blackout concept — see getBlackoutViewableSessions()).
+ *
+ * IMPORTANT: this is NOT a reincarnation of the `session_players.priority`
+ * auto-exclusion that was built and reverted the same day (2026-08-11) — see
+ * scheduleRun.js's doc comment for the full story. That feature reserved
+ * *every* calendar date the two sessions shared, whether or not the player
+ * was actually unavailable, which could manufacture a large, artificial
+ * deficit and take down an entire session's scheduling run. This only ever
+ * carries over dates someone *deliberately entered as a real blackout* —
+ * inherently a small, sparse set — so a carried-over date behaves exactly
+ * like any other blackout date and flows through the exact same
+ * understaffed-week/auto-absorb graceful-degradation paths a normal one
+ * would. Nothing new to break.
+ *
+ * Live-computed, never stored (same pattern as doubleBookingMapForSession()
+ * above): if the source blackout is later removed, the carryover disappears
+ * on the very next read with nothing to clean up. Returns a Map keyed by
+ * `${playerId}|${date}` -> the source session ({id, name, ...}) it came from.
+ */
+function carriedOverBlackoutsForSession(sessionId) {
+  const rows = db
+    .prepare(
+      `SELECT bd.player_id as playerId, bd.date as date,
+              src.id as srcId, src.name as srcName, src.club_name as srcClub, src.court_info as srcCourt, src.match_time as srcTime
+       FROM blackout_dates bd
+       JOIN sessions src ON src.id = bd.session_id
+       JOIN weeks w ON w.session_id = ? AND w.match_date = bd.date
+       JOIN session_players sp ON sp.session_id = w.session_id AND sp.player_id = bd.player_id
+       JOIN players p ON p.id = bd.player_id AND p.active = 1
+       WHERE bd.session_id != ?
+         AND src.archived_at IS NULL AND src.session_type = 'regular'
+       ORDER BY bd.date`
+    )
+    .all(sessionId, sessionId);
+
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.playerId}|${r.date}`;
+    if (map.has(key)) continue; // first source wins if a player somehow has it in more than one other session
+    map.set(key, { id: r.srcId, name: r.srcName, club_name: r.srcClub, court_info: r.srcCourt, match_time: r.srcTime });
+  }
+  return map;
+}
+
 module.exports = {
   getViewableSessions,
   getBlackoutViewableSessions,
@@ -211,4 +263,5 @@ module.exports = {
   findOverlappingSessionEnrollments,
   findActualDoubleBookings,
   doubleBookingMapForSession,
+  carriedOverBlackoutsForSession,
 };
