@@ -12,7 +12,8 @@ const { createBackup } = require('../services/backup');
 
 if (!process.argv.includes('--confirm')) {
   console.log('This permanently deletes ALL players, sessions, schedules, blackout dates,');
-  console.log('sub history, the broader sub list, and the email log.');
+  console.log('sub history, the broader sub list (and every session\'s sub assignments),');
+  console.log('and the email log.');
   console.log('');
   console.log('Admin logins and settings (timezone) are kept — you will NOT be locked out.');
   console.log('');
@@ -30,8 +31,9 @@ try {
 
   // Order matters here under PRAGMA foreign_keys = ON. sessions cascades away
   // most things (session_players, blackout_dates, blackout_pending, weeks ->
-  // week_assignments -> week_assignment_tokens, and each week's sub_requests
-  // -> sub_offers) — but two references have no cascade action defined
+  // week_assignments -> week_assignment_tokens, each week's sub_requests ->
+  // sub_offers, and session_sub_list) — but two references have no cascade
+  // action defined
   // (deliberately, elsewhere, so a sent-email or a sub-invite record can
   // outlive the row that created it): email_log.related_week_id, and
   // sub_offers' candidate_player_id/broader_list_id. Left in place, either

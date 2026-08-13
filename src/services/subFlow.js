@@ -6,6 +6,23 @@ const email = require('./email');
 const { zonedTimeToUtc } = require('./tz');
 const { getTimezone } = require('./settings');
 
+/**
+ * The master broader_sub_list, scoped down to just the people an admin has
+ * assigned to this specific session (session_sub_list) — see "Per-session
+ * sub list" in CLAUDE.md. Used both by escalateOverdueRequests() to decide
+ * who actually gets emailed, and by admin.js's session-subs page to render
+ * the current checklist state.
+ */
+function sessionSubList(sessionId) {
+  return db
+    .prepare(
+      `SELECT bl.* FROM session_sub_list ssl
+       JOIN broader_sub_list bl ON bl.id = ssl.broader_list_id
+       WHERE ssl.session_id = ? ORDER BY bl.name`
+    )
+    .all(sessionId);
+}
+
 function getWeekWithSession(weekId) {
   return db
     .prepare(
@@ -255,7 +272,6 @@ async function escalateOverdueRequests() {
     )
     .all();
 
-  const broaderList = db.prepare('SELECT * FROM broader_sub_list').all();
   let escalatedCount = 0;
 
   for (const req of openRequests) {
@@ -267,7 +283,13 @@ async function escalateOverdueRequests() {
 
     escalatedCount++;
 
-    if (broaderList.length === 0) {
+    // Per-session subset of the master broader_sub_list, not the whole
+    // list — see "Per-session sub list" in CLAUDE.md. Looked up per
+    // request (not hoisted above the loop) since different open requests
+    // can belong to different sessions with different sub lists.
+    const sessionSubs = sessionSubList(session.id);
+
+    if (sessionSubs.length === 0) {
       db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
       continue;
     }
@@ -276,7 +298,7 @@ async function escalateOverdueRequests() {
       req.id
     );
 
-    for (const bl of broaderList) {
+    for (const bl of sessionSubs) {
       const raw = generateRawToken();
       db.prepare(
         'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
@@ -326,4 +348,5 @@ module.exports = {
   upcomingWeeksPreview,
   getWeekWithSession,
   hasActiveConcurrentSubRequest,
+  sessionSubList,
 };

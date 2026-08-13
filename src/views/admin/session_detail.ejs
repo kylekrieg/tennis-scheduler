@@ -5,6 +5,7 @@
 <div class="actions">
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/blackouts">Manage blackout dates</a>
+  <a class="btn neutral" href="/admin/sessions/<%= session.id %>/subs">Manage subs</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/stats">Stats</a>
   <% if (session.archived_at) { %>
     <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/unarchive">

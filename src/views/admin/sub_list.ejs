@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <h1>Broader Sub List</h1>
-<p class="muted">Escalation list used when none of that week's non-playing regulars confirm within 24 hours of match time.</p>
+<p class="muted">The whole pool of people willing to sub. Being on this list alone doesn't get anyone emailed, though — each session has its own subset of this list ("Manage subs" on that session's page) that decides who actually hears about <em>that</em> session's unanswered sub requests.</p>
 
 <form method="post" action="/admin/sub-list" class="card">
   <label for="name">Name</label>
@@ -11,16 +11,24 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Email</th><th>Assigned to</th><th></th></tr></thead>
   <tbody>
     <% list.forEach(function(l) { %>
+      <% var forSessions = sessionsByListId.get(l.id) || []; %>
       <tr>
         <td><%= l.name %></td>
         <td><%= l.email %></td>
+        <td>
+          <% if (forSessions.length === 0) { %>
+            <span class="muted">not assigned to any session</span>
+          <% } else { %>
+            <% forSessions.forEach(function(s, i) { %><a href="/admin/sessions/<%= s.id %>/subs"><%= s.name %></a><%= i < forSessions.length - 1 ? ', ' : '' %><% }) %>
+          <% } %>
+        </td>
         <td><form method="post" action="/admin/sub-list/<%= l.id %>/remove"><button class="btn small neutral" type="submit">Remove</button></form></td>
       </tr>
     <% }) %>
-    <% if (list.length === 0) { %><tr><td colspan="3" class="muted">Empty.</td></tr><% } %>
+    <% if (list.length === 0) { %><tr><td colspan="4" class="muted">Empty.</td></tr><% } %>
   </tbody>
 </table>
 <%- include('../partials/footer') %>

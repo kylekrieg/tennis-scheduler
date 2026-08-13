@@ -1,0 +1,18 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Subs for <%= session.name %></h1>
+<p class="muted">Only the people checked below get an escalation email if a sub request for <strong><%= session.name %></strong> goes unanswered by that week's roster. The master list itself (add/remove people) is managed at <a href="/admin/sub-list">Broader Sub List</a> — this page just picks which of them apply here.</p>
+
+<% if (masterList.length === 0) { %>
+  <p class="notice">The master sub list is empty. <a href="/admin/sub-list">Add people to it</a> first, then come back here to assign them to this session.</p>
+<% } else { %>
+  <form method="post" action="/admin/sessions/<%= session.id %>/subs" class="card wide">
+    <% masterList.forEach(function(bl) { %>
+      <div class="checkbox-row">
+        <input type="checkbox" name="sub_ids" value="<%= bl.id %>" id="sub<%= bl.id %>" <%= assigned.has(bl.id) ? 'checked' : '' %>>
+        <label for="sub<%= bl.id %>" style="margin:0;font-weight:400;"><%= bl.name %> <span class="muted">(<%= bl.email %>)</span></label>
+      </div>
+    <% }) %>
+    <div class="actions"><button class="btn green" type="submit">Save</button></div>
+  </form>
+<% } %>
+<%- include('../partials/footer') %>

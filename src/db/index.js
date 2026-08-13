@@ -103,6 +103,27 @@ ensureColumn('sessions', 'adhoc_invite_lead_hours', 'INTEGER NOT NULL DEFAULT 56
 ensureColumn('sessions', 'adhoc_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 30');
 ensureColumn('sessions', 'adhoc_final_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 
+// One-time seed: before session_sub_list existed, EVERY sub request in the
+// app escalated to the ENTIRE broader_sub_list, regardless of session — see
+// "Per-session sub list" in CLAUDE.md. Upgrading an install that already
+// has real sessions and a real master list, with session_sub_list still
+// empty (never touched), assigns every existing master-list person to
+// every existing session once, so escalation keeps working exactly as it
+// did before this feature existed until the admin deliberately narrows it
+// per session. A brand new install has nothing to preserve (no sessions or
+// master list yet), so this is a no-op there.
+const sessionSubListCount = raw.prepare('SELECT COUNT(*) as n FROM session_sub_list').get().n;
+if (sessionSubListCount === 0) {
+  const allSessionIds = raw.prepare('SELECT id FROM sessions').all().map((r) => r.id);
+  const allSubIds = raw.prepare('SELECT id FROM broader_sub_list').all().map((r) => r.id);
+  if (allSessionIds.length > 0 && allSubIds.length > 0) {
+    const insertPair = raw.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)');
+    for (const sessionId of allSessionIds) {
+      for (const subId of allSubIds) insertPair.run(sessionId, subId);
+    }
+  }
+}
+
 // One-time seed: the app used to support exactly one admin, via
 // ADMIN_PASSWORD_HASH in .env. Now that logins live in the `admins` table
 // (so more than one person can have their own password), an upgrade with no

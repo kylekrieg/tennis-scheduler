@@ -1627,7 +1627,22 @@ router.post('/players/:id/activate', (req, res) => {
 
 router.get('/sub-list', (req, res) => {
   const list = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
-  res.render('admin/sub_list', { title: 'Broader Sub List', list, flashMsg: popFlash(req) });
+  // Which sessions each master-list person is currently assigned to, purely
+  // for visibility on this page — one query rather than one per row. Actual
+  // assignment happens on each session's own /subs page, not here.
+  const rows = db
+    .prepare(
+      `SELECT ssl.broader_list_id, s.id as session_id, s.name as session_name
+       FROM session_sub_list ssl JOIN sessions s ON s.id = ssl.session_id
+       WHERE s.archived_at IS NULL ORDER BY s.name`
+    )
+    .all();
+  const sessionsByListId = new Map();
+  for (const r of rows) {
+    if (!sessionsByListId.has(r.broader_list_id)) sessionsByListId.set(r.broader_list_id, []);
+    sessionsByListId.get(r.broader_list_id).push({ id: r.session_id, name: r.session_name });
+  }
+  res.render('admin/sub_list', { title: 'Broader Sub List', list, sessionsByListId, flashMsg: popFlash(req) });
 });
 
 router.post('/sub-list', (req, res) => {
@@ -1655,6 +1670,41 @@ router.post('/sub-list/:id/remove', (req, res) => {
   logActivity(req, { action: 'sublist.remove', description: `Removed ${entry ? entry.name : `#${req.params.id}`} from the broader sub list` });
   flash(req, 'Removed from sub list.');
   res.redirect('/admin/sub-list');
+});
+
+// --- Per-session sub list ------------------------------------------------
+//
+// Which master-list people (broader_sub_list) actually get emailed when
+// *this* session's sub requests escalate — see subFlow.js's
+// sessionSubList()/escalateOverdueRequests() and "Per-session sub list" in
+// CLAUDE.md. The master list itself is still managed globally at
+// /admin/sub-list; this page just picks a subset of it per session, same
+// checkbox-list-tied-to-a-session UX as the ad-hoc roster picker.
+
+router.get('/sessions/:id/subs', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  const masterList = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
+  const assigned = new Set(subFlow.sessionSubList(session.id).map((s) => s.id));
+  res.render('admin/session_subs', { title: 'Session Subs', session, masterList, assigned, flashMsg: popFlash(req) });
+});
+
+router.post('/sessions/:id/subs', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  const selectedIds = [].concat(req.body.sub_ids || []).map(Number);
+  db.transaction(() => {
+    db.prepare('DELETE FROM session_sub_list WHERE session_id = ?').run(session.id);
+    const insert = db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)');
+    for (const id of selectedIds) insert.run(session.id, id);
+  })();
+  logActivity(req, {
+    action: 'subs.session_assign',
+    description: `Set ${selectedIds.length} sub(s) for ${session.name}`,
+    sessionId: session.id,
+  });
+  flash(req, `Sub list updated for ${session.name} — ${selectedIds.length} assigned.`);
+  res.redirect(`/admin/sessions/${session.id}/subs`);
 });
 
 // --- Custom email ---------------------------------------------------------

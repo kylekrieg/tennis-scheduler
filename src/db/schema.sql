@@ -92,6 +92,19 @@ CREATE TABLE IF NOT EXISTS broader_sub_list (
   email         TEXT NOT NULL UNIQUE
 );
 
+-- Which master-list subs apply to which session (Kyle, 2026-08-13): the
+-- broader_sub_list above is the whole pool of people willing to sub at all;
+-- this join table is each session's own subset of that pool — only these
+-- people get escalation emails when one of *this* session's sub requests
+-- goes unanswered, not the entire master list. See subFlow.js's
+-- escalateOverdueRequests() and "Per-session sub list" in CLAUDE.md.
+CREATE TABLE IF NOT EXISTS session_sub_list (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id        INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  broader_list_id   INTEGER NOT NULL REFERENCES broader_sub_list(id) ON DELETE CASCADE,
+  UNIQUE(session_id, broader_list_id)
+);
+
 CREATE TABLE IF NOT EXISTS weeks (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id            INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
