@@ -147,6 +147,20 @@ function findOverlappingSessionEnrollments(sessionId = null) {
  * either assignment (e.g. via Reassign) makes the flag disappear on its own
  * next render, with nothing extra to clean up.
  *
+ * Excludes a pair once either week has actually been played (locked = 1).
+ * Kyle, 2026-08-13: unlike overlapping *enrollment* (kept unfiltered
+ * deliberately — that one's meant to stay a standing seasonal awareness, not
+ * something to fully resolve), an actual double-booking on a date that's
+ * already happened isn't actionable here anymore — the two players may well
+ * have sorted it out between themselves (one finding their own last-minute
+ * sub, possibly not even someone on either session's approved sub list) with
+ * no reason it would ever get reflected back into either schedule. Leaving
+ * it flagged forever would just be permanent, unresolvable noise. Checking
+ * both weeks' locked flag (rather than just one) means the pair only drops
+ * once *both* sides of that date are actually done, even in the rare case
+ * the two sessions' own match_time differ enough for one to lock slightly
+ * ahead of the other.
+ *
  * Returns one row per (player, date, session pair):
  * { player, date, sessionA, sessionB }.
  */
@@ -166,6 +180,7 @@ function findActualDoubleBookings(sessionId = null) {
        JOIN players p ON p.id = wa1.player_id
        WHERE wa1.status != 'subbed_out' AND wa2.status != 'subbed_out'
          AND s1.archived_at IS NULL AND s2.archived_at IS NULL
+         AND w1.locked = 0 AND w2.locked = 0
          AND s1.id < s2.id
        ORDER BY w1.match_date, p.name`
     )
