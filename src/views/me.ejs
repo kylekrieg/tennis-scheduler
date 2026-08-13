@@ -36,14 +36,13 @@
             <tr>
               <td style="white-space:nowrap;">
                 <%= fmtDate(a.match_date) %>
-                <% if (a.doubleBooked) { %>
-                  <br><span class="badge double_booked">double booked</span>
-                <% } %>
               </td>
               <td>
-                <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= a.is_sub ? ' (sub)' : '' %></span>
                 <% if (a.doubleBooked) { %>
+                  <span class="badge double_booked">double booked</span>
                   <div class="muted" style="font-size:12px;margin-top:4px;">Also scheduled in <%= sessionPublicLabel(a.doubleBooked) %> this same date — sort this out ahead of time, not the week of.</div>
+                <% } else { %>
+                  <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= a.is_sub ? ' (sub)' : '' %></span>
                 <% } %>
               </td>
               <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
