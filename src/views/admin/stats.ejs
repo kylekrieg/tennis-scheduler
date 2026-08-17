@@ -8,7 +8,7 @@
     <% stats.forEach(function(s) { %>
       <tr>
         <td><%= s.player.name %></td>
-        <td><%= s.target %></td>
+        <td><%= s.target %><% if (s.originalTarget != null && s.originalTarget !== s.target) { %> <span class="muted">(originally <%= s.originalTarget %>)</span><% } %></td>
         <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
         <td><%= s.subBonus %></td>
         <td><%= s.ballDuty %></td>

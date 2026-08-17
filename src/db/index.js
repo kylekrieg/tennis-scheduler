@@ -70,6 +70,23 @@ ensureColumn('swap_requests', 'initiator_player_id', 'INTEGER');
 ensureColumn('swap_requests', 'nudge_token', 'TEXT');
 ensureColumn('swap_requests', 'nudged_at', 'TEXT');
 
+// original_target snapshots each player's configured target the FIRST time
+// they're enrolled in a session (see admin.js's roster-save route) and is
+// never touched again, even if target_games is later edited down to "just
+// the remaining open weeks" after a mid-season roster change. Kyle,
+// 2026-08-13: target_games itself has no history — overwriting it mid-season
+// silently loses the original number, which the Stats page inherited too
+// since it reads that same column. Existing rows predate this column and
+// have no way to know what their true original number was (only today's
+// current target_games survives), so treating "whatever's currently there"
+// as the best available approximation is the right one-time backfill rather
+// than leaving it NULL forever. The WHERE clause makes this safe to run on
+// every boot rather than needing a one-time guard: after the first boot every
+// row has a value, and every new enrollment sets it at INSERT time (never
+// UPDATE), so nothing here ever matches again in practice.
+ensureColumn('session_players', 'original_target', 'INTEGER');
+raw.exec('UPDATE session_players SET original_target = target_games WHERE original_target IS NULL');
+
 // Club name/court info used to be one global value in app_settings; now each
 // session has its own (a single install can run sessions for different
 // clubs/locations). For an install that already had the old global columns

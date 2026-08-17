@@ -53,12 +53,13 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS session_players (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  target_games  INTEGER NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'regular',
-  priority      INTEGER,  -- cross-session double-booking guard: lower = higher priority when this player's sessions collide on the same day; NULL = not yet decided (see scheduleRun.js)
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id        INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_id         INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  target_games      INTEGER NOT NULL,
+  original_target   INTEGER, -- snapshot of target_games the first time this player was enrolled; never touched again, even if target_games is later edited down to "remaining open weeks" mid-season — see db/index.js
+  role              TEXT NOT NULL DEFAULT 'regular',
+  priority          INTEGER,  -- cross-session double-booking guard: lower = higher priority when this player's sessions collide on the same day; NULL = not yet decided (see scheduleRun.js)
   UNIQUE(session_id, player_id)
 );
 

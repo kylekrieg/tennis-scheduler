@@ -583,12 +583,13 @@ function saveRoster(sessionId, body) {
         pid
       );
     } else {
-      db.prepare('INSERT INTO session_players (session_id, player_id, target_games, priority) VALUES (?, ?, ?, ?)').run(
-        sessionId,
-        pid,
-        target,
-        priority
-      );
+      // original_target is set here, at first enrollment, and only here —
+      // the UPDATE branch above deliberately never touches it, even if
+      // target_games later gets edited down to "remaining open weeks" after
+      // a mid-season roster change. See db/index.js's ensureColumn comment.
+      db.prepare(
+        'INSERT INTO session_players (session_id, player_id, target_games, original_target, priority) VALUES (?, ?, ?, ?, ?)'
+      ).run(sessionId, pid, target, target, priority);
     }
   });
   for (const pid of existing) {
@@ -1484,9 +1485,16 @@ router.get('/sessions/:id/stats', (req, res) => {
     .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
     .all(session.id);
   const targets = db
-    .prepare('SELECT player_id, target_games FROM session_players WHERE session_id = ?')
+    .prepare('SELECT player_id, target_games, original_target FROM session_players WHERE session_id = ?')
     .all(session.id);
   const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
+  // original_target is snapshotted once at first enrollment and never
+  // touched again, even if target_games itself later gets edited down to
+  // "remaining open weeks" after a mid-season roster change — see
+  // db/index.js's ensureColumn comment. Shown here so the season-long number
+  // isn't lost the moment an admin has to resubmit the roster form for an
+  // unrelated reason.
+  const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
 
   const playedCounts = db
     .prepare(
@@ -1515,6 +1523,7 @@ router.get('/sessions/:id/stats', (req, res) => {
   const stats = roster.map((p) => ({
     player: p,
     target: targetMap.get(p.id) || 0,
+    originalTarget: originalTargetMap.get(p.id),
     played: playedMap.get(p.id) || 0,
     subBonus: subBonusMap.get(p.id) || 0,
     ballDuty: ballDutyMap.get(p.id) || 0,
