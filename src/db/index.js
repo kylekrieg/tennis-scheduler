@@ -87,6 +87,22 @@ ensureColumn('swap_requests', 'nudged_at', 'TEXT');
 ensureColumn('session_players', 'original_target', 'INTEGER');
 raw.exec('UPDATE session_players SET original_target = target_games WHERE original_target IS NULL');
 
+// Explicit "lock this schedule" action (Kyle, 2026-08-13) — distinct from the
+// automatic draft -> scheduled status flip that already happens on the FIRST
+// "Schedule these players" click. Between that first click and whenever the
+// admin is actually confident the schedule is final, blackout dates can still
+// change (admin overrides bypass the player-facing lock), the roster can
+// still be edited, and another session's roster can shift the double-booking
+// picture — so "a schedule technically exists" and "this is the version
+// we're standing behind" are genuinely different moments. Nullable TEXT
+// timestamp, manually set/cleared via a button (not automatic — matches every
+// other judgment call in this app), existing rows all predate this and
+// default to NULL (not locked), which is the correct, safe default. Locking
+// does not restrict any further edits — it's a marker and, eventually, a gate
+// for behavior that should wait for a stable schedule (see the deferred
+// sub-needed notification under discussion in CLAUDE.md), not a hard block.
+ensureColumn('sessions', 'schedule_locked_at', 'TEXT');
+
 // Club name/court info used to be one global value in app_settings; now each
 // session has its own (a single install can run sessions for different
 // clubs/locations). For an install that already had the old global columns

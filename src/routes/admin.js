@@ -234,6 +234,39 @@ router.post('/sessions/:id/unarchive', (req, res) => {
   res.redirect('/admin');
 });
 
+// "Lock this schedule" (Kyle, 2026-08-13) — a deliberate, manual marker that
+// the admin considers the current schedule final, distinct from the
+// automatic draft -> scheduled status flip that already happens on the first
+// "Schedule these players" click. Doesn't restrict any further edits (roster,
+// re-scheduling, blackout dates all still work exactly the same after
+// locking) — it's a timestamp and, eventually, a gate for behavior that
+// should wait for a stable schedule (e.g. a deferred sub-needed
+// notification), not a hard block. See "Lock this schedule" in CLAUDE.md.
+router.post('/sessions/:id/lock-schedule', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  // Ad-hoc sessions have no "Schedule these players" run to finalize — there's
+  // no equivalent moment this would mark. Not shown on that session's page
+  // either, but refused here too rather than relying on the UI alone.
+  if (session.session_type === 'adhoc') {
+    flash(req, 'Ad-hoc sessions don\'t have a schedule to lock — there\'s no season-long schedule generated for them.', 'error');
+    return res.redirect(`/admin/sessions/${session.id}`);
+  }
+  db.prepare(`UPDATE sessions SET schedule_locked_at = datetime('now') WHERE id = ?`).run(session.id);
+  logActivity(req, { action: 'session.lock_schedule', description: `Locked the schedule for "${session.name}"`, sessionId: session.id });
+  flash(req, `"${session.name}"'s schedule is locked — this doesn't stop you from making further changes, it's just a marker that this version is the one you're standing behind.`);
+  res.redirect(`/admin/sessions/${session.id}`);
+});
+
+router.post('/sessions/:id/unlock-schedule', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  db.prepare('UPDATE sessions SET schedule_locked_at = NULL WHERE id = ?').run(session.id);
+  logActivity(req, { action: 'session.unlock_schedule', description: `Unlocked the schedule for "${session.name}"`, sessionId: session.id });
+  flash(req, `"${session.name}"'s schedule is unlocked again.`);
+  res.redirect(`/admin/sessions/${session.id}`);
+});
+
 router.get('/settings', (req, res) => {
   res.render('admin/settings', {
     title: 'Settings',

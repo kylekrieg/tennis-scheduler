@@ -1,12 +1,21 @@
 <%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
-<h1><%= session.name %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %></h1>
-<p class="muted"><%= session.start_date %> – <%= session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %></p>
+<h1><%= session.name %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %><% if (session.schedule_locked_at) { %> <span class="badge confirmed">schedule locked</span><% } %></h1>
+<p class="muted"><%= session.start_date %> – <%= session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %><% if (session.schedule_locked_at) { %> · schedule locked <%= session.schedule_locked_at %><% } %></p>
 
 <div class="actions">
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/blackouts">Manage blackout dates</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/subs">Manage subs</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/stats">Stats</a>
+  <% if (session.schedule_locked_at) { %>
+    <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/unlock-schedule">
+      <button class="btn neutral" type="submit">Unlock schedule</button>
+    </form>
+  <% } else { %>
+    <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/lock-schedule">
+      <button class="btn neutral" type="submit">Lock this schedule</button>
+    </form>
+  <% } %>
   <% if (session.archived_at) { %>
     <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/unarchive">
       <button class="btn neutral" type="submit">Unarchive</button>
