@@ -129,7 +129,7 @@
       <% r.assignments.forEach(function(a) { %>
         <div class="player-row">
           <span class="pname"><strong><%= a.name %></strong> <span class="muted">(<% if (multiCourt) { %>Court <%= a.court %> · <% } %>Team <%= a.team %>)</span><% if (a.is_sub) { %> <span class="muted">sub</span><% } %></span>
-          <% if (a.doubleBooked) { %>
+          <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
             <span class="badge double_booked">double booked</span>
             <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= a.doubleBooked.name %></a></span>
           <% } else { %>
