@@ -967,9 +967,15 @@ router.get('/sessions/:id', (req, res) => {
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
+    // playerName joined in here specifically so the week-card badge can say
+    // whose slot is open ("sub open — Alice") rather than just "sub open"
+    // with no way to tell which of the week's players it's about without
+    // scanning every row's own status badge separately (Kyle, 2026-08-13).
     const openSubRequest = db
       .prepare(
-        `SELECT sr.* FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+        `SELECT sr.*, p.name as playerName FROM sub_requests sr
+         JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+         JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? AND sr.status IN ('open','escalated','unfilled') LIMIT 1`
       )
       .get(w.id);

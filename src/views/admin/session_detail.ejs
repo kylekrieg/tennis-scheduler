@@ -76,7 +76,7 @@
         <% if (r.week.locked) { %><span class="muted">locked</span><% } %>
         <% if (r.week.needs_attention) { %><span class="muted">⚠ <%= r.week.notes %></span><% } %>
         <% if (r.openSubRequest) { %>
-          <span class="badge needs_sub">sub <%= r.openSubRequest.status %></span>
+          <span class="badge needs_sub">sub <%= r.openSubRequest.status %> — <%= r.openSubRequest.playerName %></span>
           <% if (!r.week.locked) { %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/clear-sub-request" style="display:inline;">
               <button class="btn small neutral" type="submit">Clear sub request</button>
