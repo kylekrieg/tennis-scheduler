@@ -20,7 +20,7 @@
               <% r.assignments.filter(a => a.team === team && a.court === court).forEach(function(a) { %>
                 <div style="margin-bottom:4px;">
                   <%= a.name %><% if (a.is_sub) { %> <span class="muted">(sub)</span><% } %>
-                  <% if (a.doubleBooked) { %>
+                  <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                     <span class="badge double_booked">double booked</span>
                     <div class="muted" style="font-size:11px;">also in <%= sessionPublicLabel(a.doubleBooked) %></div>
                   <% } else { %>
@@ -36,7 +36,7 @@
     <% }) %>
   </tbody>
 </table>
-<% if (rows.some(r => r.assignments.some(a => a.doubleBooked))) { %>
+<% if (rows.some(r => r.assignments.some(a => a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')))) { %>
   <p class="muted" style="margin-top:8px;">"Double booked" means you're scheduled to play in two different sessions on the same date — sort it out ahead of time by reassigning yourself in one of them or finding a sub, rather than the week of.</p>
 <% } %>
 <%- include('partials/footer') %>
