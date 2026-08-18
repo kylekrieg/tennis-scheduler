@@ -152,7 +152,9 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   week_assignment_id    INTEGER NOT NULL REFERENCES week_assignments(id) ON DELETE CASCADE,
   status                TEXT NOT NULL DEFAULT 'open', -- open | filled | escalated | unfilled
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  escalated_at          TEXT
+  escalated_at          TEXT,
+  initiated_by          TEXT NOT NULL DEFAULT 'player', -- 'player' | 'admin' — see subFlow.js's adminFlagNeedsSub()
+  fanout_sent_at        TEXT -- NULL until the candidate roster has actually been emailed. Self-service requests set this immediately (see fanOutSubRequest()); an admin-flagged request leaves it NULL until cron.js's processReminders() reaches that week's normal reminder time, so the flag itself never emails anyone by surprise.
 );
 
 CREATE TABLE IF NOT EXISTS sub_offers (

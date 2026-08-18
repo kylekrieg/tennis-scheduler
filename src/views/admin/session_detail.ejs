@@ -143,6 +143,7 @@
               <input type="hidden" name="assignment_id" value="<%= a.id %>">
               <select name="new_player_id">
                 <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= p.name %></option><% }) %>
+                <option value="needs_sub">— Needs a sub —</option>
               </select>
               <button class="btn small neutral" type="submit">Reassign</button>
             </form>

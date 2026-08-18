@@ -89,6 +89,14 @@ async function processReminders() {
         if (now < reminderAt) continue;
 
         await sendReminderEmailsForWeek(week, session);
+        // Any slot an admin flagged "Needs a sub" (see subFlow.js's
+        // adminFlagNeedsSub()) sends no email at flag time — the fan-out to
+        // the non-playing roster waits for this exact moment, the first time
+        // this week's own reminder threshold is reached, same as the
+        // confirmation reminders just above. Safe to call every tick once
+        // this week qualifies: fanOutPendingAdminFlagsForWeek() only ever
+        // acts on a request whose fanout_sent_at is still NULL.
+        await subFlow.fanOutPendingAdminFlagsForWeek(week.id);
       }
     } catch (err) {
       // One session with bad/legacy data (e.g. a malformed reminder_time

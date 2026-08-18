@@ -68,20 +68,22 @@ function hasActiveConcurrentSubRequest(weekId, excludingAssignmentId) {
 }
 
 /**
- * Kicks off a sub request for a given week_assignment: marks it needs_sub,
- * opens a sub_requests row, and emails every other enrolled player in the
- * session who isn't already playing that week (the "5 non-playing regulars"
- * in the example 9-player/4-per-week group; generalizes to roster size).
+ * The actual candidate computation + sub_offers creation + fan-out emails for
+ * an already-open sub_requests row — shared by the immediate self-service
+ * path (createSubRequest, below) and the deferred admin-flagged path (cron.js's
+ * processReminders(), via fanOutPendingAdminFlagsForWeek() below). Recomputes
+ * "who's already playing this week" fresh, right now, rather than trusting a
+ * snapshot taken whenever the request was first opened — matters for the
+ * deferred case, where the roster could genuinely have changed in the time
+ * between an admin flagging a slot and that week's reminder time arriving.
+ * Sets `fanout_sent_at`, which is what makes this safe to only ever run once
+ * per request (see fanOutPendingAdminFlagsForWeek()'s WHERE clause).
  */
-async function createSubRequest(weekAssignmentId) {
-  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
-  if (!assignment) throw new Error('Assignment not found');
+async function fanOutSubRequest(subRequestId, requestingPlayerName) {
+  const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(subRequest.week_assignment_id);
   const week = getWeekWithSession(assignment.week_id);
-  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
-
-  if (hasActiveConcurrentSubRequest(week.id, weekAssignmentId)) {
-    return { blocked: true, reason: 'concurrent' };
-  }
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
 
   const alreadyPlaying = db
     .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ? AND status != 'subbed_out'`)
@@ -95,9 +97,52 @@ async function createSubRequest(weekAssignmentId) {
     )
     .all(week.session_id, ...alreadyPlaying);
 
+  const offers = db.transaction(() => {
+    db.prepare(`UPDATE sub_requests SET fanout_sent_at = datetime('now') WHERE id = ?`).run(subRequestId);
+    return candidates.map((c) => {
+      const raw = generateRawToken();
+      db.prepare(
+        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
+      ).run(subRequestId, c.id, hashToken(raw), 'pending');
+      return { candidate: c, rawToken: raw };
+    });
+  })();
+
+  for (const { candidate, rawToken } of offers) {
+    await email.sendSubRequestFanout({
+      recipient: candidate,
+      week,
+      session,
+      claimToken: rawToken,
+      requestingPlayerName,
+    });
+  }
+
+  return offers.length;
+}
+
+/**
+ * Kicks off a sub request for a given week_assignment: marks it needs_sub,
+ * opens a sub_requests row, and emails every other enrolled player in the
+ * session who isn't already playing that week (the "5 non-playing regulars"
+ * in the example 9-player/4-per-week group; generalizes to roster size).
+ * Player-initiated (self-service "Need a sub", or the emailed reminder link)
+ * — fans out immediately. Compare adminFlagNeedsSub() below, which does the
+ * same status transition but deliberately sends nothing right away.
+ */
+async function createSubRequest(weekAssignmentId) {
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
+  if (!assignment) throw new Error('Assignment not found');
+  const week = getWeekWithSession(assignment.week_id);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
+
+  if (hasActiveConcurrentSubRequest(week.id, weekAssignmentId)) {
+    return { blocked: true, reason: 'concurrent' };
+  }
+
   const wasBallDuty = week.ball_duty_player_id === player.id;
 
-  const applyDb = db.transaction(() => {
+  const subRequestId = db.transaction(() => {
     db.prepare("UPDATE week_assignments SET status = 'needs_sub' WHERE id = ?").run(weekAssignmentId);
     // The moment a sub is requested, the "I'm playing" confirm link for this
     // exact slot should stop working outright — not just show a polite
@@ -106,8 +151,8 @@ async function createSubRequest(weekAssignmentId) {
     // (original reminder, any follow-up nudge, etc. all at once).
     tokenStore.invalidateTokensForAssignment(weekAssignmentId);
     const reqInfo = db
-      .prepare('INSERT INTO sub_requests (week_assignment_id, status) VALUES (?, ?)')
-      .run(weekAssignmentId, 'open');
+      .prepare("INSERT INTO sub_requests (week_assignment_id, status, initiated_by) VALUES (?, 'open', 'player')")
+      .run(weekAssignmentId);
     const subRequestId = reqInfo.lastInsertRowid;
 
     if (wasBallDuty) {
@@ -116,36 +161,94 @@ async function createSubRequest(weekAssignmentId) {
       ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
     }
 
-    const offers = candidates.map((c) => {
-      const raw = generateRawToken();
-      db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
-      ).run(subRequestId, c.id, hashToken(raw), 'pending');
-      return { candidate: c, rawToken: raw };
-    });
+    return subRequestId;
+  })();
 
-    return { subRequestId, offers };
-  });
-
-  const { subRequestId, offers } = applyDb();
+  const offerCount = await fanOutSubRequest(subRequestId, player.name);
 
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
-  for (const { candidate, rawToken } of offers) {
-    await email.sendSubRequestFanout({
-      recipient: candidate,
-      week,
-      session,
-      claimToken: rawToken,
-      requestingPlayerName: player.name,
-    });
-  }
-
   // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
   // Sub" page): the affected player gets their own confirmation the moment
   // this fires, so a mistake surfaces immediately instead of after the fact.
   await email.sendSubRequestOwnConfirmation({ player, week, session });
 
-  return { blocked: false, subRequestId, offerCount: offers.length };
+  return { blocked: false, subRequestId, offerCount };
+}
+
+/**
+ * Admin-initiated equivalent of createSubRequest(), for a hard conflict the
+ * admin needs to flag on a player's behalf — Kyle, 2026-08-13: "admins should
+ * really not be touching the player schedule except for edge cases," so this
+ * is meant to stay rare, not the normal path (players have Request a Sub /
+ * Swap a Week for that). Does the identical status transition and token
+ * invalidation as the self-service flow, but sends NO email at all right
+ * now — not even a "you've been marked as needing a sub" notice to the
+ * affected player ("admin has final say"). The candidate fan-out is deferred
+ * entirely to cron.js's processReminders(), which calls
+ * fanOutPendingAdminFlagsForWeek() once that week's own reminder threshold
+ * arrives — same email, same recipients, just later. Every action here is
+ * still logged via activityLog.js at the call site (admin.js), same as every
+ * other admin mutation.
+ */
+function adminFlagNeedsSub(weekAssignmentId) {
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
+  if (!assignment) throw new Error('Assignment not found');
+  const week = getWeekWithSession(assignment.week_id);
+  if (week.locked) return { blocked: true, reason: 'locked' };
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
+
+  if (hasActiveConcurrentSubRequest(week.id, weekAssignmentId)) {
+    return { blocked: true, reason: 'concurrent' };
+  }
+
+  const wasBallDuty = week.ball_duty_player_id === player.id;
+
+  const subRequestId = db.transaction(() => {
+    db.prepare("UPDATE week_assignments SET status = 'needs_sub' WHERE id = ?").run(weekAssignmentId);
+    tokenStore.invalidateTokensForAssignment(weekAssignmentId);
+    const reqInfo = db
+      .prepare("INSERT INTO sub_requests (week_assignment_id, status, initiated_by) VALUES (?, 'open', 'admin')")
+      .run(weekAssignmentId);
+    const subRequestId = reqInfo.lastInsertRowid;
+
+    if (wasBallDuty) {
+      db.prepare(
+        "UPDATE weeks SET ball_duty_player_id = NULL, needs_attention = 1, notes = ? WHERE id = ?"
+      ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
+    }
+
+    return subRequestId;
+  })();
+
+  return { blocked: false, subRequestId, playerName: player.name };
+}
+
+/**
+ * Cron entry point (processReminders(), once a given week's own reminder
+ * threshold has been reached): finds any admin-flagged sub request for that
+ * week whose fan-out hasn't gone out yet, and sends it — same email, same
+ * candidate computation as a player's own request, just triggered here
+ * instead of inline. The `fanout_sent_at IS NULL` check is what makes this
+ * safe to call on every tick once a week's reminder time has passed: the
+ * first call sends it and stamps the column, every later call sees nothing
+ * to do.
+ */
+async function fanOutPendingAdminFlagsForWeek(weekId) {
+  const pending = db
+    .prepare(
+      `SELECT sr.id as subRequestId, p.name as playerName
+       FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       JOIN players p ON p.id = wa.player_id
+       WHERE wa.week_id = ? AND sr.status = 'open' AND sr.initiated_by = 'admin' AND sr.fanout_sent_at IS NULL`
+    )
+    .all(weekId);
+
+  for (const { subRequestId, playerName } of pending) {
+    await fanOutSubRequest(subRequestId, playerName);
+  }
+
+  return pending.length;
 }
 
 /** First explicit "Confirm" click on a sub offer wins; closes all others. */
@@ -341,6 +444,8 @@ function flagStillUnfilled() {
 
 module.exports = {
   createSubRequest,
+  adminFlagNeedsSub,
+  fanOutPendingAdminFlagsForWeek,
   claimSub,
   closeActiveSubRequestForAssignment,
   escalateOverdueRequests,

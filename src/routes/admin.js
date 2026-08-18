@@ -1018,6 +1018,35 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
   const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(req.params.weekId);
   if (!assignment || !week) return res.status(404).send('Not found');
 
+  // "Needs a sub" in the dropdown, instead of picking a specific replacement
+  // — a completely different action from the rest of this route, so it's
+  // branched off first. See subFlow.js's adminFlagNeedsSub() doc comment:
+  // this is meant to stay a rare, edge-case admin action (players have
+  // Request a Sub / Swap a Week for the normal path), sends no email at all
+  // right now, and defers the actual candidate fan-out to that week's normal
+  // reminder time.
+  if (new_player_id === 'needs_sub') {
+    const result = subFlow.adminFlagNeedsSub(assignment.id);
+    if (result.blocked) {
+      const reasonText =
+        result.reason === 'locked'
+          ? "Can't flag — this week is already locked (already played)."
+          : 'Another sub request is already open for this week — resolve that one first.';
+      flash(req, reasonText, 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    logActivity(req, {
+      action: 'week.admin_flag_needs_sub',
+      description: `Flagged ${email.fmtDate(week.match_date)} slot (${result.playerName}) as needing a sub — no emails sent yet, will fan out to the roster at this week's normal reminder time`,
+      sessionId: Number(req.params.id),
+    });
+    flash(
+      req,
+      `${result.playerName}'s slot for ${email.fmtDate(week.match_date)} is flagged as needing a sub. No emails have gone out yet — the roster will be notified when this week's normal reminders fire.`
+    );
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
   const newPlayerId = Number(new_player_id);
 
   // Same landmine as the ball-duty route: a blank dropdown submits '', which

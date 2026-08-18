@@ -103,6 +103,25 @@ raw.exec('UPDATE session_players SET original_target = target_games WHERE origin
 // sub-needed notification under discussion in CLAUDE.md), not a hard block.
 ensureColumn('sessions', 'schedule_locked_at', 'TEXT');
 
+// Admin-flagged sub requests (Kyle, 2026-08-13): an admin can now flag a
+// player's slot as needing a sub directly from the Reassign dropdown ("Needs
+// a sub"), for a hard conflict discovered before the player's gotten to it
+// themselves — deliberately rare/edge-case, per Kyle ("admins should really
+// not be touching the player schedule except for edge cases"). Unlike the
+// player-initiated flow, this sends no email of any kind at the moment it's
+// flagged — not even to the affected player — and the candidate fan-out
+// itself waits for that week's normal reminder time rather than firing
+// immediately. `initiated_by` records which path created the request (shown
+// nowhere player-facing, just for admin/audit clarity); `fanout_sent_at`
+// is the actual gate cron.js's processReminders() checks. Existing rows
+// predate both columns and were all self-service by definition (this feature
+// didn't exist yet), so they backfill to 'player' / fanout already sent at
+// creation time — the correct history for a request that, at the time, could
+// only have come from a player and could only have emailed immediately.
+ensureColumn('sub_requests', 'initiated_by', "TEXT NOT NULL DEFAULT 'player'");
+ensureColumn('sub_requests', 'fanout_sent_at', 'TEXT');
+raw.exec(`UPDATE sub_requests SET fanout_sent_at = created_at WHERE fanout_sent_at IS NULL AND initiated_by = 'player'`);
+
 // Club name/court info used to be one global value in app_settings; now each
 // session has its own (a single install can run sessions for different
 // clubs/locations). For an install that already had the old global columns
