@@ -1127,14 +1127,24 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
 
 router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   // Reassign and Mark confirmed both close out an active sub request as a
-  // side effect of resolving the underlying assignment (see
-  // subFlow.closeActiveSubRequestForAssignment) — this route is for when the
-  // admin just wants the "sub open" flag gone directly, without necessarily
-  // touching who's assigned to that slot (e.g. an already-stuck flag from
-  // before that fix existed, or a case that was actually sorted out outside
-  // the app). Only one open/escalated/unfilled sub_requests row can exist
-  // per week at a time (hasActiveConcurrentSubRequest), so weekId alone is
-  // enough to find it.
+  // side effect of resolving the underlying assignment to a *different*
+  // outcome they've already decided on (a new player, or an explicit
+  // confirmation) — this route is the plain "undo" for when nothing else
+  // should change: the request itself was a mistake or got called off (the
+  // player picked the wrong week, or asked for a sub and then found out they
+  // can play after all). Kyle, 2026-08-25: in that case the player's status
+  // needs to go back to 'scheduled' — not stay stuck on 'needs_sub' — so
+  // they're back in the normal reminder/follow-up flow and get emailed like
+  // anyone else, rather than silently falling through the cracks. Only one
+  // open/escalated/unfilled sub_requests row can exist per week at a time
+  // (hasActiveConcurrentSubRequest), so weekId alone is enough to find it.
+  //
+  // This assumes the original player is the one actually playing again. If
+  // instead someone else stepped in outside the app (a text message, a
+  // phone call) and the slot needs to show a different player, use Reassign
+  // instead of this button — it records who's really playing and closes the
+  // request as part of the same action, rather than resetting to the
+  // original player.
   const active = db
     .prepare(
       `SELECT sr.id, sr.week_assignment_id, w.match_date, p.name as player_name
@@ -1150,12 +1160,18 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
   subFlow.closeActiveSubRequestForAssignment(active.week_assignment_id);
+  // Only resets if still 'needs_sub' — defensive in case this somehow fires
+  // after the slot already moved on some other way, so it can never clobber
+  // a 'subbed_out'/'confirmed' status set by something else in the meantime.
+  db.prepare(`UPDATE week_assignments SET status = 'scheduled' WHERE id = ? AND status = 'needs_sub'`).run(
+    active.week_assignment_id
+  );
   logActivity(req, {
     action: 'week.clear_sub_request',
-    description: `Cleared sub request for ${active.player_name}'s ${email.fmtDate(active.match_date)} slot`,
+    description: `Cleared sub request for ${active.player_name}'s ${email.fmtDate(active.match_date)} slot — status reset to scheduled`,
     sessionId: Number(req.params.id),
   });
-  flash(req, 'Sub request cleared — its invite links are now dead. If that slot still needs a player, use Reassign below.');
+  flash(req, `Sub request cleared — ${active.player_name} is back to "scheduled" for that week. If someone else is actually playing instead, use Reassign below.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
