@@ -25,7 +25,7 @@
           <tr>
             <td><%= fmtDate(a.match_date) %></td>
             <td>
-              <% if (a.doubleBooked) { %>
+              <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                 <span class="badge double_booked">double booked</span>
                 <div class="muted" style="font-size:11px;">also in <%= sessionPublicLabel(a.doubleBooked) %></div>
               <% } else { %>
@@ -33,16 +33,22 @@
               <% } %>
             </td>
             <td>
-              <form method="post" action="/request-sub/start">
-                <input type="hidden" name="assignment_id" value="<%= a.id %>">
-                <button class="btn small red" type="submit">Need a sub for this week</button>
-              </form>
+              <% if (a.status === 'scheduled' || a.status === 'confirmed') { %>
+                <form method="post" action="/request-sub/start">
+                  <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                  <button class="btn small red" type="submit">Need a sub for this week</button>
+                </form>
+              <% } else if (a.status === 'needs_sub') { %>
+                <span class="muted">Already requested — waiting for someone to claim it.</span>
+              <% } else if (a.status === 'subbed_out') { %>
+                <span class="muted">A sub has taken this spot.</span>
+              <% } %>
             </td>
           </tr>
         <% }) %>
       </tbody>
     </table>
-    <p class="muted">This takes you to the same confirmation step as the reminder email — nothing gets sent to the other players until you explicitly confirm on the next page.</p>
+    <p class="muted">We'll email you a confirmation link first — nothing gets sent to the other players until you click it and confirm on that page.</p>
     <% if (upcomingAssignments.some(a => a.doubleBooked)) { %>
       <p class="muted">"Double booked" means you're also scheduled to play in another session on that same date — that's usually the week you'll want to request a sub for.</p>
     <% } %>

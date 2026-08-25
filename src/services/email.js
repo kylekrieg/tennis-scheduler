@@ -293,6 +293,38 @@ async function sendFollowUpReminder({ player, week, session, confirmToken, needS
 }
 
 /**
+ * Sent the moment someone clicks "Need a sub for this week" on the public,
+ * unauthenticated self-service /request-sub page — before anything in the
+ * DB changes. /request-sub has no login, just a name picked from a
+ * dropdown, so nothing stops a script from hitting that button for every
+ * name in the list; this is the gate that makes that harmless. The single
+ * link here goes to the exact same /need-sub/:token GET/POST landing page
+ * already used by the reminder email's "need a sub" link — same "Are you
+ * sure?" confirmation, same POST-mutates convention — so a bot (or a
+ * mis-click on the wrong name) never gets past this without whoever
+ * actually owns that inbox choosing to click through. Kyle, 2026-08-18:
+ * "I feel like bots could easily send out many emails by pressing that sub
+ * button. I want there to be some validation by the player." Distinct from
+ * sendSubRequestOwnConfirmation() below, which fires *after* the fanout has
+ * already gone out, as an audit trail/mistake-catcher; this one fires
+ * *before*, as the actual consent gate — nothing is emailed to the rest of
+ * the roster until the recipient of *this* email clicks through.
+ */
+async function sendSubRequestVerification({ player, week, session, needSubToken }) {
+  const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
+  const subject = `Confirm your sub request — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${player.name},</p>
+    <p>Someone just clicked "Need a sub for this week" for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} on the Request a Sub page. To keep this from happening by mistake (or automatically), nothing has been sent to anyone else yet — click below to confirm it's really you and finish requesting a sub:</p>
+    <p><a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I need a sub</a></p>
+    <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'sub_request_verification', relatedWeekId: week.id, session });
+}
+
+/**
  * Sent to the player themselves the moment their own sub request goes out —
  * whether they triggered it from an emailed link or the self-service
  * "Request a Sub" page. This is the safety net for a wrong-name mix-up on
@@ -614,6 +646,7 @@ module.exports = {
   wrapEmailHtml,
   sendConfirmationReminder,
   sendFollowUpReminder,
+  sendSubRequestVerification,
   sendSubRequestOwnConfirmation,
   sendBlackoutNotice,
   sendSubRequestFanout,

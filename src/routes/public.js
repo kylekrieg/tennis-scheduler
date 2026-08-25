@@ -277,12 +277,22 @@ router.get('/request-sub', (req, res) => {
   const selectedPlayerId = Number(req.query.player) || null;
   let upcomingAssignments = [];
   if (selectedPlayerId) {
+    // Includes needs_sub/subbed_out now (not just scheduled/confirmed) so a
+    // week the player already requested a sub for — or already got subbed
+    // out of — still shows here with its real status, instead of silently
+    // disappearing from the list. Kyle, 2026-08-18: "the status on the
+    // request a sub page should change reflecting the player already
+    // requested a sub for that week" / "once that sub request is filled,
+    // the status ... should be changed to 'subbed out'". The "Need a sub"
+    // button itself is still only rendered for scheduled/confirmed rows in
+    // request_sub.ejs — no point offering it once a request is already out
+    // or already filled.
     upcomingAssignments = db
       .prepare(
         `SELECT wa.*, w.match_date FROM week_assignments wa
          JOIN weeks w ON w.id = wa.week_id
          WHERE w.session_id = ? AND wa.player_id = ? AND w.locked = 0
-           AND wa.status IN ('scheduled', 'confirmed')
+           AND wa.status IN ('scheduled', 'confirmed', 'needs_sub', 'subbed_out')
          ORDER BY w.match_date`
       )
       .all(session.id, selectedPlayerId);
@@ -307,24 +317,48 @@ router.get('/request-sub', (req, res) => {
   });
 });
 
-// No state change occurs on page load — this POST only mints a token and
-// hands off to the exact same /need-sub/:token landing page + explicit
-// "Are you sure?" confirmation used by the emailed reminder links, so a
-// player requesting a sub weeks in advance goes through the identical
-// deliberate, single-use, POST-to-fire flow as everyone else.
-router.post('/request-sub/start', (req, res) => {
+// No state change occurs on page load, and this route itself never mutates
+// anything either — /request-sub has no login (just a name picked from a
+// dropdown), so nothing here can be trusted as "the real player clicked
+// this." Instead of handing the browser a working confirm link directly
+// (which a script could then also submit, no human involved at any point),
+// this mints a token and EMAILS the link to that player's own address —
+// the same /need-sub/:token GET/POST landing page + "Are you sure?"
+// confirmation used by the reminder email's "need a sub" link. Only
+// whoever actually has access to that inbox can get past this. Kyle,
+// 2026-08-18: "I feel like bots could easily send out many emails by
+// pressing that sub button. I want there to be some validation by the
+// player." See email.js's sendSubRequestVerification() doc comment.
+router.post('/request-sub/start', asyncHandler(async (req, res) => {
   const assignmentId = Number(req.body.assignment_id);
   const assignment = db
     .prepare(
-      `SELECT wa.* FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+      `SELECT wa.*, p.name, p.email FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
        WHERE wa.id = ? AND w.locked = 0 AND wa.status IN ('scheduled', 'confirmed')`
     )
     .get(assignmentId);
   if (!assignment) return res.redirect('/request-sub');
 
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const raw = tokenStore.issueToken(assignment.id);
-  res.redirect(`/need-sub/${raw}`);
-});
+  await email.sendSubRequestVerification({
+    player: { name: assignment.name, email: assignment.email },
+    week,
+    session,
+    needSubToken: raw,
+  });
+
+  res.render('message', {
+    title: 'Request a Sub',
+    heading: 'Check your email',
+    body: `We've sent a confirmation link to the email on file for ${assignment.name} — click it to finish requesting a sub for this week. Nothing has been sent to any other players yet.`,
+    tone: 'ok',
+    myPageId: assignment.player_id,
+  });
+}));
 
 // --- Direct player-to-player swaps (swapFlow.js) ---------------------------
 // A two-way trade of two specific players' own weeks, distinct from Request

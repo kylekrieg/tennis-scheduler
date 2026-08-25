@@ -5,6 +5,7 @@ const tokenStore = require('./tokenStore');
 const email = require('./email');
 const { zonedTimeToUtc } = require('./tz');
 const { getTimezone } = require('./settings');
+const { carriedOverBlackoutsForSession } = require('./sessionHelper');
 
 /**
  * The master broader_sub_list, scoped down to just the people an admin has
@@ -90,12 +91,33 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
     .all(week.id)
     .map((r) => r.player_id);
 
-  const candidates = db
+  const allCandidates = db
     .prepare(
       `SELECT p.id, p.name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
        WHERE sp.session_id = ? AND p.active = 1 AND p.id NOT IN (${alreadyPlaying.map(() => '?').join(',') || '0'})`
     )
     .all(week.session_id, ...alreadyPlaying);
+
+  // Don't offer the slot to someone who's already told the app they can't
+  // play this date — same blackoutSet pattern scheduleRun.js's isBlackedOut
+  // uses for the scheduler itself: this session's own blackout_dates rows,
+  // plus any carried over from another session's real blackout on the same
+  // calendar date (see sessionHelper.js's carriedOverBlackoutsForSession()).
+  // Kyle, 2026-08-18: "The system should check blackout dates and if someone
+  // is blacked out for that date, don't send them an email." A candidate who
+  // wants to play anyway despite a blackout entry can still be added
+  // manually by the admin (same override every other blackout check in this
+  // app allows) — this only controls who gets an unsolicited "sub needed"
+  // email, not a hard rule.
+  const blackoutSet = new Set(
+    db
+      .prepare('SELECT player_id, date FROM blackout_dates WHERE session_id = ?')
+      .all(week.session_id)
+      .map((b) => `${b.player_id}|${b.date}`)
+  );
+  for (const key of carriedOverBlackoutsForSession(week.session_id).keys()) blackoutSet.add(key);
+
+  const candidates = allCandidates.filter((c) => !blackoutSet.has(`${c.id}|${week.match_date}`));
 
   const offers = db.transaction(() => {
     db.prepare(`UPDATE sub_requests SET fanout_sent_at = datetime('now') WHERE id = ?`).run(subRequestId);
