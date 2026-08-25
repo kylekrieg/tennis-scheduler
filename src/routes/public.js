@@ -6,7 +6,7 @@ const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSessi
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const { buildPlayerICS, buildPlayerFeedICS } = require('../services/ics');
-const { streamSeasonPDF } = require('../services/pdf');
+const { streamSeasonPDF, streamAllSessionsPDF } = require('../services/pdf');
 const subFlow = require('../services/subFlow');
 const swapFlow = require('../services/swapFlow');
 const email = require('../services/email');
@@ -256,6 +256,7 @@ router.get('/calendar/feed/:playerId.ics', (req, res) => {
 router.get('/pdf', (req, res) => {
   const { session, sessions } = resolveSession(req);
   if (!session) return res.render('no_session', { title: 'PDF' });
+  if (req.query.download === 'all') return streamAllSessionsPDF(res);
   if (req.query.download === '1') return streamSeasonPDF(session.id, res);
   res.render('pdf', { title: 'Season PDF', session, sessions });
 });

@@ -5,4 +5,11 @@
 <div class="actions">
   <a class="btn green" href="/pdf?session=<%= session.id %>&download=1">Download PDF</a>
 </div>
+<% if (sessions.length > 1) { %>
+  <h2 style="margin-top:28px;">All active sessions</h2>
+  <p class="muted">One PDF covering every currently active session at once, sorted by date rather than split one-page-per-session — handy to print and post somewhere everyone checks. Runs to a couple of pages if there's a lot going on, rather than shrinking the text to force it onto one.</p>
+  <div class="actions">
+    <a class="btn green" href="/pdf?download=all">Download All Active Sessions (PDF)</a>
+  </div>
+<% } %>
 <%- include('partials/footer') %>

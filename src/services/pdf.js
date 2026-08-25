@@ -1,8 +1,8 @@
 'use strict';
 const PDFDocument = require('pdfkit');
 const db = require('../db');
-const { sessionPublicLabel } = require('./email');
-const { doubleBookingMapForSession } = require('./sessionHelper');
+const { sessionPublicLabel, sessionColor } = require('./email');
+const { doubleBookingMapForSession, getViewableSessions } = require('./sessionHelper');
 
 function fmtDateShort(iso) {
   const d = new Date(iso + 'T00:00:00Z');
@@ -135,4 +135,197 @@ function streamSeasonPDF(sessionId, res) {
   doc.end();
 }
 
-module.exports = { streamSeasonPDF };
+/**
+ * Streams a single PDF covering every currently viewable session (status
+ * scheduled/active, not archived — same scope as the session picker), one
+ * flat table sorted purely by match date across all of them, rather than a
+ * separate page per session. Kyle, 2026-08-25: wanted something compact
+ * enough to print and post covering every active session at once, "ordered
+ * by date so it fits on a couple of sheets of paper."
+ *
+ * Unlike streamSeasonPDF above, which shrinks font/row height as needed to
+ * force a single session onto exactly one page, this uses a fixed,
+ * comfortable font and paginates naturally (a new page whenever content
+ * would overflow the current one) — with several concurrent sessions
+ * across a full season this can genuinely run to a few pages, which is the
+ * "couple of sheets" Kyle asked for rather than illegibly small text
+ * forced onto one.
+ *
+ * Rows with zero assignments (a week not yet scheduled, or reduced to 0 by
+ * an understaffed week) are skipped entirely — a blank row helps nobody on
+ * a printed page meant to show who's actually playing when, and including
+ * every not-yet-scheduled future week across every active session would
+ * work directly against "fits on a couple sheets."
+ *
+ * Same-day rows are grouped by session (not randomly interleaved) via the
+ * sort's session.id tiebreaker, and each row gets a small colored dot in
+ * the Session column using the same sessionColor() every other page/email
+ * already uses for that session, so two sessions sharing a date are easy
+ * to tell apart at a glance on paper too, not just by reading the label.
+ */
+function streamAllSessionsPDF(res) {
+  const sessions = getViewableSessions();
+  if (sessions.length === 0) {
+    res.status(404).send('No active sessions to print');
+    return;
+  }
+
+  const rows = [];
+  for (const session of sessions) {
+    const weeks = db.prepare('SELECT * FROM weeks WHERE session_id = ? ORDER BY match_date').all(session.id);
+    if (weeks.length === 0) continue;
+    const weekIds = weeks.map((w) => w.id);
+
+    const assignments = db
+      .prepare(
+        `SELECT wa.week_id, wa.player_id, wa.court, wa.team, wa.status, wa.is_sub, p.name
+         FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+         WHERE wa.week_id IN (${weekIds.map(() => '?').join(',')})
+         ORDER BY wa.court, wa.team`
+      )
+      .all(...weekIds);
+    if (assignments.length === 0) continue;
+
+    const matchDateByWeek = new Map(weeks.map((w) => [w.id, w.match_date]));
+    const dbMap = doubleBookingMapForSession(session.id);
+    for (const a of assignments) {
+      const matchDate = matchDateByWeek.get(a.week_id);
+      if (dbMap.has(`${a.player_id}|${matchDate}`)) a.doubleBooked = true;
+    }
+
+    const byWeek = new Map();
+    for (const a of assignments) {
+      if (!byWeek.has(a.week_id)) byWeek.set(a.week_id, new Map());
+      const courts = byWeek.get(a.week_id);
+      if (!courts.has(a.court)) courts.set(a.court, { A: [], B: [] });
+      courts.get(a.court)[a.team].push(a);
+    }
+
+    const ballDutyNames = new Map();
+    for (const w of weeks) {
+      if (w.ball_duty_player_id) {
+        const p = db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id);
+        ballDutyNames.set(w.id, p ? p.name : '');
+      }
+    }
+
+    for (const w of weeks) {
+      const courts = byWeek.get(w.id);
+      if (!courts || courts.size === 0) continue;
+      for (const court of [...courts.keys()].sort((a, b) => a - b)) {
+        rows.push({
+          matchDate: w.match_date,
+          session,
+          court,
+          teams: courts.get(court),
+          ballDutyName: ballDutyNames.get(w.id) || '',
+          needsAttention: !!w.needs_attention,
+        });
+      }
+    }
+  }
+
+  if (rows.length === 0) {
+    res.status(404).send('No scheduled matches to print');
+    return;
+  }
+
+  rows.sort((a, b) => {
+    if (a.matchDate !== b.matchDate) return a.matchDate < b.matchDate ? -1 : 1;
+    if (a.session.id !== b.session.id) return a.session.id - b.session.id;
+    return a.court - b.court;
+  });
+
+  const anyMultiCourt = rows.some((r) => r.session.players_per_week > 4);
+
+  const doc = new PDFDocument({ size: 'LETTER', margin: 24 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="all_active_sessions_schedule.pdf"');
+  doc.pipe(res);
+
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
+
+  const colDate = doc.page.margins.left;
+  const colSession = colDate + 55;
+  const colCourt = colSession + 145;
+  const colTeamA = colCourt + (anyMultiCourt ? 30 : 0);
+  const colTeamB = colTeamA + (pageWidth - (colTeamA - colDate) - 85) / 2;
+  const colBallDuty = colDate + pageWidth - 85;
+  const fontSize = 9;
+  const rowPad = 4;
+
+  function drawHeader() {
+    doc.fontSize(15).font('Helvetica-Bold').text('All Active Sessions — Schedule', colDate, doc.y, { width: pageWidth, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor('#888').text(
+      `Generated ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+      colDate,
+      doc.y,
+      { width: pageWidth, align: 'center' }
+    );
+    doc.fillColor('#000');
+    doc.moveDown(0.5);
+    const hy = doc.y;
+    doc.fontSize(fontSize).font('Helvetica-Bold');
+    doc.text('Date', colDate, hy, { width: colSession - colDate - 5 });
+    doc.text('Session', colSession, hy, { width: colCourt - colSession - 5 });
+    if (anyMultiCourt) doc.text('Court', colCourt, hy, { width: 28 });
+    doc.text('Team A', colTeamA, hy, { width: colTeamB - colTeamA - 5 });
+    doc.text('Team B', colTeamB, hy, { width: colBallDuty - colTeamB - 5 });
+    doc.text('Ball Duty', colBallDuty, hy, { width: 80 });
+    doc.font('Helvetica').fontSize(fontSize);
+    return hy + fontSize + rowPad * 2;
+  }
+
+  let y = drawHeader();
+
+  const label = (arr) => arr.map((p) => `${p.name}${p.status === 'needs_sub' ? '*' : ''}${p.is_sub ? ' (sub)' : ''}${p.doubleBooked ? ' [DB]' : ''}`).join(' / ');
+
+  const teamAWidth = colTeamB - colTeamA - 5;
+  const teamBWidth = colBallDuty - colTeamB - 5;
+  const sessionWidth = colCourt - colSession - 5 - 10;
+
+  for (const r of rows) {
+    const teamAText = label(r.teams.A) || '—';
+    const teamBText = label(r.teams.B) || '—';
+    const sessionText = sessionPublicLabel(r.session);
+    const rowHeight =
+      Math.max(
+        fontSize + rowPad,
+        doc.heightOfString(teamAText, { width: teamAWidth }),
+        doc.heightOfString(teamBText, { width: teamBWidth }),
+        doc.heightOfString(sessionText, { width: sessionWidth })
+      ) + rowPad;
+
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawHeader();
+    }
+
+    const flag = r.needsAttention ? ' [!]' : '';
+    doc.fillColor(sessionColor(r.session)).circle(colSession + 3, y + fontSize / 2, 3).fill();
+    doc.fillColor('#000');
+    doc.text(fmtDateShort(r.matchDate) + flag, colDate, y, { width: colSession - colDate - 5 });
+    doc.text(sessionText, colSession + 10, y, { width: sessionWidth });
+    if (anyMultiCourt) doc.text(String(r.court), colCourt, y, { width: 28 });
+    doc.text(teamAText, colTeamA, y, { width: teamAWidth });
+    doc.text(teamBText, colTeamB, y, { width: teamBWidth });
+    doc.text(r.ballDutyName || '—', colBallDuty, y, { width: 80 });
+
+    y += rowHeight;
+  }
+
+  if (y + 20 > bottomLimit) {
+    doc.addPage();
+    y = doc.page.margins.top;
+  }
+  doc.fontSize(7).fillColor('#888').text(
+    '* needs a sub    [!] needs admin attention    [DB] double booked in another session — resolve before match day    colored dot = session',
+    colDate,
+    y + 6
+  );
+
+  doc.end();
+}
+
+module.exports = { streamSeasonPDF, streamAllSessionsPDF };
