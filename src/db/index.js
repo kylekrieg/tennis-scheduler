@@ -189,6 +189,30 @@ if (adminCount === 0 && process.env.ADMIN_PASSWORD_HASH) {
     .run('Admin', process.env.ADMIN_PASSWORD_HASH);
 }
 
+// Name-based "My Page" URLs (Kyle, 2026-08-26): players.slug is app-level
+// unique (no DB constraint — see playerSlug.js's slugTaken(), which is what
+// actually enforces it on create/edit), generated once from the player's
+// name and never auto-regenerated afterward so existing /me/<slug> links
+// stay valid even if the name is later corrected. Every existing row
+// predates this column, so backfill every NULL slug once, in a stable order
+// (id ASC) so re-running this is a no-op after the first boot — same
+// "unconditional WHERE-guarded backfill" pattern as original_target above.
+// Collisions within the backfill itself (two players who'd generate the
+// same base slug) are resolved the same way playerSlug.js resolves any
+// other collision: -2, -3, ... appended, checked against both already-
+// committed rows and slugs assigned earlier in this same loop.
+ensureColumn('players', 'slug', 'TEXT');
+{
+  const { generateUniqueSlug } = require('../services/playerSlug');
+  const unslugged = raw.prepare('SELECT id, name FROM players WHERE slug IS NULL ORDER BY id ASC').all();
+  if (unslugged.length > 0) {
+    const setSlug = raw.prepare('UPDATE players SET slug = ? WHERE id = ?');
+    for (const p of unslugged) {
+      setSlug.run(generateUniqueSlug(raw, p.name, p.id), p.id);
+    }
+  }
+}
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

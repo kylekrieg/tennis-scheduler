@@ -240,7 +240,7 @@ async function respondToSwap(rawToken, accept) {
       initiatorWeek: initiatorCtx.week,
       session: initiatorCtx.session,
     });
-    return { ok: true, accepted: false, respondingPlayerId: targetCtx.player.id };
+    return { ok: true, accepted: false, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id };
   }
 
   // Exclude this swap's own (still-pending, about to be accepted) row from
@@ -315,7 +315,7 @@ async function respondToSwap(rawToken, accept) {
     }
   }
 
-  return { ok: true, accepted: true, respondingPlayerId: targetCtx.player.id };
+  return { ok: true, accepted: true, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id };
 }
 
 /** Admin escape hatch for a stuck/unwanted pending proposal — mirrors

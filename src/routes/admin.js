@@ -20,6 +20,7 @@ const statusPage = require('../services/statusPage');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
+const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 // Turns findOverlappingSessionEnrollments() rows scoped to one session into a
@@ -464,6 +465,19 @@ function invalidPlayerFields(b) {
   const email = (b.email || '').trim();
   if (!name) return 'Name is required.';
   if (!EMAIL_RE.test(email)) return 'A valid email address is required.';
+  return null;
+}
+
+// URL slug for "My Page" (/me/<slug>) — see playerSlug.js's doc comment.
+// Blank is always fine (auto-generate on create, leave unchanged on edit);
+// only validated when the admin has actually typed something into the
+// field, so this is purely a manual override for the rare real collision
+// (e.g. two "Brian B"s) Kyle asked to be able to resolve by hand.
+function invalidSlugField(rawSlug, excludePlayerId) {
+  const slug = (rawSlug || '').trim();
+  if (!slug) return null;
+  if (!SLUG_RE.test(slug)) return 'URL slug can only contain lowercase letters, numbers, and hyphens (e.g. "brian-b").';
+  if (slugTaken(db, slug, excludePlayerId)) return 'That URL slug is already in use by another player — pick a different one.';
   return null;
 }
 
@@ -1661,12 +1675,21 @@ router.post('/players', (req, res) => {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/players');
   }
+  const slugError = invalidSlugField(req.body.slug, null);
+  if (slugError) {
+    flash(req, slugError, 'error');
+    return res.redirect('/admin/players');
+  }
   try {
-    db.prepare('INSERT INTO players (name, email) VALUES (?, ?)').run(
-      req.body.name.trim(),
-      req.body.email.trim()
+    const name = req.body.name.trim();
+    const submittedSlug = (req.body.slug || '').trim();
+    const slug = submittedSlug || generateUniqueSlug(db, name, null);
+    db.prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)').run(
+      name,
+      req.body.email.trim(),
+      slug
     );
-    logActivity(req, { action: 'player.create', description: `Added player ${req.body.name.trim()} (${req.body.email.trim()})` });
+    logActivity(req, { action: 'player.create', description: `Added player ${name} (${req.body.email.trim()})` });
     flash(req, 'Player added.');
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -1677,23 +1700,39 @@ router.post('/players', (req, res) => {
 router.post('/players/:id/edit', (req, res) => {
   // Pure identity swap: name/email change only, every existing assignment,
   // ball duty slot, and blackout date carries over untouched (Full_Scope_Of_Work.md §7).
+  // Slug is deliberately NOT auto-regenerated when the name changes (Kyle,
+  // 2026-08-26 — see playerSlug.js's doc comment): a bookmarked/emailed My
+  // Page link should keep working through a name correction. It's only
+  // touched here if the admin explicitly types a different value into the
+  // URL slug field, e.g. to resolve a real "two Brian B's" collision.
   const fieldError = invalidPlayerFields(req.body);
   if (fieldError) {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/players');
   }
-  const before = db.prepare('SELECT name, email FROM players WHERE id = ?').get(req.params.id);
+  const before = db.prepare('SELECT name, email, slug FROM players WHERE id = ?').get(req.params.id);
   const newName = req.body.name.trim();
   const newEmail = req.body.email.trim();
-  db.prepare('UPDATE players SET name = ?, email = ? WHERE id = ?').run(
+  const submittedSlug = (req.body.slug || '').trim();
+  let newSlug = before ? before.slug : null;
+  if (before && submittedSlug && submittedSlug !== before.slug) {
+    const slugError = invalidSlugField(submittedSlug, req.params.id);
+    if (slugError) {
+      flash(req, slugError, 'error');
+      return res.redirect('/admin/players');
+    }
+    newSlug = submittedSlug;
+  }
+  db.prepare('UPDATE players SET name = ?, email = ?, slug = ? WHERE id = ?').run(
     newName,
     newEmail,
+    newSlug,
     req.params.id
   );
-  if (before && (before.name !== newName || before.email !== newEmail)) {
+  if (before && (before.name !== newName || before.email !== newEmail || before.slug !== newSlug)) {
     logActivity(req, {
       action: 'player.edit',
-      description: `Updated player ${before.name} (${before.email}) → ${newName} (${newEmail})`,
+      description: `Updated player ${before.name} (${before.email}) → ${newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}`,
     });
   }
   flash(req, 'Player identity updated — all existing assignments carried over as-is.');

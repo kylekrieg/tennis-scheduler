@@ -41,7 +41,7 @@ function findAssignmentByToken(rawToken) {
   const hashed = hashToken(rawToken);
   const row = db
     .prepare(
-      `SELECT wa.*, p.name, p.email, w.locked AS week_locked
+      `SELECT wa.*, p.name, p.email, p.slug, w.locked AS week_locked
        FROM week_assignment_tokens t
        JOIN week_assignments wa ON wa.id = t.week_assignment_id
        JOIN players p ON p.id = wa.player_id

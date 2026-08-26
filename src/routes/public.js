@@ -334,7 +334,7 @@ router.post('/request-sub/start', asyncHandler(async (req, res) => {
   const assignmentId = Number(req.body.assignment_id);
   const assignment = db
     .prepare(
-      `SELECT wa.*, p.name, p.email FROM week_assignments wa
+      `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        WHERE wa.id = ? AND w.locked = 0 AND wa.status IN ('scheduled', 'confirmed')`
@@ -357,7 +357,7 @@ router.post('/request-sub/start', asyncHandler(async (req, res) => {
     heading: 'Check your email',
     body: `We've sent a confirmation link to the email on file for ${assignment.name} — click it to finish requesting a sub for this week. Nothing has been sent to any other players yet.`,
     tone: 'ok',
-    myPageId: assignment.player_id,
+    myPageId: assignment.slug || assignment.player_id,
   });
 }));
 
@@ -511,17 +511,17 @@ router.post('/confirm/:token', (req, res) => {
   db.prepare("UPDATE week_assignments SET token_used_at = datetime('now') WHERE id = ?").run(assignment.id);
 
   if (assignment.status === 'confirmed') {
-    return res.render('message', { title: 'Confirm', heading: "You're already confirmed", body: 'No action needed — see you on the court!', tone: 'ok', myPageId: assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: "You're already confirmed", body: 'No action needed — see you on the court!', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
   }
   if (assignment.status === 'subbed_out') {
-    return res.render('message', { title: 'Confirm', heading: 'Already subbed out', body: 'A substitute already took this slot.', tone: 'error', myPageId: assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: 'Already subbed out', body: 'A substitute already took this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id });
   }
   if (assignment.status === 'needs_sub') {
-    return res.render('message', { title: 'Confirm', heading: 'Sub already requested', body: "You've already requested a sub for this week. Contact the admin if you'd like to undo that.", tone: 'error', myPageId: assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: 'Sub already requested', body: "You've already requested a sub for this week. Contact the admin if you'd like to undo that.", tone: 'error', myPageId: assignment.slug || assignment.player_id });
   }
 
   db.prepare("UPDATE week_assignments SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?").run(assignment.id);
-  res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.player_id });
+  res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
 });
 
 router.get('/need-sub/:token', (req, res) => {
@@ -538,10 +538,10 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
   db.prepare("UPDATE week_assignments SET token_used_at = datetime('now') WHERE id = ?").run(assignment.id);
 
   if (assignment.status === 'subbed_out') {
-    return res.render('message', { title: 'Need a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.player_id });
+    return res.render('message', { title: 'Need a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id });
   }
   if (assignment.status === 'needs_sub') {
-    return res.render('message', { title: 'Need a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.player_id });
+    return res.render('message', { title: 'Need a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
   }
 
   const result = await subFlow.createSubRequest(assignment.id);
@@ -551,7 +551,7 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
       heading: 'Please contact the admin',
       body: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
       tone: 'error',
-      myPageId: assignment.player_id,
+      myPageId: assignment.slug || assignment.player_id,
     });
   }
   res.render('message', {
@@ -559,7 +559,7 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
     heading: 'Sub request sent',
     body: `An email went out to the ${result.offerCount} other player(s) not already playing that week. First to confirm gets the spot.`,
     tone: 'ok',
-    myPageId: assignment.player_id,
+    myPageId: assignment.slug || assignment.player_id,
   });
 }));
 
@@ -574,14 +574,32 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
 
 router.get('/me', (req, res) => {
   const playerId = Number(req.query.player);
-  if (playerId) return res.redirect(`/me/${playerId}`);
-  const allPlayers = db.prepare('SELECT id, name FROM players WHERE active = 1 ORDER BY name').all();
+  if (playerId) {
+    // Prefer the player's own slug for the redirect target where available,
+    // so following this lookup form lands on the nice /me/<slug> URL rather
+    // than the numeric one — the slug lookup is the one meant to be
+    // bookmarked (Kyle, 2026-08-26).
+    const p = db.prepare('SELECT slug FROM players WHERE id = ?').get(playerId);
+    return res.redirect(`/me/${(p && p.slug) || playerId}`);
+  }
+  const allPlayers = db.prepare('SELECT id, slug, name FROM players WHERE active = 1 ORDER BY name').all();
   res.render('me_lookup', { title: 'My Page', allPlayers });
 });
 
-router.get('/me/:playerId', (req, res) => {
-  const playerId = Number(req.params.playerId);
-  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(playerId);
+// Accepts either a player's URL slug (the normal, bookmarkable form,
+// e.g. /me/brian-b) or their raw numeric id (kept working indefinitely for
+// backward compatibility — every /me link generated before this feature,
+// and every one built by other server-side code that doesn't have a slug
+// handy, uses the numeric form). Slug is checked first; the numeric
+// fallback only applies when the whole segment is digits, so a slug that
+// happens to be purely numeric would never realistically collide with a
+// real player id (ids are small, sequential, auto-incremented integers).
+router.get('/me/:idOrSlug', (req, res) => {
+  const raw = req.params.idOrSlug;
+  let player = db.prepare('SELECT * FROM players WHERE slug = ?').get(raw);
+  if (!player && /^\d+$/.test(raw)) {
+    player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(raw));
+  }
   if (!player) {
     return res.render('message', {
       title: 'My Page',
@@ -590,6 +608,7 @@ router.get('/me/:playerId', (req, res) => {
       tone: 'error',
     });
   }
+  const playerId = player.id;
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -677,7 +696,7 @@ router.post('/claim-sub/:token', asyncHandler(async (req, res) => {
     };
     return res.render('message', { title: 'Claim sub', heading: 'Spot no longer available', body: messages[result.reason] || 'This link is no longer valid.', tone: 'error' });
   }
-  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.id });
+  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id });
 }));
 
 // Ad-hoc pickup-game sign-up (see adhocFlow.js) — GET renders a landing page
@@ -707,7 +726,7 @@ router.post('/adhoc-signup/:token', (req, res) => {
       ? "You'd already signed up for this one — no action needed."
       : "Thanks — you're in the running. You'll get an email once courts are finalized closer to match day, either with who you're playing with or letting you know if it didn't fill this time.",
     tone: 'ok',
-    myPageId: signup.player_id,
+    myPageId: signup.slug || signup.player_id,
   });
 });
 

@@ -7,12 +7,15 @@
   <input type="text" name="name" id="name" required>
   <label for="email">Email</label>
   <input type="email" name="email" id="email" required>
+  <label for="slug">URL slug (optional)</label>
+  <input type="text" name="slug" id="slug" placeholder="auto-generated from name if left blank">
+  <p class="muted" style="font-size:12px;margin-top:2px;">Used for this player's My Page link (<code>/me/&lt;slug&gt;</code>). Lowercase letters, numbers, and hyphens only — leave blank to generate one from the name automatically.</p>
   <div class="actions"><button class="btn green" type="submit">Add player</button></div>
 </form>
 
 <h2>All players</h2>
 <table class="wide">
-  <thead><tr><th>Name / Email</th><th>Status</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name / Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>
     <% players.forEach(function(p) { %>
       <tr>
@@ -21,6 +24,10 @@
             <input type="text" name="name" value="<%= p.name %>" style="width:140px;display:inline-block;">
             <input type="email" name="email" value="<%= p.email %>" style="width:200px;display:inline-block;">
           </form>
+        </td>
+        <td>
+          <input type="text" name="slug" value="<%= p.slug %>" form="edit-<%= p.id %>" style="width:120px;">
+          <div class="muted" style="font-size:11px;">/me/<%= p.slug %></div>
         </td>
         <td><%= p.active ? 'active' : 'inactive' %></td>
         <td>
@@ -35,5 +42,5 @@
     <% }) %>
   </tbody>
 </table>
-<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page.</p>
+<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page. The URL slug (used for My Page links) is generated automatically when a player is added and never changes on its own when you edit their name — only edit it directly here if you need to resolve two players landing on the same slug (e.g. two "Brian B"s).</p>
 <%- include('../partials/footer') %>

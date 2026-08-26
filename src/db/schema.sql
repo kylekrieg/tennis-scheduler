@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS players (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
   email         TEXT NOT NULL UNIQUE,
-  active        INTEGER NOT NULL DEFAULT 1
+  active        INTEGER NOT NULL DEFAULT 1,
+  slug          TEXT  -- URL-safe name-based id for "My Page" (/me/<slug>) links, e.g. 'brian-b'. App-level uniqueness only (see playerSlug.js) — generated once at creation and never auto-regenerated on rename, so existing bookmarks/emails/calendar links keep working. NULL only briefly for a pre-migration row before db/index.js's one-time backfill runs.
 );
 
 -- Single-row global settings table

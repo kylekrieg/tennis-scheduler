@@ -106,7 +106,7 @@ function findSignupByToken(rawToken) {
   const hashed = hashToken(rawToken);
   const row = db
     .prepare(
-      `SELECT ads.*, p.name, p.email, w.match_date, w.locked AS week_locked, w.session_id
+      `SELECT ads.*, p.name, p.email, p.slug, w.match_date, w.locked AS week_locked, w.session_id
        FROM adhoc_signups ads
        JOIN players p ON p.id = ads.player_id
        JOIN weeks w ON w.id = ads.week_id
