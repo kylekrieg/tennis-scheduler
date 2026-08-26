@@ -3,7 +3,7 @@ const db = require('../db');
 const { zonedTimeToUtc, addDays } = require('./tz');
 const { getTimezone } = require('./settings');
 const cron = require('./cron');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings } = require('./sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, SESSION_DISPLAY_ORDER } = require('./sessionHelper');
 
 /**
  * Flattens every "needs a human" item across all non-archived sessions into
@@ -16,7 +16,7 @@ const { findOverlappingSessionEnrollments, findActualDoubleBookings } = require(
  * fully quiet.
  */
 function getAttentionItems() {
-  const sessions = db.prepare(`SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY start_date`).all();
+  const sessions = db.prepare(`SELECT * FROM sessions WHERE archived_at IS NULL ${SESSION_DISPLAY_ORDER}`).all();
   const pausedSessions = sessions.filter((s) => !s.reminders_enabled);
 
   // Session-level conflicts: an entire "Schedule these players" run failed

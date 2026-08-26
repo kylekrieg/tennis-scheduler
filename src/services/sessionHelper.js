@@ -1,13 +1,26 @@
 'use strict';
 const db = require('../db');
 
+// Kyle, 2026-08-26: "The order of the sessions are ordered by creation. Is
+// there a way to order them by the day of the week? That would be anywhere
+// those sessions are displayed." Every query that lists more than one
+// session for a person to look through (the session picker used by
+// /schedule "Season Schedule", /lookahead "Next 4 Weeks", /blackout,
+// /calendar, /swap, /request-sub, My Page's session cards, and the admin
+// dashboard) now sorts by match_day_of_week (0=Sun..6=Sat, same convention
+// used everywhere else in this app) then match_time, instead of start_date/
+// creation order. Two sessions on the same day/time fall back to `name` so
+// the order is still fully deterministic rather than left to sqlite's
+// unspecified tie-breaking.
+const SESSION_DISPLAY_ORDER = 'ORDER BY match_day_of_week, match_time, name';
+
 /** Sessions with a generated schedule worth showing on public pages.
  * Archived sessions (archived_at set — see "Archiving" in CLAUDE.md) are
  * excluded even if their status would otherwise qualify: archiving is meant
  * to fully hide a session from players, not just from the admin dashboard. */
 function getViewableSessions() {
   return db
-    .prepare(`SELECT * FROM sessions WHERE status IN ('scheduled', 'active') AND archived_at IS NULL ORDER BY start_date DESC`)
+    .prepare(`SELECT * FROM sessions WHERE status IN ('scheduled', 'active') AND archived_at IS NULL ${SESSION_DISPLAY_ORDER}`)
     .all();
 }
 
@@ -22,7 +35,7 @@ function getBlackoutViewableSessions() {
   // concept at all (no draft phase, no target-games math to protect); see
   // "Ad-hoc sessions" in CLAUDE.md.
   return db
-    .prepare(`SELECT * FROM sessions WHERE status IN ('draft', 'scheduled', 'active') AND archived_at IS NULL AND session_type = 'regular' ORDER BY start_date DESC`)
+    .prepare(`SELECT * FROM sessions WHERE status IN ('draft', 'scheduled', 'active') AND archived_at IS NULL AND session_type = 'regular' ${SESSION_DISPLAY_ORDER}`)
     .all();
 }
 
@@ -279,4 +292,5 @@ module.exports = {
   findActualDoubleBookings,
   doubleBookingMapForSession,
   carriedOverBlackoutsForSession,
+  SESSION_DISPLAY_ORDER,
 };

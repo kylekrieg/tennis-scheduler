@@ -619,7 +619,7 @@ router.get('/me/:idOrSlug', (req, res) => {
       `SELECT s.* FROM sessions s
        JOIN session_players sp ON sp.session_id = s.id
        WHERE sp.player_id = ? AND s.status IN ('scheduled', 'active') AND s.archived_at IS NULL
-       ORDER BY s.start_date`
+       ORDER BY s.match_day_of_week, s.match_time, s.name`
     )
     .all(playerId);
 
@@ -659,7 +659,7 @@ router.get('/me/:idOrSlug', (req, res) => {
       `SELECT s.* FROM sessions s
        JOIN session_players sp ON sp.session_id = s.id
        WHERE sp.player_id = ? AND s.status = 'draft' AND s.archived_at IS NULL
-       ORDER BY s.start_date`
+       ORDER BY s.match_day_of_week, s.match_time, s.name`
     )
     .all(playerId);
 

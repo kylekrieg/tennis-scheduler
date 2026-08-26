@@ -17,7 +17,7 @@ const subFlow = require('../services/subFlow');
 const cron = require('../services/cron');
 const backup = require('../services/backup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
@@ -87,13 +87,13 @@ router.use(requireAdmin);
 // --- Dashboard ----------------------------------------------------------
 
 router.get('/', (req, res) => {
-  const sessions = db.prepare("SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' ORDER BY start_date DESC").all();
+  const sessions = db.prepare(`SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' ${SESSION_DISPLAY_ORDER}`).all();
   // Ad-hoc sessions have none of the flags below (no targets, no blackout,
   // no confirm/sub flow) — a simpler, separate section instead of trying to
   // force them through the same flags shape. See "Ad-hoc sessions" in
   // CLAUDE.md.
   const adhocSessions = db
-    .prepare("SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'adhoc' ORDER BY start_date DESC")
+    .prepare(`SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'adhoc' ${SESSION_DISPLAY_ORDER}`)
     .all()
     .map((s) => {
       const upcomingWeeks = db
@@ -1843,7 +1843,7 @@ router.post('/sessions/:id/subs', (req, res) => {
 
 router.get('/email', (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
-  const sessions = db.prepare('SELECT * FROM sessions ORDER BY start_date DESC').all();
+  const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
   res.render('admin/custom_email', { title: 'Send Email', players, sessions, flashMsg: popFlash(req) });
 });
 
@@ -1977,7 +1977,7 @@ router.get('/activity-log', (req, res) => {
 
   const actions = db.prepare('SELECT DISTINCT action FROM admin_activity_log ORDER BY action').all().map((r) => r.action);
   const admins = db.prepare('SELECT DISTINCT admin_name FROM admin_activity_log ORDER BY admin_name').all().map((r) => r.admin_name);
-  const sessions = db.prepare('SELECT id, name FROM sessions ORDER BY start_date DESC').all();
+  const sessions = db.prepare(`SELECT id, name FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
 
   res.render('admin/activity_log', {
     title: 'Activity Log',
