@@ -142,6 +142,16 @@ if ((sessionsGotClubCol || sessionsGotCourtCol) && hasColumn('app_settings', 'cl
 
 ensureColumn('sessions', 'color', 'TEXT');
 
+// Follow-up nudge timing (Kyle, 2026-08-27): replaced cron.js's old fixed
+// FOLLOW_UP_TIME='09:00' constant (same wall-clock time for every session,
+// every match) with a per-session lead-hours field, same shape as
+// admin_report_lead_hours/adhoc_*_lead_hours below. Every existing row
+// predates this column, so the DEFAULT 27 here is what they silently start
+// using — chosen because it was Kyle's own request (a 26-28 hour window) and
+// because it's *not* a clean 24h/48h boundary, so a session left unconfigured
+// still gets the actual behavior asked for, not a placeholder.
+ensureColumn('sessions', 'follow_up_lead_hours', 'INTEGER NOT NULL DEFAULT 27');
+
 // Admin pre-match status report (Kyle, 2026-08-26): a per-session, opt-in
 // digest emailed to the admin's own address(es) a configurable number of
 // hours before each week's match, summarizing who's confirmed/unconfirmed/

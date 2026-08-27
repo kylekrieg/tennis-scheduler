@@ -69,6 +69,10 @@
     <label for="reminder_days_before">Reminder sent (days before match)</label>
     <input type="number" name="reminder_days_before" id="reminder_days_before" value="<%= session ? session.reminder_days_before : 2 %>" min="0">
 
+    <label for="follow_up_lead_hours">Follow-up email — hours before match time</label>
+    <input type="number" name="follow_up_lead_hours" id="follow_up_lead_hours" value="<%= session ? session.follow_up_lead_hours : 27 %>" min="1">
+    <p class="muted">A second, automatic nudge for anyone still unconfirmed, sent this many hours before match time (not a fixed time of day) — e.g. 27 hours before a 5:30 PM match lands around 2:30 PM the day before, while players still have work email open. Doesn't change anyone's status or trigger a sub request on its own.</p>
+
     <div class="checkbox-row" style="margin-top:8px;">
       <input type="checkbox" name="reminders_enabled" id="reminders_enabled" value="1" <%= (!session || session.reminders_enabled) ? 'checked' : '' %>>
       <label for="reminders_enabled" style="margin:0;font-weight:400;">Send automatic reminders</label>

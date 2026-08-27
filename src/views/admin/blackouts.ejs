@@ -13,6 +13,7 @@
 <% } %>
 
 <h2>All blackout dates, by player</h2>
+<p class="muted" style="margin-top:0;">Blackout dates are universal — a player enrolled in more than one session that shares a match date only needs to be blacked out once, and it applies everywhere. This list, and the checklist below, always show the full picture regardless of which session a date was originally entered under.</p>
 <% if (blackoutsByPlayer.length === 0) { %>
   <p class="muted">No blackout dates on record for this session yet.</p>
 <% } else { %>
@@ -24,25 +25,6 @@
           <tr>
             <td><%= entry.name %></td>
             <td><%= entry.dates.join(', ') %></td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
-  </div>
-<% } %>
-
-<% if (carriedOverRows.length > 0) { %>
-  <h2 style="margin-top:24px;">Carried over from other sessions</h2>
-  <p class="muted" style="margin-top:0;">These players don't need to be blacked out here again — the date's already off-limits for them in another session, so the scheduler already treats it as a real blackout for this session too.</p>
-  <div class="card wide">
-    <table>
-      <thead><tr><th>Player</th><th>Dates</th><th>Also blacked out in</th></tr></thead>
-      <tbody>
-        <% carriedOverRows.forEach(function(row) { %>
-          <tr>
-            <td><%= row.name %></td>
-            <td><%= row.dates.join(', ') %></td>
-            <td><%= row.sourceName %></td>
           </tr>
         <% }) %>
       </tbody>
@@ -65,14 +47,9 @@
   <form method="post" action="/admin/sessions/<%= session.id %>/blackouts" class="card wide">
     <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
     <% weeks.forEach(function(w) { %>
-      <% var carriedOver = carriedOverMap.get(selectedPlayerId + '|' + w.match_date); %>
       <div class="checkbox-row">
-        <% if (carriedOver) { %>
-          <input type="checkbox" id="d<%= w.id %>" checked disabled title="Carried over — edit this at the source session instead.">
-        <% } else { %>
-          <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>" <%= existing.has(w.match_date) ? 'checked' : '' %>>
-        <% } %>
-        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (carriedOver) { %> <span class="muted">(carried over from <%= carriedOver.name %> — edit it there)</span><% } %></label>
+        <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>" <%= existing.has(w.match_date) ? 'checked' : '' %>>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %></label>
       </div>
     <% }) %>
     <div class="actions"><button class="btn green" type="submit">Save</button></div>

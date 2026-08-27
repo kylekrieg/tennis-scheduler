@@ -37,34 +37,50 @@
 
 <% if (overlapConflicts.length) { %>
   <h2>Overlapping session enrollment</h2>
-  <p class="muted">These players are also enrolled in another session that meets the same day of week with overlapping dates. This is advisory only — the scheduler doesn't auto-exclude anyone based on it, so nothing stops them from actually being scheduled in both. Setting a <strong>priority</strong> for each on the <a href="/admin/sessions/<%= session.id %>/edit">Edit session</a> roster just records who should probably yield if it turns into a real conflict — it's a note for whoever fixes it by hand, not an automatic rule. Check "Double-booked" below (or the player's own schedule) once both sessions are actually generated.</p>
-  <% overlapConflicts.forEach(function(c) { %>
-    <% var other = c.sessionA.id === session.id ? c.sessionB : c.sessionA; %>
-    <% var thisPriority = c.sessionA.id === session.id ? c.priorityA : c.priorityB; %>
-    <% var otherPriority = c.sessionA.id === session.id ? c.priorityB : c.priorityA; %>
-    <% var thisWins = (c.resolution === 'a_wins' && c.sessionA.id === session.id) || (c.resolution === 'b_wins' && c.sessionB.id === session.id); %>
-    <div class="flag error">
-      <%= c.player.name %> — also in <a href="/admin/sessions/<%= other.id %>"><strong><%= other.name %></strong></a> (<%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][other.match_day_of_week] %> <%= fmtTime(other.match_time) %>, <%= other.start_date %> – <%= other.end_date %>)
-      <br>
-      <span class="muted">
-        Priority here: <%= thisPriority != null ? thisPriority : 'not set' %>, priority there: <%= otherPriority != null ? otherPriority : 'not set' %> —
-        <% if (c.resolution === 'unresolved') { %>no priority set
-        <% } else if (c.resolution === 'tied') { %>priority tied
-        <% } else if (thisWins) { %>this session flagged as higher priority
-        <% } else { %><%= other.name %> flagged as higher priority<% } %>
-      </span>
-    </div>
-  <% }) %>
+  <p class="muted">These players are also enrolled in another session that meets the same day of week with overlapping dates. This is advisory only — the scheduler doesn't auto-exclude anyone based on it, so nothing stops them from actually being scheduled in both. Setting a <strong>priority</strong> for each on the <a href="/admin/sessions/<%= session.id %>/edit">Edit session</a> roster just records who should probably yield if it turns into a real conflict — it's a note for whoever fixes it by hand, not an automatic rule. Check "Double-booked" below (or the player's own schedule) once both sessions are actually generated. This list stays up for the whole season regardless of whether the shared dates have passed — it's about ongoing enrollment risk, not a single incident.</p>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Also enrolled in</th><th>Priority</th></tr></thead>
+      <tbody>
+        <% overlapConflicts.forEach(function(c) { %>
+          <% var other = c.sessionA.id === session.id ? c.sessionB : c.sessionA; %>
+          <% var thisPriority = c.sessionA.id === session.id ? c.priorityA : c.priorityB; %>
+          <% var otherPriority = c.sessionA.id === session.id ? c.priorityB : c.priorityA; %>
+          <% var thisWins = (c.resolution === 'a_wins' && c.sessionA.id === session.id) || (c.resolution === 'b_wins' && c.sessionB.id === session.id); %>
+          <tr>
+            <td><%= c.player.name %></td>
+            <td><a href="/admin/sessions/<%= other.id %>"><%= other.name %></a> <span class="muted">(<%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][other.match_day_of_week] %> <%= fmtTime(other.match_time) %>, <%= other.start_date %> – <%= other.end_date %>)</span></td>
+            <td class="muted">
+              here: <%= thisPriority != null ? thisPriority : 'not set' %>, there: <%= otherPriority != null ? otherPriority : 'not set' %> —
+              <% if (c.resolution === 'unresolved') { %>no priority set
+              <% } else if (c.resolution === 'tied') { %>tied
+              <% } else if (thisWins) { %>this session higher
+              <% } else { %><%= other.name %> higher<% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
 <% } %>
 
-<% if (doubleBookings.length) { %>
+<% if (doubleBookingRows.length) { %>
   <h2>Double-booked</h2>
-  <p class="muted">These players are actually assigned to play in two different sessions on the same date — not a risk, a confirmed conflict. Fix by reassigning one of the two slots below.</p>
-  <% doubleBookings.forEach(function(d) { %>
-    <div class="flag error">
-      <%= d.player.name %> is scheduled in both <a href="/admin/sessions/<%= d.sessionA.id %>"><strong><%= d.sessionA.name %></strong></a> and <a href="/admin/sessions/<%= d.sessionB.id %>"><strong><%= d.sessionB.name %></strong></a> on <%= fmtDate(d.date) %>.
-    </div>
-  <% }) %>
+  <p class="muted">These players are actually assigned to play in two different sessions on the same date — not a risk, a confirmed conflict. Fix by reassigning one of the two slots below. Drops off this list automatically once a date is played and locked.</p>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Dates</th><th>Also double-booked in</th></tr></thead>
+      <tbody>
+        <% doubleBookingRows.forEach(function(row) { %>
+          <tr>
+            <td><%= row.playerName %></td>
+            <td><%= row.dates.map(fmtDate).join(', ') %></td>
+            <td><a href="/admin/sessions/<%= row.other.id %>"><%= row.other.name %></a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
 <% } %>
 
 <h2>Weeks</h2>
@@ -137,11 +153,10 @@
           <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
             <span class="badge double_booked">double booked</span>
             <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= a.doubleBooked.name %></a></span>
+          <% } else if (a.status === 'scheduled' && a.reminded) { %>
+            <span class="badge reminded" title="Reminder email sent, no response yet — status is still 'scheduled' underneath.">email sent - unconfirmed<%= a.followedUp ? ' (×2)' : '' %></span>
           <% } else { %>
             <span class="badge <%= a.status %>"><%= a.status.replace('_',' ') %></span>
-          <% } %>
-          <% if (a.status === 'scheduled' && a.reminded) { %>
-            <span class="muted" style="font-size:11px;">(<%= a.followedUp ? 'reminded ×2' : 'reminded' %>)</span>
           <% } %>
           <% if (!r.week.locked) { %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/reassign">

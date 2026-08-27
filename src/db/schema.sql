@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   match_time          TEXT NOT NULL,          -- 'HH:MM' 24h, local to app_settings.timezone
   reminder_time       TEXT NOT NULL,          -- 'HH:MM' 24h
   reminder_days_before INTEGER NOT NULL DEFAULT 2,
+  follow_up_lead_hours INTEGER NOT NULL DEFAULT 27, -- hours before match_time the one automatic follow-up nudge fires for anyone still 'scheduled' (replaced a fixed 9am-morning-of time — Kyle, 2026-08-27: wanted this reachable during work hours the day before, not the morning of, since 9am-morning-of can already be mid-workday for an evening match)
   reminders_enabled  INTEGER NOT NULL DEFAULT 1, -- 0 pauses the automatic reminder + follow-up cron pass for this session only; manual Resend/Send reminders now are unaffected either way
   courts              INTEGER NOT NULL DEFAULT 1,
   players_per_week    INTEGER NOT NULL DEFAULT 4,

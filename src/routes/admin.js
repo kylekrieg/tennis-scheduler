@@ -511,6 +511,17 @@ function invalidAdminReportFields(b) {
   return null;
 }
 
+// Follow-up nudge lead time (Kyle, 2026-08-27) — same "plain positive whole
+// number of hours before match time" shape as admin_report_lead_hours above,
+// no ordering to check against.
+function invalidFollowUpLeadHours(b) {
+  const hours = Number(b.follow_up_lead_hours);
+  if (b.follow_up_lead_hours !== undefined && (!Number.isInteger(hours) || hours <= 0)) {
+    return 'Follow-up lead time must be a whole number of hours before match time, greater than 0.';
+  }
+  return null;
+}
+
 function invalidAdhocLeadHours(b) {
   const invite = Number(b.adhoc_invite_lead_hours);
   const reminder = Number(b.adhoc_reminder_lead_hours);
@@ -580,13 +591,18 @@ router.post('/sessions', (req, res) => {
     flash(req, reportError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const followUpError = invalidFollowUpLeadHours(b);
+  if (followUpError) {
+    flash(req, followUpError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const info = db
     .prepare(
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
-        reminder_days_before, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
+        reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
         admin_report_emails, admin_report_lead_hours, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -596,6 +612,7 @@ router.post('/sessions', (req, res) => {
       b.match_time,
       b.reminder_time,
       Number(b.reminder_days_before || 2),
+      Number(b.follow_up_lead_hours || 27),
       b.reminders_enabled ? 1 : 0,
       Number(b.courts || 1),
       Number(b.players_per_week || 4),
@@ -772,9 +789,14 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, reportError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const followUpError = invalidFollowUpLeadHours(b);
+  if (followUpError) {
+    flash(req, followUpError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   db.prepare(
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
-     reminder_days_before=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
+     reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
      admin_report_emails=?, admin_report_lead_hours=? WHERE id=?`
   ).run(
@@ -785,6 +807,7 @@ router.post('/sessions/:id', (req, res) => {
     b.match_time,
     b.reminder_time,
     Number(b.reminder_days_before || 2),
+    Number(b.follow_up_lead_hours || 27),
     b.reminders_enabled ? 1 : 0,
     Number(b.courts || 1),
     Number(b.players_per_week || 4),
@@ -1078,7 +1101,33 @@ router.get('/sessions/:id', (req, res) => {
 
   const conflicts = session.schedule_conflicts ? JSON.parse(session.schedule_conflicts) : [];
   const overlapConflicts = findOverlappingSessionEnrollments(session.id);
-  const doubleBookings = findActualDoubleBookings(session.id);
+
+  // Double-bookings, grouped by (player, other session) with dates joined
+  // onto one line — same "one row per player per source, not one row per
+  // date" consolidation as the carried-over-blackouts table (Kyle,
+  // 2026-08-27: both this and the overlap-enrollment list below were
+  // taking up too much room as a stack of one-box-per-row flags). A player
+  // double-booked against the *same* other session on 3 dates collapses to
+  // a single row; double-booked against two different other sessions still
+  // gets two rows, since that's two distinct facts to act on separately.
+  const doubleBookingsRaw = findActualDoubleBookings(session.id);
+  const doubleBookingRows = [];
+  {
+    const byKey = new Map();
+    for (const d of doubleBookingsRaw) {
+      const other = d.sessionA.id === session.id ? d.sessionB : d.sessionA;
+      const key = `${d.player.id}|${other.id}`;
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = { playerName: d.player.name, other, dates: [] };
+        byKey.set(key, entry);
+        doubleBookingRows.push(entry);
+      }
+      entry.dates.push(d.date);
+    }
+    for (const entry of doubleBookingRows) entry.dates.sort();
+    doubleBookingRows.sort((a, b) => a.playerName.localeCompare(b.playerName) || a.other.name.localeCompare(b.other.name));
+  }
 
   res.render('admin/session_detail', {
     title: session.name,
@@ -1087,7 +1136,7 @@ router.get('/sessions/:id', (req, res) => {
     roster,
     conflicts,
     overlapConflicts,
-    doubleBookings,
+    doubleBookingRows,
     multiCourt: session.players_per_week > 4,
     flashMsg: popFlash(req),
   });
@@ -1514,15 +1563,32 @@ router.get('/sessions/:id/blackouts', (req, res) => {
     .all(session.id);
   const weeks = db.prepare('SELECT * FROM weeks WHERE session_id = ? ORDER BY match_date').all(session.id);
   const selectedPlayerId = Number(req.query.player) || null;
+
+  // Blackout dates are a single universal fact per player+date, not tied to
+  // whichever session they happened to be entered under (Kyle, 2026-08-27:
+  // "it doesn't matter which session it was marked, it's a blackout date").
+  // carriedOverBlackoutsForSession() finds every (player, date) that's
+  // really stored under a *different* session but still lands on one of
+  // this session's own match dates for a player on this roster — folded
+  // straight into both the summary table and the per-player checklist
+  // below so there's exactly one unified view, not two.
+  const carriedOverMap = carriedOverBlackoutsForSession(session.id);
+
   let existing = new Set();
   if (selectedPlayerId) {
     existing = new Set(
       db.prepare('SELECT date FROM blackout_dates WHERE session_id = ? AND player_id = ?').all(session.id, selectedPlayerId).map((r) => r.date)
     );
+    for (const key of carriedOverMap.keys()) {
+      const [pid, date] = key.split('|');
+      if (Number(pid) === selectedPlayerId) existing.add(date);
+    }
   }
 
-  // All blackout dates for the whole session, grouped by player, for the
-  // summary list — one query rather than one per roster player.
+  // All blackout dates for the whole session, by player, for the summary
+  // list — starts from this session's own rows, then folds in carried-over
+  // ones so a player's row always shows every date they're actually
+  // unavailable for, regardless of which session the real row lives under.
   const allBlackouts = db
     .prepare(
       `SELECT p.id as player_id, p.name, bd.date FROM blackout_dates bd
@@ -1541,43 +1607,22 @@ router.get('/sessions/:id/blackouts', (req, res) => {
     }
     entry.dates.push(row.date);
   }
-
-  // Carried over from another session's real blackout dates (see
-  // sessionHelper.js's carriedOverBlackoutsForSession()) — a player doesn't
-  // need to re-enter a date here if it's already blacked out for them
-  // elsewhere on the same calendar date. For the summary list, grouped the
-  // same way blackoutsByPlayer is (one row per player, dates joined onto
-  // one line) — but since the source session is part of what makes a row
-  // true, a player only collapses to a single row when every one of their
-  // carried-over dates comes from the *same* source; if they carry over
-  // from two different sessions, that's two distinct facts and gets two
-  // rows, each with just that source's dates. Also builds a flat Map for
-  // the per-player edit checklist below (unaffected by the grouping above).
-  const carriedOverMap = carriedOverBlackoutsForSession(session.id);
-  const carriedOverRows = [];
-  if (carriedOverMap.size > 0) {
-    const nameById = new Map(roster.map((p) => [p.id, p.name]));
-    const byPlayer = new Map(); // playerId -> { name, bySource: Map(sourceName -> dates[]) }
-    for (const [key, srcSession] of carriedOverMap.entries()) {
-      const [playerId, date] = key.split('|');
-      const name = nameById.get(Number(playerId));
-      if (!name) continue; // not on this session's current roster
-      let entry = byPlayer.get(playerId);
-      if (!entry) {
-        entry = { name, bySource: new Map() };
-        byPlayer.set(playerId, entry);
-      }
-      if (!entry.bySource.has(srcSession.name)) entry.bySource.set(srcSession.name, []);
-      entry.bySource.get(srcSession.name).push(date);
+  const nameById = new Map(roster.map((p) => [p.id, p.name]));
+  for (const key of carriedOverMap.keys()) {
+    const [playerIdStr, date] = key.split('|');
+    const playerId = Number(playerIdStr);
+    const name = nameById.get(playerId);
+    if (!name) continue; // not on this session's current roster
+    let entry = byPlayerId.get(playerId);
+    if (!entry) {
+      entry = { name, dates: [] };
+      byPlayerId.set(playerId, entry);
+      blackoutsByPlayer.push(entry);
     }
-    for (const entry of byPlayer.values()) {
-      for (const [sourceName, dates] of entry.bySource.entries()) {
-        dates.sort();
-        carriedOverRows.push({ name: entry.name, dates, sourceName });
-      }
-    }
-    carriedOverRows.sort((a, b) => a.name.localeCompare(b.name) || a.sourceName.localeCompare(b.sourceName));
+    if (!entry.dates.includes(date)) entry.dates.push(date);
   }
+  for (const entry of blackoutsByPlayer) entry.dates.sort();
+  blackoutsByPlayer.sort((a, b) => a.name.localeCompare(b.name));
 
   res.render('admin/blackouts', {
     title: 'Blackout Dates',
@@ -1587,26 +1632,66 @@ router.get('/sessions/:id/blackouts', (req, res) => {
     selectedPlayerId,
     existing,
     blackoutsByPlayer,
-    carriedOverRows,
-    carriedOverMap,
     flashMsg: popFlash(req),
   });
 });
 
 router.post('/sessions/:id/blackouts', (req, res) => {
-  const sessionId = req.params.id;
+  const sessionId = Number(req.params.id);
   const playerId = Number(req.body.player_id);
-  const dates = [].concat(req.body.dates || []);
+  const checkedDates = new Set([].concat(req.body.dates || []));
+
+  // Blackout dates are meant to be genuinely universal per player+date, not
+  // tied to whichever session they happened to be entered under (Kyle,
+  // 2026-08-27: "I don't care which session they are added in, they just
+  // need to be universal for the day for all the sessions"). Previously a
+  // carried-over date (see sessionHelper.js's carriedOverBlackoutsForSession)
+  // rendered as a disabled checkbox here — correct data-wise, but it forced
+  // the admin to go find whichever session it was *originally* entered
+  // under just to change it. Every checkbox on this page is now a normal,
+  // editable one regardless of where the real row lives: unchecking a
+  // carried-over date deletes it at its actual source session (not a copy
+  // here), and checking a not-yet-set date only inserts a new row if one
+  // doesn't already exist anywhere — so there's still exactly one real row
+  // per player+date, it's just editable from any session's page now.
+  const weeks = db.prepare('SELECT match_date FROM weeks WHERE session_id = ?').all(sessionId);
+  const existingOwn = new Set(
+    db.prepare('SELECT date FROM blackout_dates WHERE session_id = ? AND player_id = ?').all(sessionId, playerId).map((r) => r.date)
+  );
+  const carriedOverMap = carriedOverBlackoutsForSession(sessionId);
+
+  let added = 0;
+  let removed = 0;
   db.transaction(() => {
-    db.prepare('DELETE FROM blackout_dates WHERE session_id = ? AND player_id = ?').run(sessionId, playerId);
     const insert = db.prepare('INSERT OR IGNORE INTO blackout_dates (session_id, player_id, date, source) VALUES (?, ?, ?, ?)');
-    for (const d of dates) insert.run(sessionId, playerId, d, 'admin');
+    const del = db.prepare('DELETE FROM blackout_dates WHERE session_id = ? AND player_id = ? AND date = ?');
+    for (const w of weeks) {
+      const date = w.match_date;
+      const hasOwn = existingOwn.has(date);
+      const carried = carriedOverMap.get(`${playerId}|${date}`);
+      if (checkedDates.has(date)) {
+        if (!hasOwn && !carried) {
+          insert.run(sessionId, playerId, date, 'admin');
+          added++;
+        }
+      } else {
+        if (hasOwn) {
+          del.run(sessionId, playerId, date);
+          removed++;
+        }
+        if (carried) {
+          del.run(carried.id, playerId, date);
+          removed++;
+        }
+      }
+    }
   })();
+
   const blackoutPlayer = db.prepare('SELECT name FROM players WHERE id = ?').get(playerId);
   logActivity(req, {
     action: 'blackout.admin_edit',
-    description: `Set ${dates.length} blackout date(s) for ${blackoutPlayer ? blackoutPlayer.name : `player #${playerId}`}`,
-    sessionId: Number(sessionId),
+    description: `Updated blackout dates for ${blackoutPlayer ? blackoutPlayer.name : `player #${playerId}`} (+${added}, -${removed})`,
+    sessionId,
   });
   flash(req, 'Blackout dates updated.');
   res.redirect(`/admin/sessions/${sessionId}/blackouts?player=${playerId}`);

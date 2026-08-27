@@ -36,12 +36,12 @@
       <% var carriedOver = carriedOverMap.get(selectedPlayerId + '|' + w.match_date); %>
       <div class="checkbox-row">
         <% if (carriedOver) { %>
-          <input type="checkbox" id="d<%= w.id %>" checked disabled title="Carried over — edit this at the other session's blackout page instead.">
+          <input type="checkbox" id="d<%= w.id %>" checked disabled>
         <% } else { %>
           <input type="checkbox" name="dates" value="<%= w.match_date %>" id="d<%= w.id %>"
             <%= existingBlackouts.has(w.match_date) ? 'checked' : '' %> <%= (w.locked || schedulingLocked) ? 'disabled' : '' %>>
         <% } %>
-        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (w.locked) { %> <span class="muted">(already played)</span><% } else if (carriedOver) { %> <span class="muted">(already blacked out in <%= carriedOver.name %> — no need to check it here)</span><% } %></label>
+        <label for="d<%= w.id %>" style="margin:0;font-weight:400;"><%= w.match_date %><% if (w.locked) { %> <span class="muted">(already played)</span><% } %></label>
       </div>
     <% }) %>
     <% if (!schedulingLocked) { %>

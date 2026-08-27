@@ -14,6 +14,8 @@
   --badge-confirmed-bg: #dafbe1;
   --badge-needs_sub-bg: #ffebe9;
   --badge-subbed_out-bg: #eeeeee;
+  --amber: #9a6700;
+  --badge-reminded-bg: #fff8e6;
   --shadow: none;
 }
 
@@ -33,6 +35,8 @@
   --badge-confirmed-bg: #0f2c1a;
   --badge-needs_sub-bg: #2e1512;
   --badge-subbed_out-bg: #21262d;
+  --amber: #d4a72c;
+  --badge-reminded-bg: #2b2410;
 }
 
 * { box-sizing: border-box; }
@@ -94,6 +98,7 @@ tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
 .badge.needs_sub { background: var(--badge-needs_sub-bg); color: var(--red); }
 .badge.subbed_out { background: var(--badge-subbed_out-bg); color: var(--muted); text-decoration: line-through; }
 .badge.double_booked { background: var(--badge-needs_sub-bg); color: var(--red); }
+.badge.reminded { background: var(--badge-reminded-bg); color: var(--amber); }
 .btn {
   display: inline-block;
   padding: 9px 16px;

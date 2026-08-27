@@ -122,15 +122,16 @@ async function sendRemindersNowForWeek(weekId) {
   return sendReminderEmailsForWeek(week, session);
 }
 
-const FOLLOW_UP_TIME = '09:00'; // morning-of nudge time, local to app_settings.timezone
-
 /**
  * A still-unconfirmed player (status still 'scheduled', never clicked either
- * link from the original reminder) gets one automatic follow-up nudge on the
- * morning of match day. This does not change their status or trigger a sub
- * request on its own — it's purely a reminder; you stay in control of
- * whether/when to reassign someone who never responds (see the admin
- * dashboard's "unconfirmed" flag for that).
+ * link from the original reminder) gets one automatic follow-up nudge, fired
+ * a configurable number of hours before match time (`session.follow_up_lead_
+ * hours`, default 27 — Kyle, 2026-08-27: wanted this reachable during work
+ * hours the day *before* an evening match, not a fixed 9am-morning-of time
+ * that could already land mid-workday). This does not change their status or
+ * trigger a sub request on its own — it's purely a reminder; you stay in
+ * control of whether/when to reassign someone who never responds (see the
+ * admin dashboard's "unconfirmed" flag for that).
  */
 async function processFollowUps() {
   const tz = getTimezone();
@@ -149,8 +150,8 @@ async function processFollowUps() {
         .all(session.id);
 
       for (const week of weeks) {
-        const followUpAt = zonedTimeToUtc(week.match_date, FOLLOW_UP_TIME, tz);
         const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const followUpAt = new Date(matchAt.getTime() - session.follow_up_lead_hours * 60 * 60 * 1000);
         if (now < followUpAt || now >= matchAt) continue;
 
         const assignments = db
@@ -464,9 +465,4 @@ module.exports = {
   processAdhocFinalization,
   processWeekLocking,
   sendRemindersNowForWeek,
-  // Exported so statusPage.js's read-only preview of upcoming automated
-  // actions can compute the exact same follow-up time cron actually uses,
-  // instead of a second hardcoded '09:00' that could quietly drift out of
-  // sync with this one.
-  FOLLOW_UP_TIME,
 };

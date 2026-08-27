@@ -56,6 +56,34 @@ function zonedTimeToUtc(dateStr, timeStr, timeZone) {
   return new Date(utc);
 }
 
+/**
+ * The reverse of zonedTimeToUtc: given a real UTC instant, returns the
+ * wall-clock date/time it corresponds to in `timeZone`, as the same
+ * 'YYYY-MM-DD'/'HH:MM' string shapes used everywhere else in this app (so a
+ * caller can hand the result straight to fmtDate/fmtTime). Needed for any
+ * lead-hours-style threshold (an arbitrary number of hours before match
+ * time, not a clean day boundary — see cron.js's processFollowUps/
+ * processAdminReports) where the resulting instant's local date can differ
+ * from the match's own date, unlike a whole-day offset like escalation's
+ * "24h before" (addDays + same time-of-day).
+ */
+function utcToZonedParts(utcDate, timeZone) {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const parts = dtf.formatToParts(utcDate).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
 function addDays(dateStr, days) {
   const [y, mo, d] = dateStr.split('-').map(Number);
   if (![y, mo, d].every(Number.isFinite)) {
@@ -66,4 +94,4 @@ function addDays(dateStr, days) {
   return date.toISOString().slice(0, 10);
 }
 
-module.exports = { zonedTimeToUtc, addDays };
+module.exports = { zonedTimeToUtc, addDays, utcToZonedParts };

@@ -1,8 +1,7 @@
 'use strict';
 const db = require('../db');
-const { zonedTimeToUtc, addDays } = require('./tz');
+const { zonedTimeToUtc, addDays, utcToZonedParts } = require('./tz');
 const { getTimezone } = require('./settings');
-const cron = require('./cron');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, SESSION_DISPLAY_ORDER } = require('./sessionHelper');
 
 /**
@@ -232,7 +231,12 @@ function getUpcomingActions(days = 21) {
         // otherwise make an entirely legitimate upcoming nudge look like it
         // has 0 recipients. Speculative either way — showing "would nudge
         // these people if still unconfirmed" is the useful signal here.
-        const followUpAt = zonedTimeToUtc(week.match_date, cron.FOLLOW_UP_TIME, tz);
+        // follow_up_lead_hours is an arbitrary hour count (default 27), not a
+        // clean day boundary like escalation's "24h before" below, so the
+        // resulting instant's own local date/time (not week.match_date) is
+        // what's actually correct to display — see tz.js's utcToZonedParts.
+        const followUpAt = new Date(matchAt.getTime() - session.follow_up_lead_hours * 60 * 60 * 1000);
+        const followUpLocal = utcToZonedParts(followUpAt, tz);
         // `now < matchAt`, not just `followUpAt <= matchAt` — mirrors
         // processFollowUps()'s own `now >= matchAt` skip exactly. Without
         // this, a week whose match has already fully passed (a genuinely
@@ -257,8 +261,8 @@ function getUpcomingActions(days = 21) {
             events.push({
               type: 'followup',
               at: followUpAt,
-              atDate: week.match_date,
-              atTime: cron.FOLLOW_UP_TIME,
+              atDate: followUpLocal.date,
+              atTime: followUpLocal.time,
               overdue: followUpAt < now && matchAt > now,
               speculative: true,
               session,
