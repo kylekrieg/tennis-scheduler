@@ -224,3 +224,34 @@ table.compact td { vertical-align: middle; }
 .player-row .pname { min-width: 130px; flex-shrink: 0; }
 .player-row form.inline { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .player-row select { width: auto; min-width: 110px; padding: 4px 6px; font-size: 12px; }
+
+/* Process flowcharts on the player-facing /help page (Kyle, 2026-08-26):
+   "I'd like to put together a flow chart of every process that we have for
+   the reminders, confirmation, request a sub and swaps." Plain nested
+   HTML/CSS rather than a canvas/JS diagram library, consistent with the
+   rest of this app's no-new-dependencies approach — reuses the same
+   semantic colors as the existing status badges/flags above so a "pending"
+   step already looks like the amber flag box elsewhere, "urgent" already
+   looks like the red flag-error box, etc., rather than inventing a new
+   palette. Wraps/stacks naturally on a narrow screen since it's just flex,
+   which matters here since players mostly read this on a phone. */
+.flowchart { display: flex; flex-direction: column; max-width: 640px; margin: 16px 0 24px; }
+.flow-step {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+}
+.flow-step .flow-when { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-bottom: 3px; }
+.flow-step .flow-title { font-weight: 600; margin-bottom: 2px; }
+.flow-step .flow-detail { font-size: 13px; color: var(--muted); }
+.flow-step.success { background: var(--badge-confirmed-bg); border-color: var(--green); }
+.flow-step.success .flow-title { color: var(--green); }
+.flow-step.pending { background: var(--flag-bg); border-color: var(--flag-border); }
+.flow-step.urgent { background: var(--flag-error-bg); border-color: var(--flag-error-border); }
+.flow-step.urgent .flow-title { color: var(--red); }
+.flow-arrow { text-align: center; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 0; }
+.flow-branches { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.flow-branch { flex: 1 1 220px; display: flex; flex-direction: column; min-width: 0; }
+.flow-branch .flow-branch-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; text-align: center; }
+.flow-note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--border); padding: 4px 12px; margin: 4px 0 0; }

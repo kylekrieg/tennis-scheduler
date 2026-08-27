@@ -9,6 +9,7 @@
     <li><a href="#blackout">Blackout dates</a></li>
     <li><a href="#request-sub">Request a Sub</a></li>
     <li><a href="#swap">Swap a Week</a></li>
+    <li><a href="#timing">The full timeline: what happens, and when</a></li>
     <li><a href="#my-page">My Page</a></li>
     <li><a href="#schedule">Season Schedule &amp; Next 4 Weeks</a></li>
     <li><a href="#calendar">Calendar</a></li>
@@ -123,6 +124,179 @@
 </div>
 <img class="screenshot" src="/img/help/swap.png" alt="Swap a Week page showing 'Which week do you want to give up?' with a table of dates and a 'Give up this week' button next to each.">
 <p class="screenshot-caption">Step one: pick which of your own weeks you're offering up. The next page lets you pick who you want to swap with.</p>
+
+<h2 id="timing">The full timeline: what happens, and when</h2>
+<p>The sections above cover each page on its own — this one's the big picture: exactly when each automatic email fires, and what happens if you never respond to one. Three flows, one for each of confirming, requesting a sub, and swapping.</p>
+
+<h3>Confirming you're playing</h3>
+<div class="flowchart">
+  <div class="flow-step">
+    <div class="flow-when">2 days before your match (the admin can change this)</div>
+    <div class="flow-title">Reminder email sent</div>
+    <div class="flow-detail">Confirm and Need a sub buttons. Sent once per week, per player.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-when">9:00 AM on match day</div>
+    <div class="flow-title">Still haven't responded? One follow-up nudge</div>
+    <div class="flow-detail">Same two buttons. Only goes out if you're still sitting on "scheduled" at that point — skipped entirely if you already confirmed or asked for a sub.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">You click Confirm</div>
+      <div class="flow-step success">
+        <div class="flow-title">You're confirmed</div>
+        <div class="flow-detail">Nothing else to do.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">You click Need a sub</div>
+      <div class="flow-step">
+        <div class="flow-title">Jumps to Request a Sub</div>
+        <div class="flow-detail">See that flow below — an email goes out to the rest of the roster.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">You do nothing</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-step urgent">
+        <div class="flow-when">Match time arrives</div>
+        <div class="flow-title">Nothing else happens automatically</div>
+        <div class="flow-detail">There's no extra nudge or escalation the way there is for a sub request — those two emails are it. Your status just stays "scheduled" for good, the week locks, and both links stop working. The admin sees an "unconfirmed" flag on their dashboard, but from there it's a manual call, not anything the app does on its own.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 id="flow-sub">Request a Sub</h3>
+<div class="flowchart">
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">From a reminder email</div>
+      <div class="flow-step">
+        <div class="flow-title">Click "Need a sub"</div>
+        <div class="flow-detail">The link itself proves it's really you, so this goes straight to the confirm page below.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">From the Request a Sub page</div>
+      <div class="flow-step">
+        <div class="flow-title">Pick your week — no link yet</div>
+        <div class="flow-detail">You'll get a verification email first. Nothing goes out to anyone else until you click the link in it — that's what stops someone else mashing the button on your behalf.</div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step pending">
+    <div class="flow-title">"Are you sure?"</div>
+    <div class="flow-detail">One more click — this is the point of no return, since it emails the rest of the roster right away.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-title">Everyone not already playing that week gets an email</div>
+    <div class="flow-detail">Except anyone already blacked out on that date. First to click "I'll play" gets the spot.</div>
+  </div>
+  <p class="flow-note">An admin can also flag a slot as needing a sub on your behalf, without you asking. It follows the same steps from here on — the only difference is the email to the rest of the roster waits until this week's normal reminder time instead of going out right away.</p>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">Someone claims it</div>
+      <div class="flow-step success">
+        <div class="flow-title">Spot filled</div>
+        <div class="flow-detail">You're marked subbed out, they're confirmed, and everyone in that week's group gets notified. Done.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">Nobody claims it yet</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-step">
+        <div class="flow-when">24 hours before match</div>
+        <div class="flow-title">Escalates to the sub list</div>
+        <div class="flow-detail">A separate, admin-managed pool of subs gets an email too (skipped if the session has none assigned).</div>
+      </div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-branches">
+        <div class="flow-branch">
+          <div class="flow-branch-label">A sub claims it</div>
+          <div class="flow-step success">
+            <div class="flow-title">Spot filled</div>
+            <div class="flow-detail">Same as above. Done.</div>
+          </div>
+        </div>
+        <div class="flow-branch">
+          <div class="flow-branch-label">Still nobody</div>
+          <div class="flow-arrow">&#8595;</div>
+          <div class="flow-step urgent">
+            <div class="flow-when">Match time arrives</div>
+            <div class="flow-title">Marked unfilled</div>
+            <div class="flow-detail">Flagged for the admin. From here it's their call — add someone manually, or the week plays a player short.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="flow-note">An admin can close this out at any point along the way — reassigning the slot, marking you confirmed after all, or clearing the request entirely if you picked the wrong week by mistake (that puts you back to "scheduled" so you're reminded normally again).</p>
+</div>
+
+<h3>Swap a Week</h3>
+<div class="flowchart">
+  <div class="flow-step">
+    <div class="flow-title">You propose a trade</div>
+    <div class="flow-detail">Pick one of your own upcoming weeks, a specific teammate, and one of their weeks you'd rather play instead.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-title">They get an email to accept or decline</div>
+    <div class="flow-detail">Nothing changes until they respond — you'll get a confirmation that the proposal went out.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">They accept</div>
+      <div class="flow-step success">
+        <div class="flow-title">Swap complete</div>
+        <div class="flow-detail">Your slots trade places, both go straight to confirmed, and everyone else in both affected weeks gets a heads up. Done.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">They decline</div>
+      <div class="flow-step urgent">
+        <div class="flow-title">Nothing changes</div>
+        <div class="flow-detail">You're notified. Your original week is still yours.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">They don't respond yet</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-step">
+        <div class="flow-when">48 hours before the earlier of the two match dates</div>
+        <div class="flow-title">One nudge email</div>
+        <div class="flow-detail">Sent to them only — you already know you're waiting.</div>
+      </div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-branches">
+        <div class="flow-branch">
+          <div class="flow-branch-label">They respond</div>
+          <div class="flow-step">
+            <div class="flow-title">Accept or decline</div>
+            <div class="flow-detail">Same outcomes as above.</div>
+          </div>
+        </div>
+        <div class="flow-branch">
+          <div class="flow-branch-label">Still nothing</div>
+          <div class="flow-arrow">&#8595;</div>
+          <div class="flow-step urgent">
+            <div class="flow-when">The earlier match date arrives</div>
+            <div class="flow-title">Proposal expires</div>
+            <div class="flow-detail">The trade can't happen anymore — that week's about to lock. No email; it quietly closes out so your weeks are free to swap with someone else.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="flow-note">An admin can cancel a pending swap directly. Reassigning either side's slot while a swap is still pending automatically cancels it too.</p>
+</div>
 
 <h2 id="my-page">My Page</h2>
 <p>The fastest way to see everything at once. Go to <a href="/me">My Page</a>, pick your name, and bookmark the link (or save it to your phone's home screen) — it always shows your current schedule across every session you're in, no need to pick your name again. Request a sub or propose a swap with one click on any upcoming match, and find your calendar-subscribe link here too.</p>
