@@ -977,6 +977,27 @@ router.get('/sessions/:id', (req, res) => {
     blackedOutByDate.get(row.date).push(row.name);
   }
 
+  // Also fold in carried-over blackouts from another session (see
+  // sessionHelper.js's carriedOverBlackoutsForSession()) — a real blackout
+  // date entered on a *different* session still makes this session's own
+  // scheduling engine and sub-fanout treat the player as unavailable on the
+  // matching date (both already call carriedOverBlackoutsForSession()
+  // themselves), so this week card should say so too rather than looking
+  // clear. Labeled distinctly from a locally-entered blackout so it's clear
+  // where to actually edit it, same pattern as the admin/self-service
+  // blackout pages. Skipped if the player already has a real row here for
+  // this date (own-session row already lists them, avoid duplicating).
+  const carriedOverForDetail = carriedOverBlackoutsForSession(session.id);
+  for (const [key, srcSession] of carriedOverForDetail.entries()) {
+    const [playerIdStr, date] = key.split('|');
+    const player = roster.find((p) => p.id === Number(playerIdStr));
+    if (!player) continue;
+    const existing = blackedOutByDate.get(date) || [];
+    if (existing.includes(player.name)) continue;
+    if (!blackedOutByDate.has(date)) blackedOutByDate.set(date, []);
+    blackedOutByDate.get(date).push(`${player.name} (carried over from ${srcSession.name})`);
+  }
+
   // Per-assignment double-booking lookup, from this session's point of view —
   // same helper the player-facing schedule/lookahead/My Page pages use (see
   // sessionHelper.js's doubleBookingMapForSession). Computed once for the
@@ -1524,26 +1545,38 @@ router.get('/sessions/:id/blackouts', (req, res) => {
   // Carried over from another session's real blackout dates (see
   // sessionHelper.js's carriedOverBlackoutsForSession()) — a player doesn't
   // need to re-enter a date here if it's already blacked out for them
-  // elsewhere on the same calendar date. Grouped by player for the summary
-  // list, same shape as blackoutsByPlayer above, plus a flat Map for the
-  // per-player edit checklist below.
+  // elsewhere on the same calendar date. For the summary list, grouped the
+  // same way blackoutsByPlayer is (one row per player, dates joined onto
+  // one line) — but since the source session is part of what makes a row
+  // true, a player only collapses to a single row when every one of their
+  // carried-over dates comes from the *same* source; if they carry over
+  // from two different sessions, that's two distinct facts and gets two
+  // rows, each with just that source's dates. Also builds a flat Map for
+  // the per-player edit checklist below (unaffected by the grouping above).
   const carriedOverMap = carriedOverBlackoutsForSession(session.id);
-  const carriedOverByPlayer = [];
+  const carriedOverRows = [];
   if (carriedOverMap.size > 0) {
     const nameById = new Map(roster.map((p) => [p.id, p.name]));
-    const byPlayer = new Map();
+    const byPlayer = new Map(); // playerId -> { name, bySource: Map(sourceName -> dates[]) }
     for (const [key, srcSession] of carriedOverMap.entries()) {
       const [playerId, date] = key.split('|');
       const name = nameById.get(Number(playerId));
       if (!name) continue; // not on this session's current roster
       let entry = byPlayer.get(playerId);
       if (!entry) {
-        entry = { name, items: [] };
+        entry = { name, bySource: new Map() };
         byPlayer.set(playerId, entry);
-        carriedOverByPlayer.push(entry);
       }
-      entry.items.push({ date, sourceName: srcSession.name });
+      if (!entry.bySource.has(srcSession.name)) entry.bySource.set(srcSession.name, []);
+      entry.bySource.get(srcSession.name).push(date);
     }
+    for (const entry of byPlayer.values()) {
+      for (const [sourceName, dates] of entry.bySource.entries()) {
+        dates.sort();
+        carriedOverRows.push({ name: entry.name, dates, sourceName });
+      }
+    }
+    carriedOverRows.sort((a, b) => a.name.localeCompare(b.name) || a.sourceName.localeCompare(b.sourceName));
   }
 
   res.render('admin/blackouts', {
@@ -1554,7 +1587,7 @@ router.get('/sessions/:id/blackouts', (req, res) => {
     selectedPlayerId,
     existing,
     blackoutsByPlayer,
-    carriedOverByPlayer,
+    carriedOverRows,
     carriedOverMap,
     flashMsg: popFlash(req),
   });

@@ -31,21 +31,19 @@
   </div>
 <% } %>
 
-<% if (carriedOverByPlayer.length > 0) { %>
+<% if (carriedOverRows.length > 0) { %>
   <h2 style="margin-top:24px;">Carried over from other sessions</h2>
   <p class="muted" style="margin-top:0;">These players don't need to be blacked out here again — the date's already off-limits for them in another session, so the scheduler already treats it as a real blackout for this session too.</p>
   <div class="card wide">
     <table>
-      <thead><tr><th>Player</th><th>Date</th><th>Also blacked out in</th></tr></thead>
+      <thead><tr><th>Player</th><th>Dates</th><th>Also blacked out in</th></tr></thead>
       <tbody>
-        <% carriedOverByPlayer.forEach(function(entry) { %>
-          <% entry.items.forEach(function(item) { %>
-            <tr>
-              <td><%= entry.name %></td>
-              <td><%= item.date %></td>
-              <td><%= item.sourceName %></td>
-            </tr>
-          <% }) %>
+        <% carriedOverRows.forEach(function(row) { %>
+          <tr>
+            <td><%= row.name %></td>
+            <td><%= row.dates.join(', ') %></td>
+            <td><%= row.sourceName %></td>
+          </tr>
         <% }) %>
       </tbody>
     </table>
