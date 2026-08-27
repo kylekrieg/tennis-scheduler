@@ -112,6 +112,11 @@
           <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-reminders">
             <button class="btn small neutral" type="submit">Send reminders now</button>
           </form>
+          <% if (session.admin_report_emails) { %>
+            <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-admin-report">
+              <button class="btn small neutral" type="submit">Send status report now</button>
+            </form>
+          <% } %>
         <% } else { %>
           <span class="muted">completed</span>
         <% } %>

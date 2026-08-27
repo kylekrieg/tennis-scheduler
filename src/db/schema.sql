@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   adhoc_reminder_lead_hours INTEGER NOT NULL DEFAULT 30, -- adhoc only: hours before match_time a reminder goes to whoever on the roster hasn't signed up yet, but only if there's currently an incomplete trailing group (not a multiple of 4)
   adhoc_final_lead_hours    INTEGER NOT NULL DEFAULT 24, -- adhoc only: hours before match_time full courts get a "here's your court" email and any leftover incomplete group gets a "not enough signed up" email
   schedule_locked_at  TEXT,    -- NULL = not yet finalized; set manually via "Lock this schedule" once the admin is confident the schedule is done shifting — distinct from `status` leaving 'draft', which happens automatically on the first "Schedule these players" click. Doesn't restrict further edits; a marker/gate for behavior that should wait for a stable schedule. See "Lock this schedule" in CLAUDE.md.
+  admin_report_emails      TEXT,    -- regular sessions only: comma-separated admin address(es) that get a pre-match status report for each week (who's confirmed/unconfirmed/needs a sub/subbed out/swapped). NULL/blank = feature off for this session. See "Admin pre-match status report" in CLAUDE.md.
+  admin_report_lead_hours  INTEGER NOT NULL DEFAULT 8, -- hours before match_time the status report above goes out
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

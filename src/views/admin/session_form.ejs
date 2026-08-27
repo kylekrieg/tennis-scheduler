@@ -75,6 +75,13 @@
     </div>
     <p class="muted">Uncheck to pause the automatic reminder and follow-up emails for this session — e.g. while testing. Manual sends (Resend link, Send reminders now on the session page) still work either way.</p>
 
+    <label for="admin_report_emails">Admin status report email(s)</label>
+    <input type="text" name="admin_report_emails" id="admin_report_emails" value="<%= session ? (session.admin_report_emails || '') : '' %>" placeholder="you@example.com, other@example.com">
+    <p class="muted">Comma-separated. Each week, a status report (who's confirmed, who hasn't, who needs a sub and whether it's filled, who swapped) goes out to these addresses before match time — see the lead time below. Leave blank to turn this off.</p>
+
+    <label for="admin_report_lead_hours">Send status report — hours before match time</label>
+    <input type="number" name="admin_report_lead_hours" id="admin_report_lead_hours" value="<%= session ? session.admin_report_lead_hours : 8 %>" min="1">
+
     <label for="players_per_week">Players per week</label>
     <input type="number" name="players_per_week" id="players_per_week" value="<%= session ? session.players_per_week : 4 %>" min="4" step="4">
     <p class="muted">Must be a multiple of 4 — one doubles court is 4 players. 8 for 2 courts running at once, 12 for 3, and so on.</p>

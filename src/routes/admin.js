@@ -14,6 +14,7 @@ const { generateRawToken, hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const email = require('../services/email');
 const subFlow = require('../services/subFlow');
+const adminReport = require('../services/adminReport');
 const cron = require('../services/cron');
 const backup = require('../services/backup');
 const statusPage = require('../services/statusPage');
@@ -487,6 +488,29 @@ function invalidSlugField(rawSlug, excludePlayerId) {
 // them — invite, then a reminder if sign-ups are still short, then the
 // final roster/"not enough" email — or the timing wouldn't make sense
 // (e.g. a "reminder" that fires after the "final" email already went out).
+// Admin pre-match status report (Kyle, 2026-08-26): admin_report_emails is a
+// simple comma-separated text field rather than a separate table — this app
+// already stores club_name/court_info the same plain-text way, and a handful
+// of admin addresses per session doesn't need normalizing. Blank is always
+// valid (feature off); only validated when the admin has actually typed
+// something in. admin_report_lead_hours has no ordering to check against
+// (unlike the three ad-hoc lead-hour fields above, which must count down in
+// sequence) — just a plain positive whole number of hours before match time.
+function invalidAdminReportFields(b) {
+  const raw = (b.admin_report_emails || '').trim();
+  if (raw) {
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0 || !parts.every((e) => EMAIL_RE.test(e))) {
+      return 'Admin report email(s) must be a comma-separated list of valid addresses.';
+    }
+  }
+  const hours = Number(b.admin_report_lead_hours);
+  if (b.admin_report_lead_hours !== undefined && (!Number.isInteger(hours) || hours <= 0)) {
+    return 'Status report lead time must be a whole number of hours before match time, greater than 0.';
+  }
+  return null;
+}
+
 function invalidAdhocLeadHours(b) {
   const invite = Number(b.adhoc_invite_lead_hours);
   const reminder = Number(b.adhoc_reminder_lead_hours);
@@ -551,12 +575,18 @@ router.post('/sessions', (req, res) => {
       return res.redirect('/admin/sessions/new');
     }
   }
+  const reportError = invalidAdminReportFields(b);
+  if (reportError) {
+    flash(req, reportError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const info = db
     .prepare(
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
-        session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
+        admin_report_emails, admin_report_lead_hours, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -577,6 +607,8 @@ router.post('/sessions', (req, res) => {
       Number(b.adhoc_invite_lead_hours || 56),
       Number(b.adhoc_reminder_lead_hours || 30),
       Number(b.adhoc_final_lead_hours || 24),
+      (b.admin_report_emails || '').trim() || null,
+      Number(b.admin_report_lead_hours || 8),
       // Ad-hoc has no "Schedule these players" step to promote it out of
       // draft — it's ready to start inviting the moment it's saved, so it
       // skips straight to 'active'. Regular sessions keep starting 'draft'.
@@ -735,10 +767,16 @@ router.post('/sessions/:id', (req, res) => {
       return res.redirect(`/admin/sessions/${req.params.id}/edit`);
     }
   }
+  const reportError = invalidAdminReportFields(b);
+  if (reportError) {
+    flash(req, reportError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   db.prepare(
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
-     adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=? WHERE id=?`
+     adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
+     admin_report_emails=?, admin_report_lead_hours=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -757,6 +795,8 @@ router.post('/sessions/:id', (req, res) => {
     Number(b.adhoc_invite_lead_hours || 56),
     Number(b.adhoc_reminder_lead_hours || 30),
     Number(b.adhoc_final_lead_hours || 24),
+    (b.admin_report_emails || '').trim() || null,
+    Number(b.admin_report_lead_hours || 8),
     req.params.id
   );
   if (sessionType === 'adhoc') {
@@ -1356,6 +1396,32 @@ router.post('/sessions/:id/weeks/:weekId/send-reminders', asyncHandler(async (re
       flash(req, 'Nothing to send — everyone scheduled for this week has already been reminded.');
     } else {
       flash(req, `Sent ${count} reminder email(s) for this week just now.`);
+    }
+  } catch (err) {
+    flash(req, `Error: ${err.message}`, 'error');
+  }
+  res.redirect(`/admin/sessions/${req.params.id}`);
+}));
+
+// Manual trigger for the same status-report send cron.js's
+// processAdminReports() fires automatically — shares adminReport.js's
+// sendReportForWeek() directly (same dedup-by-email_log, so calling this
+// doesn't double-send to an address already reported to for this week; it's
+// mainly here so the admin can check what the report looks like without
+// waiting for the configured lead time). No-ops with a clear message if the
+// session has no admin_report_emails configured, rather than a silent 0-sent.
+router.post('/sessions/:id/weeks/:weekId/send-admin-report', asyncHandler(async (req, res) => {
+  try {
+    const session = db.prepare('SELECT admin_report_emails FROM sessions WHERE id = ?').get(req.params.id);
+    if (!session || !(session.admin_report_emails || '').trim()) {
+      flash(req, 'No admin report email(s) configured for this session — add one on the Edit page first.', 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    const count = await adminReport.sendReportForWeek(req.params.weekId);
+    if (count === 0) {
+      flash(req, 'Nothing to send — every configured address has already gotten this week\'s report.');
+    } else {
+      flash(req, `Sent the status report to ${count} address(es) just now.`);
     }
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');

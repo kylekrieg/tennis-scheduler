@@ -7,6 +7,7 @@ const email = require('./email');
 const subFlow = require('./subFlow');
 const swapFlow = require('./swapFlow');
 const adhocFlow = require('./adhocFlow');
+const adminReport = require('./adminReport');
 const { ensureWeeksExist } = require('./scheduleRun');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
@@ -323,6 +324,47 @@ async function processAdhocFinalization() {
   }
 }
 
+/**
+ * Admin pre-match status report (Kyle, 2026-08-26): once a week crosses
+ * T-minus-(admin_report_lead_hours), emails every address configured on
+ * `sessions.admin_report_emails` a summary of that week's roster state —
+ * confirmed/unconfirmed/needs-a-sub/subbed-out, see adminReport.js. Scoped
+ * to session_type = 'regular' only (ad-hoc sessions have no confirm/sub/swap
+ * state for this to summarize) and to sessions with a non-blank recipient
+ * list — the feature is opt-in per session, off by default. Dedup is by
+ * email_log (category 'admin_report', per recipient), same as every other
+ * reminder-ish pass, so this is safe to re-check on every tick.
+ */
+async function processAdminReports() {
+  const tz = getTimezone();
+  const now = new Date();
+  const sessions = db
+    .prepare(
+      `SELECT * FROM sessions
+       WHERE status IN ('scheduled', 'active') AND archived_at IS NULL AND session_type = 'regular'
+         AND admin_report_emails IS NOT NULL AND TRIM(admin_report_emails) != ''`
+    )
+    .all();
+
+  for (const session of sessions) {
+    try {
+      const weeks = db
+        .prepare(`SELECT * FROM weeks WHERE session_id = ? AND locked = 0 ORDER BY match_date`)
+        .all(session.id);
+
+      for (const week of weeks) {
+        const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const reportAt = new Date(matchAt.getTime() - session.admin_report_lead_hours * 60 * 60 * 1000);
+        if (now < reportAt) continue;
+
+        await adminReport.sendReportForWeek(week.id);
+      }
+    } catch (err) {
+      console.error(`[cron] processAdminReports failed for session ${session.id} (${session.name}):`, err.message);
+    }
+  }
+}
+
 async function processEscalations() {
   await subFlow.escalateOverdueRequests();
   subFlow.flagStillUnfilled();
@@ -391,6 +433,7 @@ async function tick() {
   try {
     await processReminders();
     await processFollowUps();
+    await processAdminReports();
     await processEscalations();
     await processAdhocInvites();
     await processAdhocReminders();
@@ -414,6 +457,7 @@ module.exports = {
   tick,
   processReminders,
   processFollowUps,
+  processAdminReports,
   processEscalations,
   processAdhocInvites,
   processAdhocReminders,

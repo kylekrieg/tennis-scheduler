@@ -142,6 +142,18 @@ if ((sessionsGotClubCol || sessionsGotCourtCol) && hasColumn('app_settings', 'cl
 
 ensureColumn('sessions', 'color', 'TEXT');
 
+// Admin pre-match status report (Kyle, 2026-08-26): a per-session, opt-in
+// digest emailed to the admin's own address(es) a configurable number of
+// hours before each week's match, summarizing who's confirmed/unconfirmed/
+// needs a sub/subbed out/swapped that week — see adminReport.js and
+// "Admin pre-match status report" in CLAUDE.md. Every existing row predates
+// this, so NULL (feature off) is the correct default; admin_report_lead_hours
+// defaults to 8 (Kyle's own example) even though the feature is off until an
+// address is actually entered, so it's already sensible the moment someone
+// fills in the email field without also having to touch this number.
+ensureColumn('sessions', 'admin_report_emails', 'TEXT');
+ensureColumn('sessions', 'admin_report_lead_hours', 'INTEGER NOT NULL DEFAULT 8');
+
 // Ad-hoc pickup-game sessions (Kyle, 2026-08-12) — a second session shape
 // alongside the original fairness-scheduled "regular" one. Every existing
 // row predates this, so 'regular' is exactly the right default to preserve
