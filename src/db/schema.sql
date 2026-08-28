@@ -193,6 +193,26 @@ CREATE TABLE IF NOT EXISTS swap_requests (
 CREATE INDEX IF NOT EXISTS idx_swap_requests_initiator ON swap_requests(initiator_assignment_id);
 CREATE INDEX IF NOT EXISTS idx_swap_requests_target ON swap_requests(target_assignment_id);
 
+-- Bot-protection gate in front of proposeSwap(): /swap/start (an
+-- unauthenticated public form — anyone can pick any two players from the
+-- dropdown) used to call proposeSwap() directly, which immediately emails
+-- the target player a real proposal and the initiator a confirmation. A
+-- script could hit that endpoint over and over with no proof either named
+-- player actually asked for anything. A row here is a not-yet-verified
+-- proposal: /swap/start now only inserts one of these and emails the
+-- *initiator* a "click to confirm it's really you" link — proposeSwap()
+-- (and its two real emails) only fires once that link is clicked, same
+-- "email yourself first" pattern as sub_request_verification in
+-- subFlow.js/email.js. Single-use — the row is deleted the moment its
+-- token is consumed (see swapFlow.js's consumeProposalVerification()).
+CREATE TABLE IF NOT EXISTS swap_proposal_verifications (
+  id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+  token                   TEXT UNIQUE NOT NULL, -- SHA-256 hash of the raw token; raw value only ever exists in the emailed link
+  initiator_assignment_id INTEGER NOT NULL REFERENCES week_assignments(id) ON DELETE CASCADE,
+  target_assignment_id    INTEGER NOT NULL REFERENCES week_assignments(id) ON DELETE CASCADE,
+  created_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS email_log (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   to_email        TEXT NOT NULL,

@@ -9,6 +9,7 @@
     "seed:example": "node src/db/seed-example.js",
     "test:scheduler": "node src/scheduler/engine.test.js",
     "backup": "node src/scripts/backup-db.js",
+    "backup:offsite": "node src/scripts/backup-offsite.js",
     "reset-data": "node src/scripts/reset-data.js"
   },
   "license": "SEE LICENSE IN LICENSE",

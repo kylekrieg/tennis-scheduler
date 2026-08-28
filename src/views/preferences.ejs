@@ -1,0 +1,17 @@
+<%- include('partials/header', {title}) %>
+<h1>Preferences</h1>
+<p class="muted">These are saved in this browser only — set them again on another device or a different browser if you use more than one.</p>
+
+<div class="card">
+  <label for="text-size-select">Text size</label>
+  <select id="text-size-select" aria-label="Text size">
+    <option value="normal">Normal</option>
+    <option value="large">Large text</option>
+    <option value="contrast">Large text + high contrast</option>
+  </select>
+  <p class="muted">"Large text + high contrast" also switches to a stronger black-on-white (or white-on-black in dark mode) color scheme with bolder borders, for players who need both. Changes apply immediately, everywhere on the site.</p>
+</div>
+
+<script src="/js/textsize.js" defer></script>
+
+<%- include('partials/footer') %>

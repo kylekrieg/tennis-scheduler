@@ -167,19 +167,46 @@ crontab -e
 ```
 then add:
 ```
-0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1
+0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1 && /usr/bin/node src/scripts/backup-offsite.js >> backup.log 2>&1
 ```
-That runs a backup every night at 2am and automatically prunes anything beyond the most recent 30 (about a month at one a day), so `backups/` doesn't grow forever on the Pi's SD card.
+That runs a backup every night at 2am, automatically prunes anything beyond the most recent 30 (about a month at one a day), then pushes the whole `backups/` folder to another machine — see the next section. If you haven't set up off-site push yet, drop the second `&&` clause; `backup-db.js` alone is still safe to run on its own, it just leaves everything sitting on the Pi's own SD card.
 
-**Get backups off the Pi.** A backup sitting in `backups/` on the same SD card doesn't protect you if the Pi itself dies — that's the actual scenario to plan for. Periodically download a backup from the Admin → Backup page and save it somewhere else entirely: your own computer, a cloud drive, email it to yourself. There's nothing built in to do this automatically off-device; it's a manual step worth doing every so often (e.g. after each session's roster is set, or monthly).
+**Get backups off the Pi, automatically.** A backup sitting in `backups/` on the same SD card doesn't protect you if the Pi itself dies — that's the actual scenario to plan for. `npm run backup:offsite` (`src/scripts/backup-offsite.js`) pushes the whole `backups/` folder to another machine over `rsync` + SSH, so it only transfers what's new or changed each run — cheap even as the folder accumulates a month of nightly snapshots. Set it up once:
 
-**Restoring a backup** (Pi died, SD card corrupted, or you just want to roll back a bad change):
+1. On the Pi, generate a dedicated SSH key if you don't already have one: `ssh-keygen -t ed25519 -f ~/.ssh/tennis_backup -N ""`.
+2. Copy the public key to whatever machine you want backups to land on (another computer on your network, a NAS, a cheap VPS — anywhere reachable over SSH): `ssh-copy-id -i ~/.ssh/tennis_backup.pub you@your-other-machine`. Make sure the destination folder you're copying into already exists on that machine.
+3. Add these to the Pi's `.env` (see `.env.example` for the full list):
+   ```
+   OFFSITE_SSH_HOST=your-other-machine.local
+   OFFSITE_SSH_USER=you
+   OFFSITE_SSH_PATH=/home/you/tennis-backups
+   OFFSITE_SSH_KEY=/home/pi/.ssh/tennis_backup
+   ```
+4. Test it by hand first: `npm run backup:offsite`. It should exit quietly with no error — check the destination folder for the pushed `.db` files.
+5. Add the cron line above (or add `&& npm run backup:offsite` to whatever line you already have).
+
+Once this is set up, Admin → Backup also gets a **Push off-site now** button for an on-demand push (e.g. right after you finalize a season's roster), using the exact same underlying code as the cron job. If `OFFSITE_SSH_HOST`/`USER`/`PATH` are left blank, the script exits cleanly with a one-line "not configured" note rather than failing the cron job — the local backup has already succeeded by the time it runs either way. `rsync` needs to actually be installed on the Pi (it usually already is on Raspberry Pi OS; if not, `sudo apt install rsync`).
+
+If you'd rather push to cloud storage (Google Drive, Dropbox, Backblaze B2, S3, etc.) instead of a second machine, `src/services/offsiteBackup.js`'s `pushBackupsOffsite()` is a small, self-contained function — swap its `rsync`/`ssh` call for an `rclone sync backups/ remote:path` call and everything else (the cron wiring, the admin button, the "not configured" fallback) keeps working unchanged.
+
+**Restoring a backup** (database corrupted, but the Pi itself is fine):
 1. Stop the app: `pm2 stop tennis-scheduler`
 2. Copy the backup file into place as `data/tennis.db`, overwriting whatever's there: `cp tennis-backup-20260806-020000123.db data/tennis.db`. Delete `data/tennis.db-wal` and `data/tennis.db-shm` if either exists, so nothing stale from the old database lingers.
 3. Restart: `pm2 start tennis-scheduler`
 4. Check `/admin` loads and the roster/sessions look right.
 
-If the Pi itself is gone (not just the SD card), restoring means setting up a fresh Pi per "Deploying to a Raspberry Pi" above, then doing the same swap-in-the-backup-file steps *before* starting the app for the first time — the `ADMIN_PASSWORD_HASH` you'd normally set in a fresh `.env` only matters when there's no `data/tennis.db` yet to seed an admin account from; once a real backup is dropped in first, your original admin logins and everything else come back exactly as they were.
+**Restoring after the Pi itself is gone** (SD card died, Pi was lost/stolen, starting over on new hardware): the `.db` backup covers every player, session, schedule, and log entry — but **not** `.env`, which never leaves the Pi's own disk and isn't part of any backup. Recovery is two separate things, not one:
+
+1. Set up a fresh Pi per "Deploying to a Raspberry Pi" above: clone from GitHub, `npm install`, `cp .env.example .env`.
+2. Fill in the new `.env` — most of it doesn't need to match the old one exactly:
+   - `ADMIN_PASSWORD_HASH` — put anything valid here (`node src/scripts/hash-admin-password.js "temp-password"`). It's only read to seed an admin row into an *empty* database; once you drop in a real `.db` backup (next step), the `admins` table already has your real logins in it and this value is never read again.
+   - `SESSION_SECRET` — any new long random string is fine. It doesn't need to match the old one; the only effect of changing it is that anyone currently logged in gets signed out once.
+   - `GMAIL_USER` / `GMAIL_APP_PASSWORD` — these genuinely can't be recovered from a backup, since Google never lets you re-view an app password. Sign into the Gmail account and generate a fresh app password (Google Account → Security → App passwords), same as the very first setup.
+   - `PUBLIC_SITE_URL`, `PORT`, `SQLITE_PATH`, `BACKUP_DIR`, `OFFSITE_SSH_*` — plain config, not secrets; set them back to what they were (or just re-derive from how the tunnel/domain is set up) if you remember them, or leave the safe defaults and adjust later.
+3. Before starting the app for the first time, copy your most recent `.db` backup into place as `data/tennis.db` — same swap-in step as the section above, done *before* `pm2 start`/`npm start` runs so the app never gets a chance to create and seed a brand-new empty database first.
+4. Start the app, confirm `/admin` loads with your real logins and roster, and send yourself a test email (Admin → Send Email) to confirm the new Gmail app password actually works.
+
+Worth remembering: this is exactly why off-site push matters more than it might seem — a backup that only exists on the same SD card as everything else doesn't help if that SD card is what died.
 
 ## Starting fresh with a clean database
 

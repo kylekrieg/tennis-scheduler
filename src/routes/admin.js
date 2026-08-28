@@ -17,8 +17,9 @@ const subFlow = require('../services/subFlow');
 const adminReport = require('../services/adminReport');
 const cron = require('../services/cron');
 const backup = require('../services/backup');
+const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
@@ -360,6 +361,7 @@ router.get('/backup', (req, res) => {
     title: 'Backup',
     backups: backup.listBackups(),
     retention: backup.DEFAULT_RETENTION,
+    offsiteConfigured: offsiteBackup.isConfigured(),
     flashMsg: popFlash(req),
   });
 });
@@ -371,6 +373,20 @@ router.post('/backup', (req, res) => {
     flash(req, `Backup created: ${result.filename} (${(result.size / 1024).toFixed(1)} KB). Download it below and save it somewhere off this Pi.`);
   } catch (err) {
     flash(req, `Backup failed: ${err.message}`, 'error');
+  }
+  res.redirect('/admin/backup');
+});
+
+router.post('/backup/push-offsite', (req, res) => {
+  try {
+    const result = offsiteBackup.pushBackupsOffsite();
+    if (result.skipped) {
+      flash(req, `Off-site push is not configured — set OFFSITE_SSH_HOST/USER/PATH in .env first. (${result.reason})`, 'error');
+    } else {
+      flash(req, 'Pushed backups/ to the off-site machine.');
+    }
+  } catch (err) {
+    flash(req, `Off-site push failed: ${err.message}`, 'error');
   }
   res.redirect('/admin/backup');
 });
@@ -1554,6 +1570,75 @@ router.post('/sessions/:id/notify-blackouts', asyncHandler(async (req, res) => {
   flash(req, `Notified ${roster.length} player(s) to enter their blackout dates.`);
   res.redirect(`/admin/sessions/${session.id}/blackouts`);
 }));
+
+// All players, across every active session, in one place — Kyle, 2026-08-28:
+// "can we add an 'all players' [view] which shows all the blackout dates
+// for all the active sessions?" Distinct from the per-session page below:
+// this is read-only (editing still only happens from a specific session's
+// own blackout page, same as the "Carried over" consolidation elsewhere),
+// and it's session-agnostic by construction rather than needing any
+// carriedOverBlackoutsForSession() reconciliation — blackout_dates rows are
+// already a universal per-player fact (see "Blackout date carryover" in
+// CLAUDE.md), so querying every row for a player directly already gives the
+// complete picture with no session_id filtering needed at all.
+router.get('/blackouts', (req, res) => {
+  const sessions = getBlackoutViewableSessions();
+
+  // Union of every active session's roster — a player enrolled in more than
+  // one active session appears once, with every session they're on listed.
+  const playerSessions = new Map(); // playerId -> { name, sessions: [session] }
+  if (sessions.length) {
+    const placeholders = sessions.map(() => '?').join(',');
+    const rosterRows = db
+      .prepare(
+        `SELECT sp.session_id, p.id as player_id, p.name FROM session_players sp
+         JOIN players p ON p.id = sp.player_id
+         WHERE sp.session_id IN (${placeholders}) AND p.active = 1
+         ORDER BY p.name`
+      )
+      .all(...sessions.map((s) => s.id));
+    const sessionById = new Map(sessions.map((s) => [s.id, s]));
+    for (const row of rosterRows) {
+      let entry = playerSessions.get(row.player_id);
+      if (!entry) {
+        entry = { name: row.name, sessions: [] };
+        playerSessions.set(row.player_id, entry);
+      }
+      entry.sessions.push(sessionById.get(row.session_id));
+    }
+  }
+
+  // Every real blackout_dates row for any of those players — no session_id
+  // filter at all, since a blackout date is one universal fact regardless of
+  // which session's page it was originally entered from.
+  const rows = [];
+  if (playerSessions.size) {
+    const playerIds = [...playerSessions.keys()];
+    const placeholders = playerIds.map(() => '?').join(',');
+    const dateRows = db
+      .prepare(`SELECT player_id, date FROM blackout_dates WHERE player_id IN (${placeholders}) ORDER BY date`)
+      .all(...playerIds);
+    const datesByPlayer = new Map();
+    for (const row of dateRows) {
+      if (!datesByPlayer.has(row.player_id)) datesByPlayer.set(row.player_id, []);
+      datesByPlayer.get(row.player_id).push(row.date);
+    }
+    for (const [playerId, entry] of playerSessions) {
+      rows.push({
+        name: entry.name,
+        sessions: entry.sessions,
+        dates: datesByPlayer.get(playerId) || [],
+      });
+    }
+  }
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+
+  res.render('admin/all_blackouts', {
+    title: 'All Blackout Dates',
+    sessions,
+    rows,
+  });
+});
 
 router.get('/sessions/:id/blackouts', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);

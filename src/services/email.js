@@ -331,17 +331,62 @@ async function sendSubRequestVerification({ player, week, session, needSubToken 
  * the self-service page: if this lands in an inbox that didn't expect it,
  * the actual player finds out immediately, before someone else claims the
  * slot, rather than discovering it after the fact.
+ *
+ * Kyle, 2026-08-27: originally this didn't say *who* got emailed, or what
+ * happens if nobody responds — a player who wanted to personally nudge a
+ * couple people had no way to know who'd already been asked, and had no
+ * sense of the timeline (does anything happen automatically, or is it on
+ * them to chase it down). Now takes `candidates` (exactly who fanOutSubRequest
+ * just emailed) and `sessionSubs` (this session's own escalation list, see
+ * sessionSubList()) so the email can spell out the whole plan up front —
+ * right now, in 24h if nobody's responded, and what to do if nobody ever
+ * does. The escalation window is a plain 24h constant, same as
+ * escalateOverdueRequests() below — not currently a per-session configurable
+ * field the way follow_up_lead_hours/admin_report_lead_hours are, so this
+ * copy is written to match that fixed number; if that ever becomes
+ * configurable, this text needs to read it the same way.
  */
-async function sendSubRequestOwnConfirmation({ player, week, session }) {
+async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const candidateNames = candidates && candidates.length ? candidates.map((c) => c.name).join(', ') : null;
+  const subListNames = sessionSubs && sessionSubs.length ? sessionSubs.map((s) => s.name).join(', ') : null;
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${player.name},</p>
-    <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. The other players not already scheduled that week have been emailed — first to confirm takes the spot.</p>
+    <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Here's exactly what happens from here:</p>
+    <ul>
+      <li><strong>Right now:</strong> ${candidateNames ? `an email just went out to ${candidateNames} — first to confirm takes the spot.` : `no one else on the roster was free to ask for this date — see the next step below.`}</li>
+      <li><strong>If no one responds within 24 hours of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>
+      <li><strong>If no one has confirmed by match time:</strong> please contact your admin for help finding a replacement.</li>
+    </ul>
+    <p>You'll get a separate email the moment someone actually confirms — no need to keep checking.</p>
     <p><strong>Didn't request this yourself?</strong> Reach out right away so it can be sorted out before someone else claims the slot.</p>
     ${footer(session)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'sub_request_self_notice', relatedWeekId: week.id, session });
+}
+
+/**
+ * Sent to the ORIGINAL player once their sub request is actually filled —
+ * distinct from sendSubFilledNotice below, which notifies the rest of that
+ * week's group (who'd otherwise have no way to know the slot is now
+ * covered). This is a real gap Kyle flagged, 2026-08-27: the original
+ * requester's own week_assignments row flips to 'subbed_out' as part of the
+ * same claimSub() transaction, which is exactly why they were previously
+ * excluded from the group notice (it queries status != 'subbed_out') and so
+ * never heard anything back at all — they'd only find out by checking the
+ * site themselves. claimSub() now sends this to them directly, once, right
+ * after the group notice.
+ */
+async function sendSubFilledOriginalNotice({ recipient, week, session, subName }) {
+  const subject = `Your sub is confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>Good news — <strong>${subName}</strong> will be covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. You're all set, no further action needed.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'sub_filled_original', relatedWeekId: week.id, session });
 }
 
 /**
@@ -428,6 +473,27 @@ async function sendSubFilledNotice({ recipient, week, session, subName }) {
  * emails' one-link-to-a-landing-page pattern rather than separate
  * accept/decline URLs, so there's one clear place to see the full trade
  * before deciding. */
+/** Bot-protection gate in front of the real swap proposal — sent to the
+ * *initiator* only, before proposeSwap() runs or the target player hears
+ * anything. Mirrors sendSubRequestVerification's role for Request a Sub:
+ * /swap/start is an unauthenticated public form (pick any two players from
+ * a dropdown), so nothing has actually been sent to the target player yet
+ * when this lands — clicking through is what proves it's really the
+ * initiator, not a script picking names at random. */
+async function sendSwapProposalVerification({ player, targetPlayer, initiatorWeek, targetWeek, session, verifyToken }) {
+  const verifyUrl = `${siteUrl()}/swap/verify/${verifyToken}`;
+  const subject = `Confirm your swap proposal — ${session.name}, ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, null)}
+    <p>Hi ${player.name},</p>
+    <p>Someone just proposed swapping weeks with ${targetPlayer.name} on the Swap a Week page: you'd give up <strong>${fmtDate(initiatorWeek.match_date)}</strong> and take over their <strong>${fmtDate(targetWeek.match_date)}</strong>. To keep this from happening by mistake (or automatically), nothing has been sent to ${targetPlayer.name} yet — click below to confirm it's really you and send the proposal:</p>
+    <p><a href="${verifyUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm and send proposal</a></p>
+    <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and ${targetPlayer.name} is never notified unless you click the button above.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'swap_proposal_verification', relatedWeekId: initiatorWeek.id, session });
+}
+
 async function sendSwapRequestEmail({ recipient, initiatorPlayer, initiatorWeek, targetWeek, session, claimToken }) {
   const respondUrl = `${siteUrl()}/swap/respond/${claimToken}`;
   // Includes time/court (see timeAndPlace()'s doc comment) — a player
@@ -692,6 +758,8 @@ module.exports = {
   sendSubRequestFanout,
   sendEscalationEmail,
   sendSubFilledNotice,
+  sendSubFilledOriginalNotice,
+  sendSwapProposalVerification,
   sendSwapRequestEmail,
   sendSwapNudge,
   sendSwapProposedConfirmation,

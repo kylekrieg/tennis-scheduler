@@ -13,6 +13,16 @@ const email = require('../services/email');
 const { ensureWeeksExist } = require('../services/scheduleRun');
 const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { rateLimiter } = require('../middleware/rateLimiter');
+const honeypot = require('../services/honeypot');
+
+// Separate buckets (10/hour/IP each, generous for real use — a household
+// sharing an IP could submit several times without ever tripping this) so
+// a script can't enumerate assignment_id values and mass-trigger
+// verification emails across the whole roster in one sitting. See
+// rateLimiter.js's doc comment and "Rate limiting" in CLAUDE.md.
+const requestSubStartLimiter = rateLimiter({ name: 'request-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
+const swapStartLimiter = rateLimiter({ name: 'swap-start', windowMs: 60 * 60 * 1000, max: 10 });
 
 // Stamps each assignment row with `doubleBooked` (the other session it
 // collides with, from doubleBookingMapForSession) when that player is also
@@ -56,6 +66,16 @@ router.get('/', (req, res) => res.redirect('/schedule'));
 // new player doesn't need someone else to explain where things are.
 router.get('/help', (req, res) => {
   res.render('help', { title: 'How It Works' });
+});
+
+// Text-size/high-contrast is a per-browser preference (localStorage, applied
+// via data-text-size on <html> — see style.css) rather than anything stored
+// server-side, so this route just renders the control; no DB, no auth
+// needed. Kyle, 2026-08-27: originally this lived directly in the header
+// nav on every page, but he found that didn't work well in practice and
+// asked for it to move to its own dedicated page instead.
+router.get('/preferences', (req, res) => {
+  res.render('preferences', { title: 'Preferences' });
 });
 
 router.get('/schedule', (req, res) => {
@@ -330,7 +350,19 @@ router.get('/request-sub', (req, res) => {
 // 2026-08-18: "I feel like bots could easily send out many emails by
 // pressing that sub button. I want there to be some validation by the
 // player." See email.js's sendSubRequestVerification() doc comment.
-router.post('/request-sub/start', asyncHandler(async (req, res) => {
+router.post('/request-sub/start', requestSubStartLimiter, asyncHandler(async (req, res) => {
+  // Honeypot check first, before any DB work — a bot that filled in the
+  // hidden field gets the exact same success-looking response a real
+  // request would get (no name in it, since we haven't looked anything up
+  // yet), so there's no visible difference to react to. See honeypot.js.
+  if (honeypot.isBot(req)) {
+    return res.render('message', {
+      title: 'Request a Sub',
+      heading: 'Check your email',
+      body: "If that was a valid request, we've sent a confirmation link to the email on file. Nothing has been sent to any other players yet.",
+      tone: 'ok',
+    });
+  }
   const assignmentId = Number(req.body.assignment_id);
   const assignment = db
     .prepare(
@@ -419,10 +451,30 @@ router.get('/swap', (req, res) => {
   });
 });
 
-router.post('/swap/start', asyncHandler(async (req, res) => {
+// POST /swap/start no longer calls proposeSwap() directly — it's an
+// unauthenticated public form (pick any two players from a dropdown), so a
+// script could otherwise hit it repeatedly and immediately email real swap
+// proposals to players who never asked for anything. It now only mints a
+// pending swap_proposal_verifications row and emails the *initiator* a
+// "confirm it's really you" link — proposeSwap() (and its two real emails,
+// including the one to the target player) only fires from GET/POST
+// /swap/verify/:token below, once that link is actually clicked. Same
+// "email yourself first" pattern already used by /request-sub/start (Kyle,
+// 2026-08-28: closing the same bot-spam gap on the swap side).
+router.post('/swap/start', swapStartLimiter, asyncHandler(async (req, res) => {
+  // Same honeypot check as /request-sub/start above, first thing, before any
+  // DB work — same generic success-looking response either way.
+  if (honeypot.isBot(req)) {
+    return res.render('message', {
+      title: 'Swap a Week',
+      heading: 'Check your email',
+      body: "If that was a valid proposal, we've sent a confirmation link to the email on file. Nothing has been sent to the other player yet.",
+      tone: 'ok',
+    });
+  }
   const assignmentId = Number(req.body.assignment_id);
   const targetAssignmentId = Number(req.body.target_assignment_id);
-  const result = await swapFlow.proposeSwap(assignmentId, targetAssignmentId);
+  const result = swapFlow.issueProposalVerification(assignmentId, targetAssignmentId);
   if (!result.ok) {
     return res.render('message', {
       title: 'Swap a Week',
@@ -431,11 +483,63 @@ router.post('/swap/start', asyncHandler(async (req, res) => {
       tone: 'error',
     });
   }
+  const { initiatorCtx, token } = result;
+  await email.sendSwapProposalVerification({
+    player: initiatorCtx.player,
+    targetPlayer: result.targetCtx.player,
+    initiatorWeek: initiatorCtx.week,
+    targetWeek: result.targetCtx.week,
+    session: initiatorCtx.session,
+    verifyToken: token,
+  });
+  res.render('message', {
+    title: 'Swap a Week',
+    heading: 'Check your email',
+    body: `We've sent a confirmation link to the email on file for ${initiatorCtx.player.name} — click it to actually send the proposal to ${result.targetCtx.player.name}. Nothing has been sent to them yet.`,
+    tone: 'ok',
+    myPageId: initiatorCtx.player.slug || initiatorCtx.player.id,
+  });
+}));
+
+router.get('/swap/verify/:token', (req, res) => {
+  const pending = swapFlow.findProposalVerificationByToken(req.params.token);
+  if (!pending) {
+    return res.render('message', { title: 'Swap a Week', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
+  }
+  const initiatorCtx = swapFlow.getAssignmentContext(pending.initiator_assignment_id);
+  const targetCtx = swapFlow.getAssignmentContext(pending.target_assignment_id);
+  if (!initiatorCtx || !targetCtx) {
+    return res.render('message', { title: 'Swap a Week', heading: 'No longer available', body: 'One side of this swap no longer exists — it may have been reassigned since you started this.', tone: 'error' });
+  }
+  res.render('swap_verify', { title: 'Swap a Week', token: req.params.token, initiatorCtx, targetCtx });
+});
+
+router.post('/swap/verify/:token', asyncHandler(async (req, res) => {
+  const pending = swapFlow.findProposalVerificationByToken(req.params.token);
+  if (!pending) {
+    return res.render('message', { title: 'Swap a Week', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
+  }
+  // Single-use regardless of outcome below — a second click of the same
+  // emailed link (or someone re-submitting the confirm page) shouldn't be
+  // able to propose the same swap twice.
+  swapFlow.consumeProposalVerification(pending.id);
+
+  const result = await swapFlow.proposeSwap(pending.initiator_assignment_id, pending.target_assignment_id);
+  if (!result.ok) {
+    return res.render('message', {
+      title: 'Swap a Week',
+      heading: 'Swap not available',
+      body: "That swap isn't available anymore — the week may have locked, gotten blacked out, or someone else's schedule changed since you started this. Go back and try again.",
+      tone: 'error',
+    });
+  }
+  const initiatorCtx = swapFlow.getAssignmentContext(pending.initiator_assignment_id);
   res.render('message', {
     title: 'Swap a Week',
     heading: 'Swap request sent',
     body: "We've emailed the other player your proposal — you'll hear back once they accept or decline. Nothing changes until then.",
     tone: 'ok',
+    myPageId: (initiatorCtx && initiatorCtx.player.slug) || (initiatorCtx && initiatorCtx.player.id),
   });
 }));
 

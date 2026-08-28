@@ -17,6 +17,8 @@
   --amber: #9a6700;
   --badge-reminded-bg: #fff8e6;
   --shadow: none;
+  --text-scale: 1;
+  --border-width: 1px;
 }
 
 [data-theme="dark"] {
@@ -39,9 +41,38 @@
   --badge-reminded-bg: #2b2410;
 }
 
+/* Larger text (Kyle, 2026-08-27): some players have poor eyesight, so this
+   is a per-player accessibility preference, not a site-wide admin setting —
+   same "each viewer picks their own, browser remembers it" pattern as dark
+   mode above (see partials/header.ejs's blocking inline script + theme.js).
+   Every font-size in this file is written as calc(Npx * var(--text-scale,
+   1)) specifically so a single multiplier here scales the whole site at
+   once, rather than needing a second copy of every rule. "large" and
+   "contrast" share the same scale; "contrast" additionally overrides the
+   color variables and border thickness below for players who need both. */
+[data-text-size="large"], [data-text-size="contrast"] {
+  --text-scale: 1.3;
+}
+[data-text-size="contrast"] {
+  --border-width: 2px;
+  --ink: #000000;
+  --muted: #2b2b2b;
+  --border: #000000;
+  --bg: #ffffff;
+  --bg-soft: #e8e8e8;
+}
+[data-theme="dark"][data-text-size="contrast"] {
+  --ink: #ffffff;
+  --muted: #e2e2e2;
+  --border: #ffffff;
+  --bg: #000000;
+  --bg-soft: #1c1c1c;
+}
+
 * { box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: calc(16px * var(--text-scale, 1));
   color: var(--ink);
   margin: 0;
   background: var(--bg);
@@ -49,7 +80,7 @@ body {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 header.site {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--border-width, 1px) solid var(--border);
   padding: 12px 20px;
   display: flex;
   align-items: center;
@@ -57,24 +88,24 @@ header.site {
   flex-wrap: wrap;
   gap: 8px;
 }
-header.site .brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--ink); }
+header.site .brand { font-weight: 700; font-size: calc(18px * var(--text-scale, 1)); text-decoration: none; color: var(--ink); }
 header.site nav { display: flex; align-items: center; }
 header.site nav a {
   color: var(--muted);
   text-decoration: none;
   margin-left: 16px;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
 }
 header.site nav a:hover { color: var(--ink); }
 #theme-toggle {
   margin-left: 16px;
   background: none;
-  border: 1px solid var(--border);
+  border: var(--border-width, 1px) solid var(--border);
   color: var(--ink);
   border-radius: 6px;
   width: 30px;
   height: 30px;
-  font-size: 15px;
+  font-size: calc(15px * var(--text-scale, 1));
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -83,16 +114,27 @@ header.site nav a:hover { color: var(--ink); }
   padding: 0;
 }
 #theme-toggle:hover { background: var(--bg-soft); }
+#text-size-select {
+  margin-left: 16px;
+  background: var(--bg);
+  border: var(--border-width, 1px) solid var(--border);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-family: inherit;
+  cursor: pointer;
+}
 main { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
 main.wide { max-width: 1400px; }
-h1 { font-size: 22px; margin-bottom: 4px; }
-h2 { font-size: 17px; margin-top: 28px; }
-.muted { color: var(--muted); font-size: 14px; }
-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+h1 { font-size: calc(22px * var(--text-scale, 1)); margin-bottom: 4px; }
+h2 { font-size: calc(17px * var(--text-scale, 1)); margin-top: 28px; }
+.muted { color: var(--muted); font-size: calc(14px * var(--text-scale, 1)); }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: calc(14px * var(--text-scale, 1)); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: var(--border-width, 1px) solid var(--border); vertical-align: top; }
 th { background: var(--bg-soft); font-weight: 600; }
 tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; }
 .badge.confirmed { background: var(--badge-confirmed-bg); color: var(--green); }
 .badge.scheduled { background: var(--bg-soft); color: var(--muted); }
 .badge.needs_sub { background: var(--badge-needs_sub-bg); color: var(--red); }
@@ -104,7 +146,7 @@ tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
   padding: 9px 16px;
   border-radius: 6px;
   text-decoration: none;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
@@ -116,8 +158,8 @@ tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
 /* Example-email mockups on the help page — deliberately not theme-aware in
    the body: a real inbox reading pane is white regardless of the site's own
    dark mode, so this mimics that rather than blending into the page. */
-.email-mock { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 14px 0 20px; }
-.email-mock-header { padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+.email-mock { border: var(--border-width, 1px) solid var(--border); border-radius: 10px; overflow: hidden; margin: 14px 0 20px; }
+.email-mock-header { padding: 10px 14px; border-bottom: var(--border-width, 1px) solid var(--border); background: var(--bg-soft); }
 .email-mock-header .to { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .email-mock-header .subject { font-size: 14px; font-weight: 600; color: var(--ink); }
 .email-mock-body { padding: 20px; background: #ffffff; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 17px; line-height: 1.6; }
@@ -133,26 +175,26 @@ tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
 
 /* Real screenshots on the help/guide pages — bordered like a browser
    window so they read as "a picture of the site", not decoration. */
-.screenshot { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; display: block; margin: 10px 0 4px; }
-.screenshot-caption { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
-.btn.small { padding: 4px 10px; font-size: 12px; }
+.screenshot { max-width: 100%; height: auto; border: var(--border-width, 1px) solid var(--border); border-radius: 8px; display: block; margin: 10px 0 4px; }
+.screenshot-caption { font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); margin: 0 0 20px; }
+.btn.small { padding: 4px 10px; font-size: calc(12px * var(--text-scale, 1)); }
 .btn.disabled { opacity: 0.5; pointer-events: none; cursor: default; }
 form.inline { display: inline; }
 .card {
-  border: 1px solid var(--border);
+  border: var(--border-width, 1px) solid var(--border);
   border-radius: 8px;
   padding: 20px;
   margin-top: 16px;
   max-width: 480px;
 }
 .card.wide { max-width: none; }
-label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+label { display: block; font-size: calc(13px * var(--text-scale, 1)); font-weight: 600; margin: 12px 0 4px; }
 input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=number], select, textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: var(--border-width, 1px) solid var(--border);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   font-family: inherit;
   background: var(--bg);
   color: var(--ink);
@@ -164,11 +206,11 @@ textarea { min-height: 100px; }
   background: var(--flag-bg);
   border-radius: 8px;
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
 }
 .flag.error { border-color: var(--flag-error-border); background: var(--flag-error-bg); }
 .session-card {
-  border: 1px solid var(--border);
+  border: var(--border-width, 1px) solid var(--border);
   border-radius: 8px;
   padding: 16px;
   margin-top: 12px;
@@ -196,7 +238,12 @@ input[type="checkbox"]:disabled {
   opacity: 1;
   cursor: default;
 }
-.notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: 14px; }
+.notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: calc(14px * var(--text-scale, 1)); }
+/* Honeypot field on public forms that trigger email (Request a Sub, Propose
+   a Swap) — see src/services/honeypot.js. Hidden via CSS, not type="hidden",
+   so a bot that blindly fills every <input> it finds in the raw HTML still
+   fills this one, while a sighted real user never sees or tabs into it. */
+.hp-field { position: absolute; left: -9999px; top: -9999px; width: 1px; height: 1px; overflow: hidden; }
 /* Order-of-operations cheat sheet on the session form (Kyle, 2026-08-12) —
    sessions only get created a couple times a year, easy to forget the exact
    sequence (roster, sub list, blackout dates, schedule) in between. A native
@@ -204,9 +251,9 @@ input[type="checkbox"]:disabled {
    inline script only toggles which of the two (regular vs ad-hoc) is shown
    and whether it starts open, same pattern as the regular/adhoc field groups. */
 .cheatsheet { background: var(--bg-soft); }
-.cheatsheet summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.cheatsheet summary { cursor: pointer; font-weight: 600; font-size: calc(14px * var(--text-scale, 1)); }
 .cheatsheet[open] summary { margin-bottom: 10px; }
-.cheatsheet ol { margin: 0; padding-left: 20px; font-size: 14px; }
+.cheatsheet ol { margin: 0; padding-left: 20px; font-size: calc(14px * var(--text-scale, 1)); }
 .cheatsheet ol li { margin-bottom: 6px; }
 /* Row-level action buttons (e.g. My Page's "Need a sub" / "Propose a swap"
    per upcoming match) were sitting right up against each other inside a
@@ -215,7 +262,7 @@ input[type="checkbox"]:disabled {
    room without needing the wider .actions class's margin-top, which isn't
    appropriate inside a table row. */
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-table.compact th, table.compact td { padding: 6px 10px; font-size: 13px; }
+table.compact th, table.compact td { padding: 6px 10px; font-size: calc(13px * var(--text-scale, 1)); }
 table.compact td { vertical-align: middle; }
 .player-row {
   display: flex;
@@ -223,12 +270,12 @@ table.compact td { vertical-align: middle; }
   gap: 10px;
   flex-wrap: wrap;
   padding: 5px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--border-width, 1px) solid var(--border);
 }
 .player-row:last-child { border-bottom: none; }
 .player-row .pname { min-width: 130px; flex-shrink: 0; }
 .player-row form.inline { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.player-row select { width: auto; min-width: 110px; padding: 4px 6px; font-size: 12px; }
+.player-row select { width: auto; min-width: 110px; padding: 4px 6px; font-size: calc(12px * var(--text-scale, 1)); }
 
 /* Process flowcharts on the player-facing /help page (Kyle, 2026-08-26):
    "I'd like to put together a flow chart of every process that we have for
@@ -242,21 +289,21 @@ table.compact td { vertical-align: middle; }
    which matters here since players mostly read this on a phone. */
 .flowchart { display: flex; flex-direction: column; max-width: 640px; margin: 16px 0 24px; }
 .flow-step {
-  border: 1px solid var(--border);
+  border: var(--border-width, 1px) solid var(--border);
   border-radius: 10px;
   padding: 10px 14px;
   background: var(--bg-soft);
 }
-.flow-step .flow-when { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-bottom: 3px; }
+.flow-step .flow-when { font-size: calc(11px * var(--text-scale, 1)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-bottom: 3px; }
 .flow-step .flow-title { font-weight: 600; margin-bottom: 2px; }
-.flow-step .flow-detail { font-size: 13px; color: var(--muted); }
+.flow-step .flow-detail { font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); }
 .flow-step.success { background: var(--badge-confirmed-bg); border-color: var(--green); }
 .flow-step.success .flow-title { color: var(--green); }
 .flow-step.pending { background: var(--flag-bg); border-color: var(--flag-border); }
 .flow-step.urgent { background: var(--flag-error-bg); border-color: var(--flag-error-border); }
 .flow-step.urgent .flow-title { color: var(--red); }
-.flow-arrow { text-align: center; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 0; }
+.flow-arrow { text-align: center; color: var(--muted); font-size: calc(20px * var(--text-scale, 1)); line-height: 1; padding: 2px 0; }
 .flow-branches { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
 .flow-branch { flex: 1 1 220px; display: flex; flex-direction: column; min-width: 0; }
-.flow-branch .flow-branch-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; text-align: center; }
-.flow-note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--border); padding: 4px 12px; margin: 4px 0 0; }
+.flow-branch .flow-branch-label { font-size: calc(11px * var(--text-scale, 1)); font-weight: 700; color: var(--muted); margin-bottom: 6px; text-align: center; }
+.flow-note { font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); border-left: 3px solid var(--border); padding: 4px 12px; margin: 4px 0 0; }

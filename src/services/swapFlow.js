@@ -189,6 +189,52 @@ async function proposeSwap(initiatorAssignmentId, targetAssignmentId) {
   return { ok: true, swapRequestId: info.lastInsertRowid };
 }
 
+/** Bot-protection gate in front of proposeSwap() — see the schema.sql
+ * comment on swap_proposal_verifications for why this exists. Only mints a
+ * pending row and returns the raw token; does not touch proposeSwap() or
+ * send either of its real emails. Re-validates the pair is plausible before
+ * even sending the "confirm it's you" email, so a bot spamming random
+ * player/assignment combinations doesn't generate a flood of nonsense
+ * verification emails either — same lightweight up-front check
+ * proposeSwap() itself does, just run one step earlier. */
+function issueProposalVerification(initiatorAssignmentId, targetAssignmentId) {
+  if (!isAssignmentSwappable(initiatorAssignmentId) || !isAssignmentSwappable(targetAssignmentId)) {
+    return { ok: false, reason: 'not_available' };
+  }
+  const initiatorCtx = getAssignmentContext(initiatorAssignmentId);
+  const targetCtx = getAssignmentContext(targetAssignmentId);
+  if (!initiatorCtx || !targetCtx || initiatorCtx.session.id !== targetCtx.session.id) {
+    return { ok: false, reason: 'not_available' };
+  }
+  const stillEligible = eligibleTargetAssignments(initiatorAssignmentId, targetCtx.player.id).some(
+    (r) => r.id === targetAssignmentId
+  );
+  if (!stillEligible) return { ok: false, reason: 'not_available' };
+
+  const raw = generateRawToken();
+  db.prepare(
+    'INSERT INTO swap_proposal_verifications (token, initiator_assignment_id, target_assignment_id) VALUES (?, ?, ?)'
+  ).run(hashToken(raw), initiatorAssignmentId, targetAssignmentId);
+
+  return { ok: true, token: raw, initiatorCtx, targetCtx };
+}
+
+/** Resolves a raw verification token back to its pending proposal. Returns
+ * null if it doesn't exist (never issued, already consumed, or — since
+ * these are never explicitly cleaned up on a timer — just old; a verify
+ * link is meant to be clicked within minutes of the email arriving, not
+ * saved for later). */
+function findProposalVerificationByToken(rawToken) {
+  return db.prepare('SELECT * FROM swap_proposal_verifications WHERE token = ?').get(hashToken(rawToken));
+}
+
+/** Single-use: deletes the pending row once its token has been acted on
+ * (whether the actual proposeSwap() call that follows succeeds or not —
+ * either way this specific verification link shouldn't work a second time). */
+function consumeProposalVerification(id) {
+  db.prepare('DELETE FROM swap_proposal_verifications WHERE id = ?').run(id);
+}
+
 /** Accept or decline a pending swap proposal. Re-validates both assignments
  * are still swappable at the moment of response (state may have moved since
  * the request was created — an admin reassign, the week locking, etc.). */
@@ -456,6 +502,9 @@ module.exports = {
   eligibleOwnAssignments,
   eligibleTargetAssignments,
   proposeSwap,
+  issueProposalVerification,
+  findProposalVerificationByToken,
+  consumeProposalVerification,
   respondToSwap,
   adminCancelSwap,
   findSwapRequestByToken,

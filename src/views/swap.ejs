@@ -76,6 +76,7 @@
                 <form method="post" action="/swap/start">
                   <input type="hidden" name="assignment_id" value="<%= selectedAssignmentId %>">
                   <input type="hidden" name="target_assignment_id" value="<%= a.id %>">
+                  <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
                   <button class="btn small green" type="submit">Propose this swap</button>
                 </form>
               </td>

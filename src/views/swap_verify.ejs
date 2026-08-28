@@ -1,0 +1,18 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>Confirm your swap proposal</h1>
+  <p class="notice" style="font-size:16px;">Proposing a swap with <strong><%= targetCtx.player.name %></strong> in <strong><%= sessionPublicLabel(initiatorCtx.session) %></strong>:</p>
+  <ul>
+    <li>You'd give up <strong><%= fmtDate(initiatorCtx.week.match_date) %></strong></li>
+    <li>You'd take over <strong><%= fmtDate(targetCtx.week.match_date) %></strong> (currently <%= targetCtx.player.name %>'s)</li>
+  </ul>
+  <p class="muted">Not you, or didn't mean to propose this? Just close this page — nothing has been sent to <%= targetCtx.player.name %> yet, and nothing changes unless you click below.</p>
+  <p class="flag">This will immediately email <%= targetCtx.player.name %> your proposal, asking them to accept or decline.</p>
+  <form method="post" action="/swap/verify/<%= token %>">
+    <div class="actions">
+      <button class="btn green" type="submit">Yes, send the proposal</button>
+      <a class="btn neutral" href="/schedule">Cancel</a>
+    </div>
+  </form>
+</div>
+<%- include('partials/footer') %>

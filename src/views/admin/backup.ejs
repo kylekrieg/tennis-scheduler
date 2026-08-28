@@ -10,13 +10,23 @@
 
 <div class="notice" style="margin-top:20px;">
   <strong>Set this up once and forget about it:</strong> add a cron job on the Pi so a backup happens automatically every night. From the Pi's terminal: <code>crontab -e</code>, then add a line like
-  <pre style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:10px;margin:8px 0;overflow-x:auto;font-size:12px;">0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1</pre>
-  That runs a backup every night at 2am and automatically deletes anything beyond the most recent <%= retention %> (about a month at one a day). Full instructions, including how to restore one, are in README.md under "Backing up the database."
+  <pre style="background:#fff;border:1px solid var(--border-width, 1px) var(--border);border-radius:6px;padding:10px;margin:8px 0;overflow-x:auto;font-size:calc(12px * var(--text-scale, 1));">0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1 && /usr/bin/node src/scripts/backup-offsite.js >> backup.log 2>&1</pre>
+  That runs a backup every night at 2am, automatically deletes anything beyond the most recent <%= retention %> (about a month at one a day), then pushes the whole <code>backups/</code> folder to another machine (see below). Full instructions are in README.md under "Backing up the database."
 </div>
 
-<div class="flag" style="margin-top:16px;">
-  <strong>A backup sitting on the same SD card as the Pi doesn't protect you if the Pi itself dies.</strong> Periodically download a backup below and save it somewhere else — your computer, a cloud drive, email it to yourself, anything off this device.
+<% if (offsiteConfigured) { %>
+<div class="card" style="margin-top:16px;">
+  <h2 style="margin-top:0;">Off-site push</h2>
+  <p class="muted">Configured — the cron line above (and the button below) push <code>backups/</code> to the remote machine set in <code>.env</code> via rsync.</p>
+  <form method="post" action="/admin/backup/push-offsite" class="inline">
+    <button class="btn neutral" type="submit">Push off-site now</button>
+  </form>
 </div>
+<% } else { %>
+<div class="flag" style="margin-top:16px;">
+  <strong>A backup sitting on the same SD card as the Pi doesn't protect you if the Pi itself dies.</strong> Off-site push isn't configured yet — set <code>OFFSITE_SSH_HOST</code>/<code>OFFSITE_SSH_USER</code>/<code>OFFSITE_SSH_PATH</code> in <code>.env</code> (see README.md's "Get backups off the Pi") to have every backup pushed to another machine automatically. Until then, download a backup below and save it somewhere else yourself every so often.
+</div>
+<% } %>
 
 <h2>Existing backups</h2>
 <% if (backups.length === 0) { %>
@@ -43,11 +53,12 @@
 <% } %>
 
 <h2>Restoring from a backup</h2>
-<p class="muted">If the Pi dies or the database gets corrupted, restoring is just swapping in the backup file in place of the live one:</p>
+<p class="muted">If the database gets corrupted but the Pi itself is fine, restoring is just swapping in the backup file:</p>
 <ol class="muted" style="line-height:1.8;">
   <li>Stop the app: <code>pm2 stop tennis-scheduler</code></li>
   <li>Move the backup file onto the Pi as <code>data/tennis.db</code> (overwriting whatever's there) — e.g. <code>cp tennis-backup-20260806-020000123.db data/tennis.db</code> from inside the project folder. Delete <code>data/tennis.db-wal</code> and <code>data/tennis.db-shm</code> if they exist, so nothing stale is left over.</li>
   <li>Restart the app: <code>pm2 start tennis-scheduler</code></li>
   <li>Check <code>/admin</code> loads and the roster/sessions look right.</li>
 </ol>
+<p class="muted">If the Pi itself is gone, one thing the <code>.db</code> backup does <strong>not</strong> cover: <code>.env</code> (Gmail app password, session secret) lives only on the Pi's disk, never in the database. See "Restoring after the Pi itself is gone" in README.md for the full checklist, including what needs regenerating vs. what you can just make up fresh.</p>
 <%- include('../partials/footer') %>

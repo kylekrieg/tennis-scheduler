@@ -6,13 +6,19 @@
   <title><%= typeof title !== 'undefined' ? title + ' — Admin' : 'Admin' %></title>
   <link rel="stylesheet" href="/css/style.css">
   <script>
-    // Set the theme before first paint so there's no light-then-dark flash.
+    // Set the theme and text size before first paint so there's no
+    // flash of the wrong look. Both are per-admin preferences stored in
+    // this browser's localStorage — see CLAUDE.md's "Larger text" note.
     (function () {
       try {
         var stored = localStorage.getItem('theme');
         var theme = stored || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
         document.documentElement.setAttribute('data-theme', theme);
       } catch (e) { /* private browsing, etc. — default light */ }
+      try {
+        var textSize = localStorage.getItem('textSize') || 'normal';
+        document.documentElement.setAttribute('data-text-size', textSize);
+      } catch (e) { /* private browsing, etc. — default normal */ }
     })();
   </script>
   <script src="/js/theme.js" defer></script>
@@ -24,6 +30,7 @@
     <a href="/admin">Dashboard</a>
     <a href="/admin/status">Status</a>
     <a href="/admin/players">Players</a>
+    <a href="/admin/blackouts">Blackout Dates</a>
     <a href="/admin/sub-list">Sub List</a>
     <a href="/admin/email">Send Email</a>
     <a href="/admin/email-log">Email Log</a>
@@ -32,6 +39,7 @@
     <a href="/admin/backup">Backup</a>
     <a href="/admin/settings">Settings</a>
     <a href="/admin/guide">Guide</a>
+    <a href="/preferences">Preferences</a>
     <a href="/schedule">Public Site</a>
     <form class="inline" method="post" action="/admin/logout"><button class="btn small neutral" type="submit">Log out</button></form>
     <button id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>

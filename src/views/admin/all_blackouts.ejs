@@ -1,0 +1,27 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>All Blackout Dates</h1>
+<p class="muted">Every player currently enrolled in an active session, and every blackout date on record for them — across every session, not just one. This is read-only; to add or remove a date, use a specific session's Blackout Dates page (any session that player's on works, since a date is universal regardless of where it's entered).</p>
+
+<% if (sessions.length === 0) { %>
+  <p class="muted">No active sessions yet.</p>
+<% } else if (rows.length === 0) { %>
+  <p class="muted">No players enrolled in any active session yet.</p>
+<% } else { %>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Session(s)</th><th>Blackout dates</th></tr></thead>
+      <tbody>
+        <% rows.forEach(function(row) { %>
+          <tr>
+            <td><%= row.name %></td>
+            <td>
+              <% row.sessions.forEach(function(s, i) { %><% if (i > 0) { %>, <% } %><a href="/admin/sessions/<%= s.id %>/blackouts"><%= s.name %></a><% }) %>
+            </td>
+            <td><%= row.dates.length ? row.dates.join(', ') : '—' %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+<%- include('../partials/footer') %>

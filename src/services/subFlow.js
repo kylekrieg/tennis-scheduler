@@ -140,7 +140,11 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
     });
   }
 
-  return offers.length;
+  // Kyle, 2026-08-27: returning the actual candidate list (not just a count)
+  // so createSubRequest() below can tell the requesting player exactly who
+  // was just emailed, instead of the old generic "the other players have
+  // been emailed" with no names.
+  return { count: offers.length, candidates };
 }
 
 /**
@@ -186,13 +190,16 @@ async function createSubRequest(weekAssignmentId) {
     return subRequestId;
   })();
 
-  const offerCount = await fanOutSubRequest(subRequestId, player.name);
+  const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, player.name);
 
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
   // Sub" page): the affected player gets their own confirmation the moment
   // this fires, so a mistake surfaces immediately instead of after the fact.
-  await email.sendSubRequestOwnConfirmation({ player, week, session });
+  // Also tells them exactly who was just emailed and what happens next —
+  // see sendSubRequestOwnConfirmation()'s own doc comment (Kyle, 2026-08-27).
+  const sessionSubs = sessionSubList(session.id);
+  await email.sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs });
 
   return { blocked: false, subRequestId, offerCount };
 }
@@ -340,6 +347,18 @@ async function claimSub(rawToken) {
 
   for (const recipient of groupRows) {
     await email.sendSubFilledNotice({ recipient, week, session, subName: subPlayer.name });
+  }
+
+  // Kyle, 2026-08-27: the original requester's own row just flipped to
+  // 'subbed_out' above, which is exactly why the groupRows query (status !=
+  // 'subbed_out') never includes them — they previously got no notice at
+  // all that their spot was covered, and had to check the site themselves
+  // to find out. One dedicated notice, separate from the group email above
+  // since the wording ("you're all set") doesn't fit a still-playing
+  // teammate.
+  const originalPlayer = db.prepare('SELECT * FROM players WHERE id = ?').get(originalAssignment.player_id);
+  if (originalPlayer) {
+    await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: subPlayer.name });
   }
 
   return { ok: true, week, subPlayer };
