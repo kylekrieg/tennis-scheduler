@@ -164,6 +164,37 @@ function sessionPublicLabel(session) {
   return bits.length ? `${session.name} — ${bits.join(', ')}` : session.name;
 }
 
+const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * "Session name · Day of week · Match Time · Court/location · Club/group
+ * name" — the full composed title Kyle asked for (2026-08-29), first built
+ * for the admin dashboard's session headings and then extended to the
+ * handful of public-facing "this is the page/banner you're looking at"
+ * spots he asked to match it: the /schedule and /lookahead page titles and
+ * the "You're viewing" session-picker banner. Each trailing piece is only
+ * included if actually set, so a session with no club/court configured yet
+ * still renders cleanly. Deliberately a single shared function (not
+ * duplicated per-view) so the admin and public formats can never drift out
+ * of sync with each other.
+ *
+ * This is intentionally NOT used everywhere sessionPublicLabel() is (match
+ * emails, the PDF, calendar/.ics event titles, the "also in X" double-
+ * booking mentions, My Page) — Kyle's own call: those surfaces already show
+ * date/time/court nearby in their own layout, so repeating it in the name
+ * itself would just be redundant there. sessionPublicLabel() stays exactly
+ * as it was for all of those.
+ */
+function sessionFullTitle(session) {
+  if (!session) return '';
+  const parts = [session.name];
+  if (session.match_day_of_week !== null && session.match_day_of_week !== undefined) parts.push(DOW_NAMES[session.match_day_of_week]);
+  if (session.match_time) parts.push(fmtTime(session.match_time));
+  if (session.court_info) parts.push(session.court_info);
+  if (session.club_name) parts.push(session.club_name);
+  return parts.join(' · ');
+}
+
 // A fixed, hand-picked palette rather than generating arbitrary colors —
 // every entry is distinct enough at a glance and reads fine as both a small
 // dot and a colored left-border/banner, in both light and dark mode (all
@@ -801,6 +832,7 @@ module.exports = {
   fmtTime,
   timeAndPlace,
   sessionPublicLabel,
+  sessionFullTitle,
   sessionColor,
   matchBanner,
 };

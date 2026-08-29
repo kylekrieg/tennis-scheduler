@@ -6,7 +6,7 @@ const session = require('express-session');
 
 const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
-const { fmtDate, fmtTime, sessionPublicLabel, sessionColor } = require('./services/email');
+const { fmtDate, fmtTime, sessionPublicLabel, sessionFullTitle, sessionColor } = require('./services/email');
 
 const app = express();
 
@@ -24,11 +24,35 @@ app.locals.fmtTime = fmtTime;
 // sessionPublicLabel()'s doc comment in email.js. Deliberately not used on
 // admin-facing pages, which keep showing the bare internal session name.
 app.locals.sessionPublicLabel = sessionPublicLabel;
+// "Session name · Day · Time · Court · Club" — the fuller composed title
+// Kyle asked for (2026-08-29), used on both the admin dashboard and the
+// small set of public pages/banner he asked to match it (see
+// sessionFullTitle()'s doc comment in email.js for exactly which ones and
+// why it's not used everywhere sessionPublicLabel() is).
+app.locals.sessionFullTitle = sessionFullTitle;
 // Same reasoning, but a color instead of text — see sessionColor()'s doc
 // comment in email.js. Used on both player-facing and admin pages (the
 // admin's own session-color picker on session_form.ejs needs it too), unlike
 // sessionPublicLabel which is deliberately player-facing only.
 app.locals.sessionColor = sessionColor;
+// A cache-busting query param appended to every static CSS/JS <link>/<script>
+// tag (see header.ejs, admin_header.ejs, admin/login.ejs, preferences.ejs).
+// Set once per process, so it changes on every `pm2 restart` after a deploy —
+// added 2026-08-29 after a real incident where an updated style.css/navmenu.js
+// pair was deployed (via WinSCP + pm2 restart, same as always) but browsers/
+// the Cloudflare tunnel in front of this app kept serving an old cached copy
+// of style.css with no visible way for Kyle to tell that was the problem: the
+// server-rendered HTML (never cached) picked up the new #nav-toggle markup
+// immediately, so the button appeared everywhere, but the CSS rules that
+// hide it on desktop and collapse <nav> on mobile were still the stale
+// pre-hamburger-menu version — explaining exactly what he saw (the toggle
+// visible on desktop, and the full nav still overflowing on mobile). Express's
+// static() sets no explicit Cache-Control by default, which still leaves
+// long-lived heuristic caching (and Cloudflare's own edge cache for static
+// extensions) free to hang onto an old copy indefinitely. A version query
+// string is a new, previously-never-seen URL on every restart, so neither
+// layer has anything stale to serve.
+app.locals.assetVersion = Date.now();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));

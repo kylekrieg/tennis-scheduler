@@ -114,6 +114,54 @@ header.site nav a:hover { color: var(--ink); }
   padding: 0;
 }
 #theme-toggle:hover { background: var(--bg-soft); }
+
+/* Hamburger menu for narrow viewports (Kyle, 2026-08-29: "the top banner
+   bar links run off the page" on mobile). header.site nav is a plain flex
+   row with no wrap of its own — fine on desktop, but with 10-14 links plus
+   the theme toggle it has nowhere to go on a phone-width screen but off the
+   right edge. #nav-toggle is a normal DOM child of header.site the whole
+   time (not injected by JS), styled `display:none` above the breakpoint so
+   it never affects desktop layout at all — see navmenu.js for the toggle
+   behavior. Below the breakpoint, nav itself is hidden until `.open` is
+   added, at which point it drops onto its own full-width row (header.site's
+   existing `flex-wrap: wrap` already handles that once nav's width is
+   100%) and lays its links out as a stacked, tap-friendly list instead of
+   a horizontal row. No JS-driven layout — the toggle only ever flips one
+   class and one aria attribute. */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: var(--border-width, 1px) solid var(--border);
+  color: var(--ink);
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  font-size: calc(18px * var(--text-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+@media (max-width: 820px) {
+  .nav-toggle { display: inline-flex; }
+  header.site nav {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  header.site nav.open { display: flex; }
+  header.site nav a {
+    margin-left: 0;
+    padding: 12px 4px;
+    border-top: var(--border-width, 1px) solid var(--border);
+  }
+  header.site nav form.inline { display: flex; border-top: var(--border-width, 1px) solid var(--border); }
+  header.site nav form.inline button { width: 100%; margin: 8px 0; }
+  #theme-toggle { margin-left: 0; margin-top: 12px; align-self: flex-start; }
+}
 #text-size-select {
   margin-left: 16px;
   background: var(--bg);

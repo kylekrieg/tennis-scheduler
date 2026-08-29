@@ -44,7 +44,8 @@
   <% } %>
 
   <label for="name">Session name</label>
-  <input type="text" name="name" id="name" value="<%= session ? session.name : '' %>" required>
+  <input type="text" name="name" id="name" value="<%= session ? session.name : '' %>" required placeholder="e.g. Session 1">
+  <p class="muted">Only include the session name/# here (e.g. "Session 1") — the day, time, court, and club are already captured by the fields below, and the dashboard now builds the full title from all of them together, so there's no need to repeat that information in the name itself.</p>
 
   <label for="start_date">Start date</label>
   <input type="date" name="start_date" id="start_date" value="<%= session ? session.start_date : '' %>" required>

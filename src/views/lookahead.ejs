@@ -1,6 +1,6 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <h1>Next <%= session.lookahead_weeks || 4 %> Weeks</h1>
-<p class="muted"><%= sessionPublicLabel(session) %></p>
+<p class="muted"><%= sessionFullTitle(session) %></p>
 <%- include('partials/session_picker', {sessions, session}) %>
 
 <% if (rows.length === 0) { %>

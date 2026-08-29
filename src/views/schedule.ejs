@@ -1,5 +1,5 @@
 <%- include('partials/header', {title, wideMain: true}) %>
-<h1><%= sessionPublicLabel(session) %></h1>
+<h1><%= sessionFullTitle(session) %></h1>
 <p class="muted"><%= session.start_date %> – <%= session.end_date %> · match day/time editable by admin</p>
 <%- include('partials/session_picker', {sessions, session}) %>
 

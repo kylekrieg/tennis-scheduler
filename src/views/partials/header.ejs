@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= typeof title !== 'undefined' ? title + ' — Tennis Doubles' : 'Tennis Doubles' %></title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=<%= assetVersion %>">
   <script>
     // Set the theme and text size before first paint so there's no
     // flash of the wrong look. Both are per-player preferences stored in
@@ -21,12 +21,14 @@
       } catch (e) { /* private browsing, etc. — default normal */ }
     })();
   </script>
-  <script src="/js/theme.js" defer></script>
+  <script src="/js/theme.js?v=<%= assetVersion %>" defer></script>
+  <script src="/js/navmenu.js?v=<%= assetVersion %>" defer></script>
 </head>
 <body>
 <header class="site">
   <a class="brand" href="/schedule">🎾 Doubles Schedule</a>
-  <nav>
+  <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="site-nav">☰</button>
+  <nav id="site-nav">
     <a href="/me">My Page</a>
     <a href="/schedule">Season</a>
     <a href="/lookahead">Next 4 Weeks</a>

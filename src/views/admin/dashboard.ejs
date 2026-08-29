@@ -1,11 +1,22 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
+<%
+  // Each session's dashboard heading (the large title next to the status
+  // badge) is the shared sessionFullTitle() composition — see its doc
+  // comment in email.js. Session names are meant to be kept short from here
+  // on (see the helper text on session_form.ejs) since this now supplies
+  // the rest of the identifying detail directly in the title. As of
+  // 2026-08-29 this same helper is also used on the public /schedule,
+  // /lookahead pages and the session-picker banner, at Kyle's request, so
+  // the admin and public titles can't drift out of sync with each other.
+  var sessionTitle = sessionFullTitle;
+%>
 <h1>Dashboard</h1>
 <div class="actions"><a class="btn green" href="/admin/sessions/new">+ New session</a></div>
 
 <% flags.forEach(function(f) { %>
   <div class="session-card">
-    <h3><a href="/admin/sessions/<%= f.session.id %>"><%= f.session.name %></a> <span class="badge scheduled"><%= f.session.status %></span></h3>
-    <p class="muted"><%= f.session.start_date %> – <%= f.session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][f.session.match_day_of_week] %> <%= fmtTime(f.session.match_time) %></p>
+    <h3><a href="/admin/sessions/<%= f.session.id %>"><%= sessionTitle(f.session) %></a> <span class="badge scheduled"><%= f.session.status %></span></h3>
+    <p class="muted"><%= f.session.start_date %> – <%= f.session.end_date %></p>
     <div class="flags">
       <% if (f.conflicts.length) { %><div class="flag error"><%= f.conflicts.length %> scheduling conflict(s) — open the session to resolve.</div><% } %>
       <% if (f.needsAttention > 0) { %><div class="flag error"><%= f.needsAttention %> week(s) need attention — short-staffed or otherwise flagged, open the session to review.</div><% } %>
@@ -27,8 +38,7 @@
   <p class="muted">Pickup games — no targets or blackout dates, courts fill first-come-first-served by email sign-up.</p>
   <% adhocSessions.forEach(function (a) { %>
     <div class="session-card">
-      <h3><a href="/admin/sessions/<%= a.session.id %>"><%= a.session.name %></a> <span class="badge scheduled">ad-hoc</span></h3>
-      <p class="muted"><%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][a.session.match_day_of_week] %> <%= fmtTime(a.session.match_time) %></p>
+      <h3><a href="/admin/sessions/<%= a.session.id %>"><%= sessionTitle(a.session) %></a> <span class="badge scheduled">ad-hoc</span></h3>
       <% if (a.weekSummaries.length === 0) { %>
         <p class="muted">No upcoming match weeks.</p>
       <% } else { %>
@@ -55,7 +65,7 @@
     <div class="session-card" style="opacity:0.75;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div>
-          <a href="/admin/sessions/<%= s.id %>"><%= s.name %></a> <span class="badge scheduled"><%= s.status %></span>
+          <a href="/admin/sessions/<%= s.id %>"><%= sessionTitle(s) %></a> <span class="badge scheduled"><%= s.status %></span>
           <p class="muted" style="margin:4px 0 0;"><%= s.start_date %> – <%= s.end_date %></p>
         </div>
         <form method="post" action="/admin/sessions/<%= s.id %>/unarchive">

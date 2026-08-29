@@ -27,12 +27,9 @@
   <div class="card wide" style="margin-bottom:20px;border-left:6px solid <%= sessionColor(card.session) %>;">
     <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">
       <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:<%= sessionColor(card.session) %>;flex-shrink:0;"></span>
-      <%= sessionPublicLabel(card.session) %>
+      <%= sessionFullTitle(card.session) %>
     </h2>
     <p class="muted" style="margin-top:-8px;">
-      <%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][card.session.match_day_of_week] %> <%= fmtTime(card.session.match_time) %>
-    </p>
-    <p class="muted" style="margin-top:-4px;">
       Target: <strong><%= card.stats.target %></strong><% if (card.stats.originalTarget != null && card.stats.originalTarget !== card.stats.target) { %> <span class="muted">(originally <%= card.stats.originalTarget %>)</span><% } %>
       &nbsp;&middot;&nbsp; Played: <strong><%= card.stats.played %></strong>
       &nbsp;&middot;&nbsp; Ball duty: <strong><%= card.stats.ballDuty %></strong>
