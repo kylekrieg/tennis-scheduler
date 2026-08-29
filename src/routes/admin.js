@@ -26,6 +26,19 @@ const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
+const { rateLimiter } = require('../middleware/rateLimiter');
+
+// Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
+// abuse protection at all — bcrypt slows an individual guess but does
+// nothing against a patient or distributed attacker, and it's the single
+// highest-value target on the whole site since it's reachable straight off
+// the public Cloudflare Tunnel URL with no token gating anything else does.
+// Reuses the same hand-rolled limiter already proven out on /request-sub/start
+// and /swap/start (see rateLimiter.js, CLAUDE.md's "Rate limiting" section) —
+// tighter than those two (8/15min vs. 10/hour) since this route has no
+// legitimate reason to be hit anywhere near that often by a real admin
+// fat-fingering their password a few times.
+const adminLoginLimiter = rateLimiter({ name: 'admin-login', windowMs: 15 * 60 * 1000, max: 8 });
 
 // Turns findOverlappingSessionEnrollments() rows scoped to one session into a
 // human-readable sentence for a flash message — e.g. "Heads up: Kyle is also
@@ -70,13 +83,25 @@ router.get('/login', (req, res) => {
   res.render('admin/login', { title: 'Admin Login', error: null });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', adminLoginLimiter, (req, res) => {
   const admin = findAdminByPassword(req.body.password);
   if (admin) {
-    req.session.isAdmin = true;
-    req.session.adminId = admin.id;
-    req.session.adminName = admin.name;
-    return res.redirect('/admin');
+    // Regenerate the session ID on a successful login rather than reusing
+    // whatever session (if any) the browser already had — standard defense
+    // against session fixation (an attacker planting a known session ID in
+    // a victim's browser ahead of time, then reusing it themselves once the
+    // victim logs in). regenerate() gives a fresh ID; the admin fields are
+    // set on the new session inside the callback since regenerate() replaces
+    // req.session with a new, empty one.
+    return req.session.regenerate((err) => {
+      if (err) {
+        return res.render('admin/login', { title: 'Admin Login', error: 'Login failed — please try again.' });
+      }
+      req.session.isAdmin = true;
+      req.session.adminId = admin.id;
+      req.session.adminName = admin.name;
+      res.redirect('/admin');
+    });
   }
   res.render('admin/login', { title: 'Admin Login', error: 'Incorrect password.' });
 });

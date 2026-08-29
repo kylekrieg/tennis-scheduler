@@ -746,6 +746,23 @@ async function sendAdhocNotEnough({ recipient, week, session }) {
   return sendMail({ to: recipient.email, subject, html, category: 'adhoc_not_enough', relatedWeekId: week.id, session });
 }
 
+/** Escapes the five HTML-significant characters. Every other email template
+ * in this file interpolates server-known values (player/session names typed
+ * by an admin through a constrained form, dates/times this app computed
+ * itself) — sendCustomEmail() below is the one place a genuinely free-text
+ * admin-typed paragraph reaches an outbound email with no EJS auto-escaping
+ * in between (this file builds raw HTML strings, not EJS templates). Pulled
+ * out as its own helper so it's a one-line call at the interpolation site
+ * rather than a wall of .replace() chains inline. */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // `session` is optional — the original one-off "email a single player"
 // flow has no session in scope, so this stays plain (no club/court prefix,
 // no banner) for that path, same as before. The "email a whole session's
@@ -755,9 +772,20 @@ async function sendAdhocNotEnough({ recipient, week, session }) {
 // exception — same matchBanner(session, null) treatment as the swap
 // templates use when there's no single date to show (a session-wide
 // message isn't about one specific match either).
+//
+// Pre-launch security review (Kyle, 2026-08-29): `body` is free text an
+// admin types into a textarea (admin/custom_email.ejs) with no format
+// restriction at all — unlike every other admin-controlled string in this
+// app's email templates (names, session titles), which are short values
+// from constrained form fields. Escaped here before interpolation so a
+// compromised or careless admin account can't inject arbitrary HTML/links
+// into a message sent to the whole roster's inboxes. escapeHtml() runs
+// before the \n-to-<br> conversion so a literal "<br>" typed by the admin
+// reads as text, not markup, and the real line-break conversion still works
+// on the now-escaped text.
 async function sendCustomEmail({ to, subject, body, session = null }) {
   const banner = session ? matchBanner(session, null) : '';
-  const html = `${banner}<p>${body.replace(/\n/g, '<br>')}</p>${footer(session)}`;
+  const html = `${banner}<p>${escapeHtml(body).replace(/\n/g, '<br>')}</p>${footer(session)}`;
   return sendMail({ to, subject, html, category: 'custom', session });
 }
 

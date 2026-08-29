@@ -32,6 +32,7 @@
   <form method="post" action="/blackout" class="card wide">
     <input type="hidden" name="session_id" value="<%= session.id %>">
     <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
+    <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
     <% weeks.forEach(function(w) { %>
       <% var carriedOver = carriedOverMap.get(selectedPlayerId + '|' + w.match_date); %>
       <div class="checkbox-row">

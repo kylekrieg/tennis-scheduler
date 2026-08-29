@@ -23,6 +23,17 @@ const honeypot = require('../services/honeypot');
 // rateLimiter.js's doc comment and "Rate limiting" in CLAUDE.md.
 const requestSubStartLimiter = rateLimiter({ name: 'request-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
 const swapStartLimiter = rateLimiter({ name: 'swap-start', windowMs: 60 * 60 * 1000, max: 10 });
+// Pre-launch security review (Kyle, 2026-08-29): POST /blackout had no abuse
+// protection of any kind — unlike every other public mutation in this app,
+// it isn't gated by an unguessable token, just a session_id/player_id pair
+// (small, sequential, guessable integers) taken straight from the request
+// body. That's a deliberate, documented tradeoff (the email-confirmation
+// step here was removed for UX reasons — see "Blackout dates" in CLAUDE.md)
+// but going live to real players raises the stakes of leaving it completely
+// undefended, so it gets the same honeypot + rate limiter already proven out
+// on the two routes above rather than reopening the confirmation-email
+// question.
+const blackoutLimiter = rateLimiter({ name: 'blackout-post', windowMs: 60 * 60 * 1000, max: 20 });
 
 // Stamps each assignment row with `doubleBooked` (the other session it
 // collides with, from doubleBookingMapForSession) when that player is also
@@ -173,7 +184,16 @@ router.get('/blackout', (req, res) => {
   });
 });
 
-router.post('/blackout', asyncHandler(async (req, res) => {
+router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
+  // Honeypot check first, before any DB work — same pattern as
+  // /request-sub/start and /swap/start (see honeypot.js). A bot that filled
+  // in the hidden field lands on the exact same "saved" redirect a real
+  // submission would (built from its own raw, unvalidated session_id/
+  // player_id), so there's no visible difference to react to, and nothing
+  // is actually read or written.
+  if (honeypot.isBot(req)) {
+    return res.redirect(`/blackout?session=${Number(req.body.session_id) || ''}&player=${Number(req.body.player_id) || ''}&saved=1`);
+  }
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.body.session_id));
   const playerId = Number(req.body.player_id);
   if (!session || !playerId) return res.redirect('/blackout');

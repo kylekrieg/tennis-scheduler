@@ -39,18 +39,4 @@ function logPlayerActivity({ playerName, action, description, sessionId = null }
   ).run(null, `${playerName} (player self-service)`, action, description, sessionId);
 }
 
-/**
- * For the Activity Log page (and, if scoped, a future per-session activity
- * view). Pass `sessionId` to scope to one session's history; omit for the
- * full cross-session log, most-recent first.
- */
-function getRecentActivity({ sessionId = null, limit = 200 } = {}) {
-  if (sessionId) {
-    return db
-      .prepare(`SELECT * FROM admin_activity_log WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`)
-      .all(sessionId, limit);
-  }
-  return db.prepare(`SELECT * FROM admin_activity_log ORDER BY created_at DESC, id DESC LIMIT ?`).all(limit);
-}
-
-module.exports = { logActivity, logPlayerActivity, getRecentActivity };
+module.exports = { logActivity, logPlayerActivity };

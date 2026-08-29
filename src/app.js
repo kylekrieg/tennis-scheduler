@@ -57,12 +57,36 @@ app.locals.assetVersion = Date.now();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Pre-launch security review (Kyle, 2026-08-29): trust the first hop so
+// Express can see the real scheme (http vs. https) a request actually
+// arrived as. This app is always reached through a local `cloudflared`
+// process (Cloudflare Tunnel) proxying to this same machine — a single,
+// known hop — so trusting it is safe and doesn't affect req.ip (this app
+// already reads the real client IP straight off the CF-Connecting-IP header
+// itself, in rateLimiter.js, rather than relying on Express's trust-proxy
+// machinery for that).
+app.set('trust proxy', 1);
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 12 }, // 12h admin session
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 12, // 12h admin session
+      sameSite: 'lax', // was previously left unset, relying on the same
+      // browser default — made explicit so it's a deliberate, documented
+      // choice rather than an implicit one, and blocks the classic CSRF
+      // shape (a hidden auto-submitting cross-site form) without breaking
+      // normal same-site navigation or an emailed link a player clicks.
+      secure: 'auto', // fails safe: only adds the Secure flag when Express
+      // sees the request as HTTPS (via the trust proxy setting above and
+      // Cloudflare's X-Forwarded-Proto). If that header setup ever changes
+      // or is missing, this quietly falls back to no Secure flag rather
+      // than refusing to set the cookie at all (which a hardcoded `true`
+      // would do) — so a proxy misconfiguration can't lock an admin out of
+      // their own login.
+    },
   })
 );
 
