@@ -129,13 +129,17 @@
 
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
-    <p class="muted">Set a target &gt; 0 to enroll a player this session. Setting an enrolled player's target to 0 removes them (structural change — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>
+    <p class="muted">Only currently-enrolled players are shown below. Search by name to find and add someone else — search reveals everyone in the system, not just this roster. A target &gt; 0 is what actually enrolls a player this session; the "Remove" button is a shortcut that zeroes a player's target and hides the row again (structural change either way — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>
     <p class="muted">Priority is a note, not a rule — the scheduler <strong>does not</strong> use it to automatically prevent anything. It only matters for a player enrolled in another session that meets the <strong>same day of week</strong> with <strong>overlapping dates</strong> (e.g. two Wednesday sessions at the same club): if that player ends up scheduled in both on the same date, priority just records which session you'd expect to win, so whoever fixes it by hand (reassigning a slot, or the player finding their own sub) knows where to start. Lower number wins. Leave it blank for everyone else. A real double-booking is flagged everywhere once it happens — the schedule page, PDF, calendar, and the player's own upcoming matches — regardless of whether priority is set.</p>
+
+    <label for="roster-search">Add a player</label>
+    <input type="text" id="roster-search" placeholder="Search players by name…" autocomplete="off">
+
     <table>
-      <thead><tr><th>Player</th><% if (lockedWeeksCount > 0) { %><th>Already played</th><% } %><th>Target games (remaining)</th><th>Priority</th></tr></thead>
+      <thead><tr><th>Player</th><% if (lockedWeeksCount > 0) { %><th>Already played</th><% } %><th>Target games (remaining)</th><th>Priority</th><th></th></tr></thead>
       <tbody>
         <% players.forEach(function(p) { %>
-          <tr>
+          <tr class="roster-row<%= enrolled.has(p.id) ? ' roster-enrolled' : '' %>" data-player-name="<%= p.name.toLowerCase() %>">
             <td>
               <%= p.name %>
               <input type="hidden" name="player_id" value="<%= p.id %>">
@@ -150,8 +154,12 @@
                 </div>
               <% } %>
             </td>
+            <td><button type="button" class="btn neutral remove-player-row" data-player-id="<%= p.id %>">Remove</button></td>
           </tr>
         <% }) %>
+        <tr id="roster-empty-row" style="display:none;">
+          <td colspan="<%= 3 + (lockedWeeksCount > 0 ? 1 : 0) + 1 %>" class="muted">No players added to this roster yet — search above to find and add someone.</td>
+        </tr>
       </tbody>
     </table>
     <p class="muted">Need a new player? Add them on the <a href="/admin/players">Players</a> page first. <strong>Priority</strong> only matters if a player is enrolled in two sessions that meet on the same day of week with overlapping dates (flagged above the player's name when that's the case) — lower number wins that player on any date the two sessions share; leave blank if not applicable. See the "Overlapping session enrollment" warning for details once both sessions are saved.</p>
@@ -299,4 +307,5 @@
   recalc();
 })();
 </script>
+<script src="/js/rosterPicker.js?v=<%= assetVersion %>" defer></script>
 <%- include('../partials/footer') %>
