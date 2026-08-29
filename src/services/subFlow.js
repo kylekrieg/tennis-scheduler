@@ -53,18 +53,39 @@ function upcomingWeeksPreview(sessionId, fromDate, count = 3) {
   });
 }
 
-/** Is there already an active (open/escalated) sub request for a different
- * player in this same week? Per the resolved open item, v1 does not run two
- * automated parallel sub-request flows for the same week — a second request
- * is surfaced to the admin to handle manually instead. */
-function hasActiveConcurrentSubRequest(weekId, excludingAssignmentId) {
+/** Is there already an active (open/escalated) sub request anywhere in this
+ * week — including on the exact assignment being flagged/requested? Per the
+ * resolved open item, v1 does not run two parallel sub-request flows for the
+ * same week — a second request is surfaced to the admin to handle manually
+ * instead.
+ *
+ * Bug fixed here (found by Kyle, 2026-08-28, tracing a Stats page question):
+ * this used to take an `excludingAssignmentId` and explicitly filter out that
+ * assignment's own rows (`wa.id != ?`) before checking for an active request.
+ * That made sense for "is some *other* assignment in this week already
+ * blocking a new one," but createSubRequest()/adminFlagNeedsSub() both call
+ * this on the very assignment they're about to flag — so if that assignment
+ * itself already had an open request (e.g. an admin double-clicking "Needs a
+ * sub," or re-flagging before the first request was resolved), the exclusion
+ * meant its own still-open request was invisible to the check, and a second,
+ * duplicate `sub_requests` row got created for the same slot instead of being
+ * blocked. `closeActiveSubRequestForAssignment()` only ever closes one active
+ * row per call (a plain `.get()`, no ordering), so a duplicate like this
+ * silently required two separate "Clear sub request" clicks to fully clear —
+ * which is exactly what happened in production on 2026-08-18 on one slot,
+ * leaving three now-oddly-attributed rows behind (see the Stats page fix in
+ * CLAUDE.md). Simplified to check the whole week with no exclusion at all —
+ * "only one open/escalated request per week" now genuinely means one, full
+ * stop, whichever assignment it's tied to.
+ */
+function hasActiveConcurrentSubRequest(weekId) {
   const row = db
     .prepare(
       `SELECT sr.id FROM sub_requests sr
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
-       WHERE wa.week_id = ? AND wa.id != ? AND sr.status IN ('open', 'escalated')`
+       WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated')`
     )
-    .get(weekId, excludingAssignmentId);
+    .get(weekId);
   return !!row;
 }
 
@@ -162,7 +183,7 @@ async function createSubRequest(weekAssignmentId) {
   const week = getWeekWithSession(assignment.week_id);
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
-  if (hasActiveConcurrentSubRequest(week.id, weekAssignmentId)) {
+  if (hasActiveConcurrentSubRequest(week.id)) {
     return { blocked: true, reason: 'concurrent' };
   }
 
@@ -176,9 +197,18 @@ async function createSubRequest(weekAssignmentId) {
     // they can't make it. Kills every outstanding token for this assignment
     // (original reminder, any follow-up nudge, etc. all at once).
     tokenStore.invalidateTokensForAssignment(weekAssignmentId);
+    // requesting_player_id snapshots who was actually on this assignment
+    // right now, at request-creation time — same "capture identity before it
+    // can drift" reasoning as swap_requests.initiator_player_id. Without it,
+    // a later reassignment/swap of this same slot (Reassign, the joint
+    // conflict resolver, etc.) would silently relabel this historical row
+    // under the *new* occupant's name wherever it's displayed (see the Stats
+    // page's Sub History table) — see CLAUDE.md for the real case this fixed.
     const reqInfo = db
-      .prepare("INSERT INTO sub_requests (week_assignment_id, status, initiated_by) VALUES (?, 'open', 'player')")
-      .run(weekAssignmentId);
+      .prepare(
+        "INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id) VALUES (?, 'open', 'player', ?)"
+      )
+      .run(weekAssignmentId, player.id);
     const subRequestId = reqInfo.lastInsertRowid;
 
     if (wasBallDuty) {
@@ -226,7 +256,7 @@ function adminFlagNeedsSub(weekAssignmentId) {
   if (week.locked) return { blocked: true, reason: 'locked' };
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
-  if (hasActiveConcurrentSubRequest(week.id, weekAssignmentId)) {
+  if (hasActiveConcurrentSubRequest(week.id)) {
     return { blocked: true, reason: 'concurrent' };
   }
 
@@ -235,9 +265,14 @@ function adminFlagNeedsSub(weekAssignmentId) {
   const subRequestId = db.transaction(() => {
     db.prepare("UPDATE week_assignments SET status = 'needs_sub' WHERE id = ?").run(weekAssignmentId);
     tokenStore.invalidateTokensForAssignment(weekAssignmentId);
+    // See createSubRequest()'s matching comment — requesting_player_id snapshots
+    // who this flag was actually about, so a later reassignment of this same
+    // slot can't silently relabel this history under someone else's name.
     const reqInfo = db
-      .prepare("INSERT INTO sub_requests (week_assignment_id, status, initiated_by) VALUES (?, 'open', 'admin')")
-      .run(weekAssignmentId);
+      .prepare(
+        "INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id) VALUES (?, 'open', 'admin', ?)"
+      )
+      .run(weekAssignmentId, player.id);
     const subRequestId = reqInfo.lastInsertRowid;
 
     if (wasBallDuty) {

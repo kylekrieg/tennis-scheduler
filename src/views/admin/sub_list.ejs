@@ -11,13 +11,17 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th>Name</th><th>Email</th><th>Assigned to</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Email</th><th>Assigned to</th><th>Actions</th></tr></thead>
   <tbody>
     <% list.forEach(function(l) { %>
       <% var forSessions = sessionsByListId.get(l.id) || []; %>
       <tr>
-        <td><%= l.name %></td>
-        <td><%= l.email %></td>
+        <td>
+          <form method="post" action="/admin/sub-list/<%= l.id %>/edit" id="edit-<%= l.id %>">
+            <input type="text" name="name" value="<%= l.name %>" style="width:140px;">
+          </form>
+        </td>
+        <td><input type="email" name="email" value="<%= l.email %>" form="edit-<%= l.id %>" style="width:200px;"></td>
         <td>
           <% if (forSessions.length === 0) { %>
             <span class="muted">not assigned to any session</span>
@@ -25,7 +29,10 @@
             <% forSessions.forEach(function(s, i) { %><a href="/admin/sessions/<%= s.id %>/subs"><%= s.name %></a><%= i < forSessions.length - 1 ? ', ' : '' %><% }) %>
           <% } %>
         </td>
-        <td><form method="post" action="/admin/sub-list/<%= l.id %>/remove"><button class="btn small neutral" type="submit">Remove</button></form></td>
+        <td>
+          <button class="btn small neutral" type="submit" form="edit-<%= l.id %>">Save</button>
+          <form class="inline" method="post" action="/admin/sub-list/<%= l.id %>/remove"><button class="btn small neutral" type="submit">Remove</button></form>
+        </td>
       </tr>
     <% }) %>
     <% if (list.length === 0) { %><tr><td colspan="4" class="muted">Empty.</td></tr><% } %>

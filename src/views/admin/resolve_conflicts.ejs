@@ -1,0 +1,115 @@
+<%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
+
+<% if (!result) { %>
+  <h1>Resolve conflicts</h1>
+  <p class="muted">Could not load both sessions.</p>
+  <%- include('../partials/footer') %>
+<% } else {
+  const sessionA = result.sessionA, sessionB = result.sessionB;
+  const resolved = result.resolutions.filter(r => r.resolved);
+  const unresolved = result.resolutions.filter(r => !r.resolved);
+%>
+
+<h1>Resolve conflicts</h1>
+<p class="muted">
+  <a href="/admin/sessions/<%= sessionA.id %>"><%= sessionA.name %></a> &amp;
+  <a href="/admin/sessions/<%= sessionB.id %>"><%= sessionB.name %></a>
+</p>
+<p class="muted" style="max-width:760px;">
+  For each real double-booking below, the app looked for a same-session week-swap (trading which week
+  two players attend, never touching anyone's target game count or blackout dates) that clears the
+  conflict, preferring to move whichever session's priority is lower for that player. Everything on this
+  page is computed fresh, live — re-run it any time to see the current picture. You can either make a
+  suggested change yourself via <strong>Reassign</strong> on the relevant session's detail page, or use
+  <strong>Accept all suggested changes</strong> below to apply every currently-resolvable one at once —
+  nothing else on the page applies anything by itself.
+</p>
+
+<% if (result.resolutions.length === 0) { %>
+  <div class="card wide"><p class="muted">No actual double-bookings between these two sessions right now.</p></div>
+<% } else { %>
+
+  <h2>Suggested changes</h2>
+  <% if (resolved.length === 0) { %>
+    <p class="muted">No valid swap was found for any of the conflicts below — see "Couldn't resolve automatically" further down.</p>
+  <% } else { %>
+    <div class="card wide">
+      <table>
+        <thead><tr><th>Player</th><th>Conflicted date</th><th>Keeps their spot in</th><th>Suggested change</th></tr></thead>
+        <tbody>
+          <% resolved.forEach(function(r) { %>
+            <tr>
+              <td><%= r.playerName %></td>
+              <td><%= fmtDate(r.date) %></td>
+              <td>
+                <%= r.actualMoveSessionId === sessionA.id ? sessionB.name : sessionA.name %>
+                <span class="muted">
+                  (<% if (r.reason === 'priority') { %>priority<% } else if (r.reason === 'tied') { %>priority tied, arbitrary pick<% } else { %>no priority set, arbitrary pick<% } %>)
+                </span>
+              </td>
+              <td>
+                In <%= r.swap.session === sessionA.id ? sessionA.name : sessionB.name %>: move <%= r.playerName %> from
+                <%= fmtDate(r.swap.movedFromDate) %> to <%= fmtDate(r.swap.movedToDate) %>, swapping places with
+                <strong><%= r.swap.swappedWithPlayerName %></strong> (who moves the other way).
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <form method="post" action="/admin/sessions/<%= sessionA.id %>/resolve-conflicts/apply?with=<%= sessionB.id %>"
+            style="margin-top:12px;"
+            onsubmit="return confirm('Apply all <%= resolved.length %> suggested change(s) above? This actually updates the schedule in both sessions — affected players will get a normal reminder for their new date, but are not emailed right now.');">
+        <button class="btn green" type="submit">Accept all suggested changes (<%= resolved.length %>)</button>
+      </form>
+    </div>
+  <% } %>
+
+  <% if (unresolved.length > 0) { %>
+    <h2>Couldn't resolve automatically</h2>
+    <p class="muted">No same-session swap exists that clears these without creating a new conflict elsewhere — these need a manual call: a blackout override, a one-time sub, or just accepting the conflict and letting the player sort it out via Request a Sub or Swap a Week.</p>
+    <div class="card wide">
+      <table>
+        <thead><tr><th>Player</th><th>Conflicted date</th><th>Sessions</th></tr></thead>
+        <tbody>
+          <% unresolved.forEach(function(r) { %>
+            <tr>
+              <td><%= r.playerName %></td>
+              <td><%= fmtDate(r.date) %></td>
+              <td><%= sessionA.name %> &amp; <%= sessionB.name %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+
+  <h2>Before / after, side by side</h2>
+  <p class="muted">Only weeks a suggested swap actually touches are shown — everything else in both sessions is untouched.</p>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <% [{ label: sessionA.name, changes: result.changesA }, { label: sessionB.name, changes: result.changesB }].forEach(function(col) { %>
+      <div class="card" style="flex:1;min-width:320px;">
+        <h3 style="margin-top:0;"><%= col.label %></h3>
+        <% if (col.changes.length === 0) { %>
+          <p class="muted">No changes suggested here.</p>
+        <% } else { %>
+          <table>
+            <thead><tr><th>Date</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <% col.changes.forEach(function(c) { %>
+                <tr>
+                  <td class="muted"><%= fmtDate(c.date) %></td>
+                  <td><%= c.before.join(', ') %></td>
+                  <td><%= c.after.join(', ') %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+
+<% } %>
+
+<%- include('../partials/footer') %>
+<% } %>

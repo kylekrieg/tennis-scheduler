@@ -80,6 +80,14 @@
         <% }) %>
       </tbody>
     </table>
+    <p class="muted" style="margin-top:12px;margin-bottom:6px;">
+      Each button below covers <strong>every</strong> double-booked player between this session and that one, not just a single row above.
+    </p>
+    <div class="actions">
+      <% distinctOtherSessions.forEach(function(other) { %>
+        <a class="btn neutral" href="/admin/sessions/<%= session.id %>/resolve-conflicts?with=<%= other.id %>">Resolve conflicts with <%= other.name %>&hellip;</a>
+      <% }) %>
+    </div>
   </div>
 <% } %>
 
@@ -161,10 +169,12 @@
           <% if (!r.week.locked) { %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/reassign">
               <input type="hidden" name="assignment_id" value="<%= a.id %>">
-              <select name="new_player_id">
+              <select name="new_player_id" onchange="this.nextElementSibling.style.display = this.value === 'one_time_sub' ? 'inline-block' : 'none';">
                 <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= p.name %></option><% }) %>
                 <option value="needs_sub">— Needs a sub —</option>
+                <option value="one_time_sub">— One-time sub (not on roster) —</option>
               </select>
+              <input type="text" name="one_time_sub_name" placeholder="Sub's name" style="display:none;width:120px;">
               <button class="btn small neutral" type="submit">Reassign</button>
             </form>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/resend/<%= a.id %>">

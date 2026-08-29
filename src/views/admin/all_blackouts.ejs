@@ -9,11 +9,11 @@
 <% } else { %>
   <div class="card wide">
     <table>
-      <thead><tr><th>Player</th><th>Session(s)</th><th>Blackout dates</th></tr></thead>
+      <thead><tr><th style="white-space:nowrap;">Player</th><th>Session(s)</th><th>Blackout dates</th></tr></thead>
       <tbody>
         <% rows.forEach(function(row) { %>
           <tr>
-            <td><%= row.name %></td>
+            <td style="white-space:nowrap;"><%= row.name %></td>
             <td>
               <% row.sessions.forEach(function(s, i) { %><% if (i > 0) { %>, <% } %><a href="/admin/sessions/<%= s.id %>/blackouts"><%= s.name %></a><% }) %>
             </td>

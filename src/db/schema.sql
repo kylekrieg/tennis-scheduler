@@ -158,7 +158,8 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   escalated_at          TEXT,
   initiated_by          TEXT NOT NULL DEFAULT 'player', -- 'player' | 'admin' — see subFlow.js's adminFlagNeedsSub()
-  fanout_sent_at        TEXT -- NULL until the candidate roster has actually been emailed. Self-service requests set this immediately (see fanOutSubRequest()); an admin-flagged request leaves it NULL until cron.js's processReminders() reaches that week's normal reminder time, so the flag itself never emails anyone by surprise.
+  fanout_sent_at        TEXT, -- NULL until the candidate roster has actually been emailed. Self-service requests set this immediately (see fanOutSubRequest()); an admin-flagged request leaves it NULL until cron.js's processReminders() reaches that week's normal reminder time, so the flag itself never emails anyone by surprise.
+  requesting_player_id  INTEGER REFERENCES players(id) -- snapshot of who was on the assignment at request-creation time, same "capture identity before it can drift" reasoning as swap_requests.initiator_player_id. Without this, the Stats page's Sub History table would resolve "who this was about" via the assignment's *current* player_id, which silently relabels old history under a new name once that slot is later reassigned/swapped.
 );
 
 CREATE TABLE IF NOT EXISTS sub_offers (
@@ -218,7 +219,7 @@ CREATE TABLE IF NOT EXISTS email_log (
   to_email        TEXT NOT NULL,
   subject         TEXT NOT NULL,
   category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation | adhoc_invite | adhoc_reminder | adhoc_final | adhoc_not_enough
-  status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only)
+  status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only) | skipped_no_email (recipient has a @no-email.invalid placeholder address, e.g. a one-time sub added with no email on file — see email.js's NO_EMAIL_DOMAIN)
   sent_at         TEXT NOT NULL DEFAULT (datetime('now')),
   related_week_id INTEGER REFERENCES weeks(id)
 );

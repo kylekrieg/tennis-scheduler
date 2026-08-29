@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>Email Log</h1>
-<p class="muted">Every email the app has sent or attempted, most recent first (last 300).<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
+<p class="muted">Every email the app has sent or attempted, most recent first (last 300). "Sent" times are shown in this app's configured timezone (<%= emailLogTz %>), not UTC.<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
 
 <div class="actions" style="margin-bottom:8px;">
   <span class="badge confirmed">sent: <%= counts.sent || 0 %></span>
@@ -29,6 +29,7 @@
       <option value="sent" <%= filters.status === 'sent' ? 'selected' : '' %>>Sent</option>
       <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
       <option value="logged_dev_mode" <%= filters.status === 'logged_dev_mode' ? 'selected' : '' %>>Logged only (no SMTP)</option>
+      <option value="skipped_no_email" <%= filters.status === 'skipped_no_email' ? 'selected' : '' %>>Skipped (no email on file)</option>
     </select>
   </div>
   <div><button class="btn neutral" type="submit">Filter</button></div>
@@ -36,17 +37,21 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th>Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
+  <thead><tr><th style="white-space:nowrap;min-width:120px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
   <tbody>
     <% rows.forEach(function(r) { %>
       <tr>
-        <td class="muted"><%= r.sent_at %></td>
+        <td class="muted" style="white-space:nowrap;">
+          <%= r.sentDateDisplay %><br>
+          <%= r.sentTimeDisplay %>
+        </td>
         <td><%= r.to_email %></td>
         <td><%= r.subject %></td>
         <td><span class="badge scheduled"><%= r.category %></span></td>
         <td>
           <% if (r.status === 'sent') { %><span class="badge confirmed">sent</span>
           <% } else if (r.status === 'failed') { %><span class="badge needs_sub">failed</span>
+          <% } else if (r.status === 'skipped_no_email') { %><span class="badge scheduled" title="No email on file for this recipient (e.g. a one-time sub added without one) — never attempted.">skipped — no email</span>
           <% } else { %><span class="badge scheduled">logged only</span><% } %>
         </td>
         <td class="muted">

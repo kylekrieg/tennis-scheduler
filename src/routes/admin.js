@@ -1,13 +1,14 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { findAdminByPassword, hashPassword } = require('../services/auth');
 const { getTimezone, setTimezone } = require('../services/settings');
-const { zonedTimeToUtc } = require('../services/tz');
+const { zonedTimeToUtc, utcToZonedParts } = require('../services/tz');
 const { runScheduler, ensureWeeksExist } = require('../services/scheduleRun');
 const adhocFlow = require('../services/adhocFlow');
 const { generateRawToken, hashToken } = require('../services/tokens');
@@ -24,6 +25,7 @@ const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const jointSolver = require('../services/jointSolver');
 
 // Turns findOverlappingSessionEnrollments() rows scoped to one session into a
 // human-readable sentence for a flash message — e.g. "Heads up: Kyle is also
@@ -1145,6 +1147,25 @@ router.get('/sessions/:id', (req, res) => {
     doubleBookingRows.sort((a, b) => a.playerName.localeCompare(b.playerName) || a.other.name.localeCompare(b.other.name));
   }
 
+  // One "Resolve conflicts…" entry point per distinct *other* session, not
+  // per player row — the joint resolver (jointSolver.js) always works on a
+  // pair of sessions at a time and resolves every double-booked player
+  // between them in one pass, so a button per player row was misleading
+  // (Kyle asked directly whether it was scoped per-player; it wasn't —
+  // every row pointing at the same other session led to the identical
+  // page). Consolidated here so there's exactly one link per other session,
+  // deduped from doubleBookingRows rather than a second query.
+  const distinctOtherSessions = [];
+  {
+    const seen = new Set();
+    for (const row of doubleBookingRows) {
+      if (seen.has(row.other.id)) continue;
+      seen.add(row.other.id);
+      distinctOtherSessions.push(row.other);
+    }
+    distinctOtherSessions.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   res.render('admin/session_detail', {
     title: session.name,
     session,
@@ -1153,9 +1174,68 @@ router.get('/sessions/:id', (req, res) => {
     conflicts,
     overlapConflicts,
     doubleBookingRows,
+    distinctOtherSessions,
     multiCourt: session.players_per_week > 4,
     flashMsg: popFlash(req),
   });
+});
+
+// Advisory-only cross-session conflict resolver — see jointSolver.js's doc
+// comment for the full design rationale (Kyle, 2026-08-28). Purely a GET:
+// computes suggestions live on every request, writes nothing, so it's safe
+// to refresh or revisit after making some of the changes it suggests (it'll
+// just show fewer/different conflicts next time).
+router.get('/sessions/:id/resolve-conflicts', (req, res) => {
+  const sessionAId = Number(req.params.id);
+  const sessionBId = Number(req.query.with);
+  const sessionA = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionAId);
+  const sessionB = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionBId);
+  if (!sessionA || !sessionB) {
+    flash(req, 'Could not find both sessions to compare.', 'error');
+    return res.redirect(`/admin/sessions/${sessionAId}`);
+  }
+
+  const result = jointSolver.resolveConflicts(sessionAId, sessionBId);
+  res.render('admin/resolve_conflicts', {
+    title: `Resolve conflicts: ${sessionA.name} & ${sessionB.name}`,
+    result,
+    flashMsg: popFlash(req),
+  });
+});
+
+// Applies every currently-resolvable suggestion from the page above for real
+// (Kyle, 2026-08-28: "Let's put a button on the resolve conflict to accept
+// all the suggested changes."). See jointSolver.js's applyResolutions() doc
+// comment — it re-runs the resolver fresh rather than trusting anything from
+// the form, so this always applies exactly what's true right now, not
+// whatever the page happened to show whenever it was loaded. Anything left
+// unresolved (no valid same-session swap) is untouched, same as before.
+router.post('/sessions/:id/resolve-conflicts/apply', (req, res) => {
+  const sessionAId = Number(req.params.id);
+  const sessionBId = Number(req.query.with || req.body.with);
+  const sessionA = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionAId);
+  const sessionB = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionBId);
+  if (!sessionA || !sessionB) {
+    flash(req, 'Could not find both sessions to compare.', 'error');
+    return res.redirect(`/admin/sessions/${sessionAId}`);
+  }
+
+  const { appliedCount } = jointSolver.applyResolutions(sessionAId, sessionBId);
+
+  if (appliedCount === 0) {
+    flash(req, 'Nothing to apply — no automatically-resolvable suggestions right now.', 'error');
+  } else {
+    logActivity(req, {
+      action: 'session.joint_resolve_apply',
+      description: `Applied ${appliedCount} suggested change(s) from the joint conflict resolver between ${sessionA.name} and ${sessionB.name}`,
+      sessionId: sessionAId,
+    });
+    flash(
+      req,
+      `Applied ${appliedCount} suggested change(s). Affected players weren't emailed directly, but they'll get a normal reminder for their new date at the usual time. Re-run this page any time to check for anything still outstanding.`
+    );
+  }
+  res.redirect(`/admin/sessions/${sessionAId}/resolve-conflicts?with=${sessionBId}`);
 });
 
 router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
@@ -1190,6 +1270,70 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
       req,
       `${result.playerName}'s slot for ${email.fmtDate(week.match_date)} is flagged as needing a sub. No emails have gone out yet — the roster will be notified when this week's normal reminders fire.`
     );
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
+  // "One-time sub (not on roster)" in the dropdown — Kyle, 2026-08-28: a
+  // player sometimes arranges their own sub entirely outside the app (a
+  // friend, a neighbor), and that sub is often nobody already in the
+  // system at all, not even on the broader sub list. The normal player
+  // dropdown above only ever lists this session's own roster, so there was
+  // previously no way to slot in someone outside it without a separate
+  // trip to Admin -> Players first. This creates a minimal player row on
+  // the spot (reusing exactly the same "broader-list sub claims a slot"
+  // pattern subFlow.js's claimSub() already uses — a real player row is
+  // the only way anything downstream, from badges to Stats, knows how to
+  // represent someone who actually played) and slots them in immediately.
+  if (new_player_id === 'one_time_sub') {
+    if (week.locked) {
+      flash(req, "Can't add a one-time sub — this week is already locked (already played).", 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    const oneTimeName = (req.body.one_time_sub_name || '').trim();
+    if (!oneTimeName) {
+      flash(req, 'Enter a name for the one-time sub.', 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    const oldPlayerForOneTime = db.prepare('SELECT name FROM players WHERE id = ?').get(assignment.player_id);
+
+    // players.email is NOT NULL UNIQUE — a placeholder @no-email.invalid
+    // address satisfies that without requiring a real one from the admin
+    // (Kyle chose name-only for speed). email.js's sendMail() recognizes
+    // this domain and skips ever actually trying to send there, so this
+    // player just never gets a reminder for this match, as expected.
+    const placeholderEmail = `onetime-${crypto.randomBytes(6).toString('hex')}@${email.NO_EMAIL_DOMAIN}`;
+    const oneTimeSlug = generateUniqueSlug(db, oneTimeName, null);
+    const oneTimePlayer = db
+      .prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)')
+      .run(oneTimeName, placeholderEmail, oneTimeSlug);
+    const oneTimePlayerId = oneTimePlayer.lastInsertRowid;
+
+    // Same semantics as a real claimed sub (subFlow.js's claimSub()), not a
+    // plain reassign: the original player's row is preserved as history
+    // (subbed_out) rather than overwritten, and a fresh is_sub=1 row is
+    // inserted for the sub — so Stats and every other is_sub-aware view
+    // treat this identically to a sub that came in through the normal
+    // email flow, not as if the one-time sub had their own season target.
+    db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
+    tokenStore.invalidateTokensForAssignment(assignment.id);
+    db.prepare(
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at)
+       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'))`
+    ).run(assignment.week_id, oneTimePlayerId, assignment.team, assignment.court);
+
+    const subWasResolvedOneTime = subFlow.closeActiveSubRequestForAssignment(assignment.id);
+    const swapWasCancelledOneTime = swapFlow.adminCancelSwap(assignment.id);
+
+    logActivity(req, {
+      action: 'week.one_time_sub',
+      description: `Added one-time sub "${oneTimeName}" (no email on file) for ${email.fmtDate(week.match_date)} — covering ${oldPlayerForOneTime ? oldPlayerForOneTime.name : `player #${assignment.player_id}`}'s slot`,
+      sessionId: Number(req.params.id),
+    });
+
+    const suffixOneTime =
+      (subWasResolvedOneTime ? ' Its open sub request was closed out too — those invite links are now dead.' : '') +
+      (swapWasCancelledOneTime ? ' A pending swap request on that slot was cancelled — it would no longer have gone through.' : '');
+    flash(req, `Added "${oneTimeName}" as a one-time sub — no email on file, so they won't receive any reminder for this match.${suffixOneTime}`);
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
 
@@ -1611,23 +1755,43 @@ router.get('/blackouts', (req, res) => {
   // Every real blackout_dates row for any of those players — no session_id
   // filter at all, since a blackout date is one universal fact regardless of
   // which session's page it was originally entered from.
+  //
+  // Deduped per player by date, via a Set rather than a plain array — same
+  // safeguard the per-session blackouts.ejs page already has (see "Blackout
+  // date carryover across sessions" in CLAUDE.md). Kyle found a real bug
+  // here (2026-08-28): for a player enrolled in two same-day sessions, this
+  // page was listing the same date twice. Root cause is legacy data, not
+  // live logic — before dates became universally editable (2026-08-27), each
+  // session's blackout page did its own independent delete-then-insert with
+  // no awareness of the other session, so a player who'd checked the same
+  // date under both sessions back then ended up with two real
+  // blackout_dates rows (one per session_id) for the exact same
+  // player+date. Both the admin per-session save route and the self-service
+  // page now prevent that going forward (see the same CLAUDE.md section),
+  // but any row pairs created before that fix are still sitting in the
+  // table, and this page's raw SELECT had no session_id filter to hide
+  // behind. Rather than destructively deleting the leftover duplicate rows,
+  // this just dedupes on display — cheaper, safer, and it's what every other
+  // consumer of blackout_dates already effectively does (the scheduler folds
+  // everything into a Set keyed by player+date, so a duplicate row was never
+  // actually a scheduling problem, only a display one, here).
   const rows = [];
   if (playerSessions.size) {
     const playerIds = [...playerSessions.keys()];
     const placeholders = playerIds.map(() => '?').join(',');
     const dateRows = db
-      .prepare(`SELECT player_id, date FROM blackout_dates WHERE player_id IN (${placeholders}) ORDER BY date`)
+      .prepare(`SELECT player_id, date FROM blackout_dates WHERE player_id IN (${placeholders})`)
       .all(...playerIds);
     const datesByPlayer = new Map();
     for (const row of dateRows) {
-      if (!datesByPlayer.has(row.player_id)) datesByPlayer.set(row.player_id, []);
-      datesByPlayer.get(row.player_id).push(row.date);
+      if (!datesByPlayer.has(row.player_id)) datesByPlayer.set(row.player_id, new Set());
+      datesByPlayer.get(row.player_id).add(row.date);
     }
     for (const [playerId, entry] of playerSessions) {
       rows.push({
         name: entry.name,
         sessions: entry.sessions,
-        dates: datesByPlayer.get(playerId) || [],
+        dates: [...(datesByPlayer.get(playerId) || [])].sort(),
       });
     }
   }
@@ -1919,11 +2083,21 @@ router.get('/sessions/:id/stats', (req, res) => {
     partnerCounts.set(key, (partnerCounts.get(key) || 0) + 1);
   }
 
+  // "Original player" resolves through sr.requesting_player_id — a snapshot
+  // of who was actually on the assignment when this request was created —
+  // rather than through the assignment's *current* wa.player_id. Those two
+  // can diverge for an old, resolved request once its slot gets reassigned
+  // or swapped to someone else later (Reassign, the joint conflict resolver,
+  // etc.): joining on the live occupant would silently relabel that history
+  // under the new person's name. COALESCE falls back to wa.player_id only
+  // for the edge case of a pre-migration row that somehow still has no
+  // snapshot (shouldn't happen post-backfill, but defensive regardless).
   const subHistory = db
     .prepare(
       `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date, p.name as original_player
        FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
-       JOIN weeks w ON w.id = wa.week_id JOIN players p ON p.id = wa.player_id
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = COALESCE(sr.requesting_player_id, wa.player_id)
        WHERE w.session_id = ? ORDER BY w.match_date DESC`
     )
     .all(session.id);
@@ -2065,6 +2239,28 @@ router.post('/sub-list', (req, res) => {
   res.redirect('/admin/sub-list');
 });
 
+router.post('/sub-list/:id/edit', (req, res) => {
+  const fieldError = invalidPlayerFields(req.body);
+  if (fieldError) {
+    flash(req, fieldError, 'error');
+    return res.redirect('/admin/sub-list');
+  }
+  const before = db.prepare('SELECT name, email FROM broader_sub_list WHERE id = ?').get(req.params.id);
+  if (!before) {
+    flash(req, 'That sub-list entry no longer exists.', 'error');
+    return res.redirect('/admin/sub-list');
+  }
+  const newName = req.body.name.trim();
+  const newEmail = req.body.email.trim();
+  db.prepare('UPDATE broader_sub_list SET name = ?, email = ? WHERE id = ?').run(newName, newEmail, req.params.id);
+  logActivity(req, {
+    action: 'sublist.edit',
+    description: `Edited sub-list entry: ${before.name} (${before.email}) → ${newName} (${newEmail})`,
+  });
+  flash(req, 'Sub-list entry updated.');
+  res.redirect('/admin/sub-list');
+});
+
 router.post('/sub-list/:id/remove', (req, res) => {
   const entry = db.prepare('SELECT name FROM broader_sub_list WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM broader_sub_list WHERE id = ?').run(req.params.id);
@@ -2192,6 +2388,26 @@ router.get('/email-log', (req, res) => {
     )
     .all(...params);
 
+  // email_log.sent_at is stored via SQLite's plain `datetime('now')`, which
+  // is UTC — never converted anywhere on the way in (see schema.sql and
+  // email.js's sendMail()). Kyle, 2026-08-28, asking whether this page shows
+  // UTC or local: it was UTC, unconverted, unlike every other time shown to
+  // a human elsewhere in the app (match/reminder times, the Status page's
+  // upcoming-actions preview) which all go through tz.js first. Converted
+  // here to the app's one configured timezone (app_settings, same value
+  // every other display conversion uses) via the same utcToZonedParts()
+  // built for the Status page's lead-hours preview — the stored string has
+  // no 'Z'/'T', so it's explicitly parsed as UTC first (a bare
+  // 'YYYY-MM-DD HH:MM:SS' string would otherwise be parsed as *local server
+  // time* by JS's Date constructor, which is wrong here since it's UTC).
+  const emailLogTz = getTimezone();
+  rows.forEach((r) => {
+    const utcInstant = new Date(`${r.sent_at.replace(' ', 'T')}Z`);
+    const parts = utcToZonedParts(utcInstant, emailLogTz);
+    r.sentDateDisplay = email.fmtDate(parts.date);
+    r.sentTimeDisplay = email.fmtTime(parts.time);
+  });
+
   const categories = db.prepare('SELECT DISTINCT category FROM email_log ORDER BY category').all().map((r) => r.category);
   const counts = db
     .prepare('SELECT status, COUNT(*) as n FROM email_log GROUP BY status')
@@ -2204,6 +2420,7 @@ router.get('/email-log', (req, res) => {
     categories,
     counts,
     filters: { category: category || '', status: status || '', q: q || '' },
+    emailLogTz,
   });
 });
 

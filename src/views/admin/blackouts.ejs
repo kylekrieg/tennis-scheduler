@@ -19,11 +19,11 @@
 <% } else { %>
   <div class="card wide">
     <table>
-      <thead><tr><th>Player</th><th>Dates</th></tr></thead>
+      <thead><tr><th style="white-space:nowrap;">Player</th><th>Dates</th></tr></thead>
       <tbody>
         <% blackoutsByPlayer.forEach(function(entry) { %>
           <tr>
-            <td><%= entry.name %></td>
+            <td style="white-space:nowrap;"><%= entry.name %></td>
             <td><%= entry.dates.join(', ') %></td>
           </tr>
         <% }) %>

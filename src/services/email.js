@@ -52,6 +52,16 @@ function wrapEmailHtml(innerHtml) {
  * not final delivery. The admin "unconfirmed" dashboard flag is the intended
  * indirect signal for a bad address.
  */
+// Domain used for the placeholder email address a one-time sub gets when
+// the admin adds them via the "One-time sub (not on roster)" option on
+// Reassign without an email on file (see admin.js's reassign route). Not a
+// real, resolvable domain — RFC 2606 reserves .invalid specifically for
+// addresses that are guaranteed never to be a real destination, which is
+// exactly what's needed here: players.email is NOT NULL UNIQUE, so a real
+// (if fake) value has to go there, but sendMail() below skips ever actually
+// trying to send to it rather than attempting a doomed SMTP send.
+const NO_EMAIL_DOMAIN = 'no-email.invalid';
+
 async function sendMail({ to, subject, html, text, category, relatedWeekId = null, session = null }) {
   // Club name is per-session (a single install can run sessions for
   // different clubs/locations) — every template passes its `session` through
@@ -60,6 +70,19 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
   // admin's freeform custom email), which just means no prefix.
   const club = session && session.club_name;
   const finalSubject = club ? `${club} — ${subject}` : subject;
+
+  // One-time subs added without a real email on file get a placeholder
+  // @no-email.invalid address so players.email's NOT NULL UNIQUE constraint
+  // is satisfied — never actually attempt to send there (would just fail,
+  // or worse, get "accepted" by the SMTP relay only to bounce later and dent
+  // Gmail's sending reputation for nothing). Logged distinctly so this is
+  // visibly different from a real failed send on the Email Log page.
+  if (!to || (typeof to === 'string' && to.endsWith(`@${NO_EMAIL_DOMAIN}`))) {
+    db.prepare(
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(to || '(no email on file)', finalSubject, category, 'skipped_no_email', relatedWeekId);
+    return true;
+  }
 
   const t = getTransport();
   let status = 'sent';
@@ -748,6 +771,7 @@ async function sendAdminWeekReport({ to, week, session, report }) {
 }
 
 module.exports = {
+  NO_EMAIL_DOMAIN,
   sendMail,
   wrapEmailHtml,
   sendConfirmationReminder,

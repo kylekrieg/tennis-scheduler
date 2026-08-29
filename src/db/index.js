@@ -122,6 +122,33 @@ ensureColumn('sub_requests', 'initiated_by', "TEXT NOT NULL DEFAULT 'player'");
 ensureColumn('sub_requests', 'fanout_sent_at', 'TEXT');
 raw.exec(`UPDATE sub_requests SET fanout_sent_at = created_at WHERE fanout_sent_at IS NULL AND initiated_by = 'player'`);
 
+// requesting_player_id (Kyle, 2026-08-28, found by tracing a Stats page
+// question): snapshots who was actually on a week_assignment at the moment a
+// sub_requests row was created, so the Stats page's Sub History table can
+// keep showing who a past request was really about even after that same
+// slot gets reassigned or swapped to someone else later (the admin's Reassign
+// tool, the joint conflict resolver, etc.) — without this, that table
+// resolved "who this was about" via the assignment's *current* player_id,
+// which silently relabels old history under the new occupant's name. Same
+// "capture identity before it can drift" reasoning as
+// swap_requests.initiator_player_id.
+//
+// Existing rows predate this column and there's no reliable way to recover
+// who was actually on the assignment at the time historically (only who's on
+// it now) — so this is a best-effort backfill, not a true correction: it
+// fills every existing row with the assignment's *current* player_id, which
+// is exactly the same (slightly wrong, for any slot reassigned since) answer
+// the Stats page already gave before this fix. Going forward, every new
+// sub_requests row captures the real value at creation time, so this
+// limitation only ever applies to rows that already existed before this
+// migration ran.
+ensureColumn('sub_requests', 'requesting_player_id', 'INTEGER REFERENCES players(id)');
+raw.exec(`
+  UPDATE sub_requests SET requesting_player_id = (
+    SELECT wa.player_id FROM week_assignments wa WHERE wa.id = sub_requests.week_assignment_id
+  ) WHERE requesting_player_id IS NULL
+`);
+
 // Club name/court info used to be one global value in app_settings; now each
 // session has its own (a single install can run sessions for different
 // clubs/locations). For an install that already had the old global columns

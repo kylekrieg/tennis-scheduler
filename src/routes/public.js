@@ -727,6 +727,19 @@ router.get('/me/:idOrSlug', (req, res) => {
     )
     .all(playerId);
 
+  // Every real blackout_dates row on record for this player, regardless of
+  // which session's page it was originally entered from — blackout dates are
+  // a universal fact per (player, date), not owned by one session (see
+  // "Blackout date carryover across sessions" in CLAUDE.md). Matched against
+  // each session's own weeks.match_date below, so a date only ever shows
+  // above a session whose schedule actually includes that calendar date —
+  // this is what makes "a Monday blackout shows above a Monday session"
+  // true without any day-of-week guesswork: weeks.match_date already *is*
+  // the session's real matched dates.
+  const allBlackoutDates = new Set(
+    db.prepare('SELECT date FROM blackout_dates WHERE player_id = ?').all(playerId).map((r) => r.date)
+  );
+
   const sessionCards = sessions.map((session) => {
     const upcoming = db
       .prepare(
@@ -750,7 +763,45 @@ router.get('/me/:idOrSlug', (req, res) => {
       .all(session.id, playerId, todayIso);
     const ballDutyDates = new Set(ballDutyWeeks.map((w) => w.match_date));
 
-    return { session, upcoming, ballDutyDates };
+    // Upcoming blackout dates for this specific session: this session's own
+    // remaining match dates, intersected with the player's universal
+    // blackout set above. Only upcoming (>= today), matching the "upcoming
+    // matches" table this sits next to — a past blackout date isn't
+    // actionable information anymore.
+    const upcomingSessionDates = db
+      .prepare('SELECT match_date FROM weeks WHERE session_id = ? AND match_date >= ? ORDER BY match_date')
+      .all(session.id, todayIso)
+      .map((w) => w.match_date);
+    const blackoutDates = upcomingSessionDates.filter((d) => allBlackoutDates.has(d));
+
+    // Season-long stats for this session — same fields and same underlying
+    // queries as the admin Stats page (admin.js's GET /sessions/:id/stats),
+    // just scoped to this one player: target (+ original if it's since been
+    // edited down), games actually played (excludes is_sub rows, same as
+    // the admin page's "Played" column), and ball duty count. Deliberately
+    // no sub-bonus-games figure and no partner matrix here, per Kyle
+    // (2026-08-28) — this is meant to be a quick glance, not a repeat of
+    // the full admin Stats page.
+    const sp = db
+      .prepare('SELECT target_games, original_target FROM session_players WHERE session_id = ? AND player_id = ?')
+      .get(session.id, playerId);
+    const played = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+         WHERE w.session_id = ? AND wa.player_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0`
+      )
+      .get(session.id, playerId).n;
+    const ballDutyCount = db
+      .prepare('SELECT COUNT(*) as n FROM weeks WHERE session_id = ? AND ball_duty_player_id = ?')
+      .get(session.id, playerId).n;
+    const stats = {
+      target: (sp && sp.target_games) || 0,
+      originalTarget: sp ? sp.original_target : null,
+      played,
+      ballDuty: ballDutyCount,
+    };
+
+    return { session, upcoming, ballDutyDates, blackoutDates, stats };
   });
 
   // Draft sessions this player's enrolled in aren't in getViewableSessions
