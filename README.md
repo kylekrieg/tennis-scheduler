@@ -171,21 +171,49 @@ then add:
 ```
 That runs a backup every night at 2am, automatically prunes anything beyond the most recent 30 (about a month at one a day), then pushes the whole `backups/` folder to another machine — see the next section. If you haven't set up off-site push yet, drop the second `&&` clause; `backup-db.js` alone is still safe to run on its own, it just leaves everything sitting on the Pi's own SD card.
 
-**Get backups off the Pi, automatically.** A backup sitting in `backups/` on the same SD card doesn't protect you if the Pi itself dies — that's the actual scenario to plan for. `npm run backup:offsite` (`src/scripts/backup-offsite.js`) pushes the whole `backups/` folder to another machine over `rsync` + SSH, so it only transfers what's new or changed each run — cheap even as the folder accumulates a month of nightly snapshots. Set it up once:
+**Get backups off the Pi, automatically.** A backup sitting in `backups/` on the same SD card doesn't protect you if the Pi itself dies — that's the actual scenario to plan for. `npm run backup:offsite` (`src/scripts/backup-offsite.js`) pushes the whole `backups/` folder to another machine over `rsync` + SSH, so it only transfers what's new or changed each run — cheap even as the folder accumulates a month of nightly snapshots. This walks through setting it up from scratch, including the couple of SSH gotchas that aren't obvious the first time — useful whether you're running on a Raspberry Pi (the primary target here) or anywhere else this gets deployed.
 
-1. On the Pi, generate a dedicated SSH key if you don't already have one: `ssh-keygen -t ed25519 -f ~/.ssh/tennis_backup -N ""`.
-2. Copy the public key to whatever machine you want backups to land on (another computer on your network, a NAS, a cheap VPS — anywhere reachable over SSH): `ssh-copy-id -i ~/.ssh/tennis_backup.pub you@your-other-machine`. Make sure the destination folder you're copying into already exists on that machine.
-3. Add these to the Pi's `.env` (see `.env.example` for the full list):
+**What you need:** a second machine reachable over SSH — another computer on your network, a NAS, or a cheap VPS. It needs an SSH server running and `rsync` installed (most Linux/macOS machines already have both; on Debian/Ubuntu, `sudo apt install openssh-server rsync` if not). The app's own machine needs `rsync` too — already there on Raspberry Pi OS by default; `sudo apt install rsync` if not.
+
+1. **Generate a dedicated SSH key** on the machine running the app — don't reuse a personal key, so this one can be revoked independently if it's ever compromised:
+   ```
+   ssh-keygen -t ed25519 -f ~/.ssh/tennis_backup -N ""
+   ```
+   The `-N ""` gives it an empty passphrase, since this key has to work unattended from cron with nobody around to type one in.
+
+2. **Copy the public key to the destination machine**, so the app server can log in without a password:
+   ```
+   ssh-copy-id -i ~/.ssh/tennis_backup.pub you@your-other-machine
+   ```
+   This asks for the destination account's password once, then installs the key so future logins don't need it. Make sure the destination folder you're syncing into (e.g. `/home/you/tennis-backups`) already exists on that machine first — `rsync` won't create it for you.
+
+3. **Accept the destination's host key before automating anything.** The very first SSH connection to a new host prompts "Are you sure you want to continue connecting (yes/no)?" — an interactive prompt that will silently hang or fail if it's hit for the first time inside an unattended cron job. Get it out of the way by hand:
+   ```
+   ssh -i ~/.ssh/tennis_backup you@your-other-machine echo ok
+   ```
+   Type `yes` if asked; it should then print `ok`. If it prints `ok` straight away with no prompt, it's already accepted and you're set.
+
+4. **Add the connection details to `.env`** (see `.env.example` for the full list):
    ```
    OFFSITE_SSH_HOST=your-other-machine.local
    OFFSITE_SSH_USER=you
    OFFSITE_SSH_PATH=/home/you/tennis-backups
    OFFSITE_SSH_KEY=/home/pi/.ssh/tennis_backup
    ```
-4. Test it by hand first: `npm run backup:offsite`. It should exit quietly with no error — check the destination folder for the pushed `.db` files.
-5. Add the cron line above (or add `&& npm run backup:offsite` to whatever line you already have).
+   `OFFSITE_SSH_HOST` can be a hostname, a `.local` mDNS name (if both machines are on the same network), or a plain IP address. If the destination uses a non-default SSH port, set `OFFSITE_SSH_PORT` too (defaults to 22).
 
-Once this is set up, Admin → Backup also gets a **Push off-site now** button for an on-demand push (e.g. right after you finalize a season's roster), using the exact same underlying code as the cron job. If `OFFSITE_SSH_HOST`/`USER`/`PATH` are left blank, the script exits cleanly with a one-line "not configured" note rather than failing the cron job — the local backup has already succeeded by the time it runs either way. `rsync` needs to actually be installed on the Pi (it usually already is on Raspberry Pi OS; if not, `sudo apt install rsync`).
+5. **Test it by hand first:** `npm run backup:offsite`. It should exit quietly with no output — check the destination folder for the pushed `.db` files. If something's wrong, running it this way surfaces the actual `rsync`/`ssh` error directly instead of it being buried in a cron log line (see Troubleshooting below).
+
+6. **Add the cron line above** (or add `&& npm run backup:offsite` to whatever line you already have).
+
+Once this is set up, Admin → Backup also gets a **Push off-site now** button for an on-demand push (e.g. right after you finalize a season's roster), using the exact same underlying code as the cron job. If `OFFSITE_SSH_HOST`/`USER`/`PATH` are left blank, the script exits cleanly with a one-line "not configured" note rather than failing the cron job — the local backup has already succeeded by the time it runs either way.
+
+**Troubleshooting:**
+- **"Permission denied (publickey)"** — the public key isn't actually installed on the destination, or `OFFSITE_SSH_KEY` in `.env` points at the wrong private key file. Re-run `ssh-copy-id` and double-check the path.
+- **"Host key verification failed"** — step 3 above was skipped, or the destination's host key changed (e.g. it was reinstalled or re-imaged). Remove the stale entry for that host from `~/.ssh/known_hosts` on the app's machine and reconnect once by hand to re-accept it.
+- **Connection just hangs or times out** — the destination isn't reachable on port 22 (or your custom `OFFSITE_SSH_PORT`) from wherever the app is running. Check the destination's firewall, and if it's behind a router or cloud provider, that the port is actually forwarded/open.
+- **"rsync: command not found"** — install `rsync` on whichever side is missing it (the app's machine, the destination, or both).
+- **Destination path doesn't exist** — `rsync` won't create `OFFSITE_SSH_PATH`'s directory for you; create it by hand on the destination first (`mkdir -p /home/you/tennis-backups`).
 
 If you'd rather push to cloud storage (Google Drive, Dropbox, Backblaze B2, S3, etc.) instead of a second machine, `src/services/offsiteBackup.js`'s `pushBackupsOffsite()` is a small, self-contained function — swap its `rsync`/`ssh` call for an `rclone sync backups/ remote:path` call and everything else (the cron wiring, the admin button, the "not configured" fallback) keeps working unchanged.
 

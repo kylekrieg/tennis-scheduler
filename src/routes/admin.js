@@ -373,8 +373,10 @@ router.post('/backup', (req, res) => {
     const result = backup.createBackup();
     backup.pruneBackups(backup.DEFAULT_RETENTION);
     flash(req, `Backup created: ${result.filename} (${(result.size / 1024).toFixed(1)} KB). Download it below and save it somewhere off this Pi.`);
+    logActivity(req, { action: 'backup.create', description: `Created backup ${result.filename} (${(result.size / 1024).toFixed(1)} KB)` });
   } catch (err) {
     flash(req, `Backup failed: ${err.message}`, 'error');
+    logActivity(req, { action: 'backup.create', description: `Backup creation failed: ${err.message}` });
   }
   res.redirect('/admin/backup');
 });
@@ -386,9 +388,11 @@ router.post('/backup/push-offsite', (req, res) => {
       flash(req, `Off-site push is not configured — set OFFSITE_SSH_HOST/USER/PATH in .env first. (${result.reason})`, 'error');
     } else {
       flash(req, 'Pushed backups/ to the off-site machine.');
+      logActivity(req, { action: 'backup.push_offsite', description: 'Pushed backups/ to the off-site machine' });
     }
   } catch (err) {
     flash(req, `Off-site push failed: ${err.message}`, 'error');
+    logActivity(req, { action: 'backup.push_offsite', description: `Off-site push failed: ${err.message}` });
   }
   res.redirect('/admin/backup');
 });
@@ -400,6 +404,7 @@ router.get('/backup/download/:filename', (req, res) => {
   if (path.dirname(filePath) !== backup.BACKUP_DIR || !fs.existsSync(filePath)) {
     return res.status(404).send('Backup not found');
   }
+  logActivity(req, { action: 'backup.download', description: `Downloaded backup ${filename}` });
   res.download(filePath, filename);
 });
 
@@ -410,6 +415,7 @@ router.post('/backup/:filename/delete', (req, res) => {
   if (path.dirname(filePath) === backup.BACKUP_DIR && fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
     flash(req, 'Backup deleted.');
+    logActivity(req, { action: 'backup.delete', description: `Deleted backup ${filename}` });
   }
   res.redirect('/admin/backup');
 });
