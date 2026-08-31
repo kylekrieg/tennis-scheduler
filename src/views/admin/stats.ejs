@@ -50,8 +50,8 @@
         <td><%= s.match_date %></td>
         <td><%= s.original_player %></td>
         <td><span class="badge <%= (s.status === 'filled' || s.status === 'resolved_manually') ? 'confirmed' : 'needs_sub' %>"><%= s.status.replace('_',' ') %></span></td>
-        <td class="muted"><%= s.created_at %></td>
-        <td class="muted"><%= s.escalated_at || '—' %></td>
+        <td class="muted" style="white-space:nowrap;"><%= s.requestedDisplay %></td>
+        <td class="muted" style="white-space:nowrap;"><%= s.escalatedDisplay || '—' %></td>
       </tr>
     <% }) %>
     <% if (subHistory.length === 0) { %><tr><td colspan="5" class="muted">No sub requests yet.</td></tr><% } %>

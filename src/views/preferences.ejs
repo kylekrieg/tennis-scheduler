@@ -1,4 +1,4 @@
-<%- include('partials/header', {title}) %>
+<% if (isAdmin) { %><%- include('partials/admin_header', {title}) %><% } else { %><%- include('partials/header', {title}) %><% } %>
 <h1>Preferences</h1>
 <p class="muted">These are saved in this browser only — set them again on another device or a different browser if you use more than one.</p>
 

@@ -67,7 +67,7 @@ Starting from nothing but this folder (or a fresh clone) and a machine with inte
    ```
    node src/scripts/hash-admin-password.js "choose-a-password"
    ```
-   Copy the printed hash into `ADMIN_PASSWORD_HASH` in `.env`. This is only used to create the *first* admin account on the very first run — after that, admin accounts (including this one) live in the database and are managed from **Admin → Admins**, where you can add more people, each with their own password. `.env`'s `ADMIN_PASSWORD_HASH` is not read again after that first boot.
+   Copy the printed hash into `ADMIN_PASSWORD_HASH` in `.env`. This is only used to create the *first* admin account on the very first run — after that, admin accounts (including this one) live in the database and are managed from **Admin → Admins**, where you can add more people, each with their own username and password. `.env`'s `ADMIN_PASSWORD_HASH` is not read again after that first boot. That first account's username is auto-generated as `admin` (visible, and changeable, from **Admin → Admins** once you're logged in).
 
 5. **Fill in the rest of `.env`:**
    - `SESSION_SECRET` — any long random string (e.g. `openssl rand -hex 32`).
@@ -139,7 +139,7 @@ That's the whole local install. Everything past this point (pm2, Cloudflare Tunn
 
 6. **Verify:**
    - Load `https://tennis.yourdomain.com/schedule` from outside your home network.
-   - Log into `/admin` with the password you hashed earlier.
+   - Log into `/admin` with username `admin` and the password you hashed earlier.
    - Create a session, add the roster with target games, save, click **Schedule these players**, and confirm the season fills in.
    - Use **Send Email** in the admin panel to send yourself a test email end-to-end and confirm it lands in your inbox.
    - Check **Admin → Email Log** afterward and confirm that test email shows status `sent`, not `logged_dev_mode` — if it still says `logged_dev_mode`, `GMAIL_USER`/`GMAIL_APP_PASSWORD` aren't being picked up.

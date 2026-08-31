@@ -1,29 +1,36 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <h1>Admins</h1>
-<p class="muted">Everyone here can do everything in this admin panel — there are no permission levels, just who's allowed in. The login page only asks for a password (no username); whoever's password matches is who gets logged in.</p>
+<p class="muted">Everyone here can do everything in this admin panel — there are no permission levels, just who's allowed in. The login page asks for a <strong>username</strong> and password — each admin's username is unique, so with several admins logging in, there's never any ambiguity about which of them a login (or anything they do afterward, per the Activity Log) actually belongs to.</p>
 
 <h2>Add an admin</h2>
 <form method="post" action="/admin/admins" class="card">
   <label for="name">Name</label>
   <input type="text" name="name" id="name" required>
+  <label for="username">Username (optional)</label>
+  <input type="text" name="username" id="username" placeholder="auto-generated from name if left blank">
+  <p class="muted">Lowercase letters, numbers, and single . _ - separators (e.g. "kyle.krieg"). Leave blank to generate one from the name automatically.</p>
   <label for="email">Email (optional)</label>
   <input type="email" name="email" id="email">
   <label for="password">Password</label>
   <input type="password" name="password" id="password" minlength="8" required>
-  <p class="muted">At least 8 characters. Share it with them directly — it's not emailed anywhere.</p>
+  <p class="muted">At least 8 characters. Share the username and password with them directly — neither is emailed anywhere.</p>
   <div class="actions"><button class="btn green" type="submit">Add admin</button></div>
 </form>
 
 <h2>All admins</h2>
 <table class="wide">
-  <thead><tr><th>Name / Email</th><th>Status</th><th>Reset password</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Status</th><th>Reset password</th><th>Actions</th></tr></thead>
   <tbody>
     <% admins.forEach(function(a) { %>
       <tr>
         <td>
-          <%= a.name %><% if (a.id === currentAdminId) { %> <span class="muted">(you)</span><% } %>
-          <% if (a.email) { %><div class="muted"><%= a.email %></div><% } %>
+          <form method="post" action="/admin/admins/<%= a.id %>/edit" id="edit-<%= a.id %>">
+            <input type="text" name="name" value="<%= a.name %>" style="width:140px;">
+          </form>
+          <% if (a.id === currentAdminId) { %> <span class="muted">(you)</span><% } %>
         </td>
+        <td><input type="text" name="username" value="<%= a.username %>" form="edit-<%= a.id %>" style="width:130px;"></td>
+        <td><input type="email" name="email" value="<%= a.email || '' %>" form="edit-<%= a.id %>" style="width:180px;"></td>
         <td><%= a.active ? 'active' : 'inactive' %></td>
         <td>
           <form class="inline" method="post" action="/admin/admins/<%= a.id %>/reset-password">
@@ -32,6 +39,7 @@
           </form>
         </td>
         <td>
+          <button class="btn small neutral" type="submit" form="edit-<%= a.id %>">Save</button>
           <% if (a.active) { %>
             <form class="inline" method="post" action="/admin/admins/<%= a.id %>/deactivate">
               <button class="btn small neutral" type="submit"><%= a.id === currentAdminId ? 'Deactivate (logs you out)' : 'Deactivate' %></button>

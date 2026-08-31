@@ -86,7 +86,17 @@ router.get('/help', (req, res) => {
 // nav on every page, but he found that didn't work well in practice and
 // asked for it to move to its own dedicated page instead.
 router.get('/preferences', (req, res) => {
-  res.render('preferences', { title: 'Preferences' });
+  // Preferences (text size) is shared functionality for players and admins
+  // alike, but it lives under the public router with no requireAdmin gate —
+  // an admin clicking "Preferences" from the admin nav was always rendered
+  // with the public header, which swapped every nav link over to the public
+  // site and made it look like they'd been logged out (Kyle, 2026-08-31:
+  // "it doesn't log you out... but brings the top header links back to the
+  // 'public site'"). req.session is the same session store either router
+  // uses, so isAdmin (set at admin login, see admin.js) is already reliably
+  // available here — no new auth logic needed, just pick the right header
+  // partial to include.
+  res.render('preferences', { title: 'Preferences', isAdmin: !!(req.session && req.session.isAdmin) });
 });
 
 router.get('/schedule', (req, res) => {
@@ -168,6 +178,26 @@ router.get('/blackout', (req, res) => {
     myBlackoutDatesList = [...merged].sort();
   }
 
+  // Kyle, 2026-08-31: "is there a way we can have a checkbox under 'your
+  // name' drop down that shows ALL blackout dates for that player?" —
+  // myBlackoutDatesList above is scoped to this session's own weeks (plus
+  // anything carried over onto one of those specific dates); a player
+  // enrolled in several sessions may have real blackout_dates rows tied to a
+  // date that isn't one of *this* session's weeks at all, so it'd never show
+  // up there. A blackout date is one universal fact per player+date
+  // regardless of which session it was entered under (see "Blackout date
+  // carryover across sessions" in CLAUDE.md), so this is a plain, no-join
+  // query — every date on record for this player, full stop — gated behind
+  // an opt-in checkbox rather than always shown, since most players only
+  // care about the current session's dates.
+  let allBlackoutDatesList = null;
+  if (selectedPlayerId && req.query.showAll === '1') {
+    allBlackoutDatesList = db
+      .prepare('SELECT DISTINCT date FROM blackout_dates WHERE player_id = ? ORDER BY date')
+      .all(selectedPlayerId)
+      .map((r) => r.date);
+  }
+
   res.render('blackout', {
     title: 'Blackout Dates',
     session,
@@ -178,6 +208,8 @@ router.get('/blackout', (req, res) => {
     existingBlackouts,
     carriedOverMap,
     myBlackoutDatesList,
+    allBlackoutDatesList,
+    showAll: req.query.showAll === '1',
     schedulingLocked: session.status !== 'draft',
     saved: req.query.saved === '1',
     locked: req.query.locked === '1',

@@ -39,4 +39,22 @@ function logPlayerActivity({ playerName, action, description, sessionId = null }
   ).run(null, `${playerName} (player self-service)`, action, description, sessionId);
 }
 
-module.exports = { logActivity, logPlayerActivity };
+/**
+ * Same log, same table, for an action triggered by a cron job / standalone
+ * script rather than through the Express app — currently just the nightly
+ * backup scripts (src/scripts/backup-db.js, backup-offsite.js), which run
+ * from the Pi's own crontab with no HTTP request and therefore no
+ * req.session to read an admin from. logActivity() can't be reused here
+ * since it dereferences req.session directly; this mirrors logPlayerActivity
+ * above (admin_id left NULL, a fixed label standing in for "who did this")
+ * so a scheduled backup shows up in the same Activity Log as everything
+ * else instead of being invisible just because nothing was logged in.
+ */
+function logSystemActivity({ action, description, sessionId = null }) {
+  db.prepare(
+    `INSERT INTO admin_activity_log (admin_id, admin_name, action, description, session_id)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(null, 'System (automatic)', action, description, sessionId);
+}
+
+module.exports = { logActivity, logPlayerActivity, logSystemActivity };

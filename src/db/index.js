@@ -262,6 +262,26 @@ ensureColumn('players', 'slug', 'TEXT');
   }
 }
 
+// Admin usernames (Kyle, 2026-08-29): every admin row created before this
+// column existed has no username — backfill each one from their name, same
+// "unconditional WHERE-guarded, id-ASC, collision-resolved" pattern as
+// players.slug directly above (and for the same reason: safe to run on
+// every boot, since after the first pass no row ever matches `username IS
+// NULL` again). See adminUsername.js's doc comment for why this exists —
+// short version, the old password-only login couldn't tell two admins with
+// the same password apart, and an explicit per-admin username fixes that.
+ensureColumn('admins', 'username', 'TEXT');
+{
+  const { generateUniqueUsername } = require('../services/adminUsername');
+  const unnamed = raw.prepare('SELECT id, name FROM admins WHERE username IS NULL ORDER BY id ASC').all();
+  if (unnamed.length > 0) {
+    const setUsername = raw.prepare('UPDATE admins SET username = ? WHERE id = ?');
+    for (const a of unnamed) {
+      setUsername.run(generateUniqueUsername(raw, a.name, a.id), a.id);
+    }
+  }
+}
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

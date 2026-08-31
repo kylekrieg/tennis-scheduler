@@ -37,13 +37,12 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th style="white-space:nowrap;min-width:120px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
+  <thead><tr><th style="white-space:nowrap;min-width:170px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
   <tbody>
     <% rows.forEach(function(r) { %>
       <tr>
         <td class="muted" style="white-space:nowrap;">
-          <%= r.sentDateDisplay %><br>
-          <%= r.sentTimeDisplay %>
+          <%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>
         </td>
         <td><%= r.to_email %></td>
         <td><%= r.subject %></td>

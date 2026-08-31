@@ -6,7 +6,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
-const { findAdminByPassword, hashPassword } = require('../services/auth');
+const { findAdminByCredentials, hashPassword } = require('../services/auth');
+const { USERNAME_RE, usernameTaken, generateUniqueUsername } = require('../services/adminUsername');
 const { getTimezone, setTimezone } = require('../services/settings');
 const { zonedTimeToUtc, utcToZonedParts } = require('../services/tz');
 const { runScheduler, ensureWeeksExist } = require('../services/scheduleRun');
@@ -84,7 +85,7 @@ router.get('/login', (req, res) => {
 });
 
 router.post('/login', adminLoginLimiter, (req, res) => {
-  const admin = findAdminByPassword(req.body.password);
+  const admin = findAdminByCredentials(req.body.username, req.body.password);
   if (admin) {
     // Regenerate the session ID on a successful login rather than reusing
     // whatever session (if any) the browser already had — standard defense
@@ -103,7 +104,7 @@ router.post('/login', adminLoginLimiter, (req, res) => {
       res.redirect('/admin');
     });
   }
-  res.render('admin/login', { title: 'Admin Login', error: 'Incorrect password.' });
+  res.render('admin/login', { title: 'Admin Login', error: 'Incorrect username or password.' });
 });
 
 router.post('/logout', (req, res) => {
@@ -317,6 +318,25 @@ router.post('/settings', (req, res) => {
 
 // --- Admin accounts ---------------------------------------------------
 
+// Blank is always fine (auto-generate from the name on create; leave
+// unchanged on edit) — only validated when the admin has actually typed
+// something into the field, same "manual override for the rare real
+// collision" treatment as invalidSlugField() gives players.slug. Format is
+// intentionally a little more permissive than SLUG_RE (allows single `.`/`_`
+// separators too, not just `-`) since usernames more often look like
+// "kyle.krieg" or "kyle_k" than a URL slug does.
+function invalidUsernameField(rawUsername, excludeAdminId) {
+  const username = (rawUsername || '').trim().toLowerCase();
+  if (!username) return null;
+  if (!USERNAME_RE.test(username)) {
+    return 'Username can only contain lowercase letters, numbers, and single . _ - separators (e.g. "kyle.krieg").';
+  }
+  if (usernameTaken(db, username, excludeAdminId)) {
+    return 'That username is already taken by another admin — pick a different one.';
+  }
+  return null;
+}
+
 router.get('/admins', (req, res) => {
   const admins = db.prepare('SELECT * FROM admins ORDER BY active DESC, name').all();
   res.render('admin/admins', { title: 'Admins', admins, currentAdminId: req.session.adminId, flashMsg: popFlash(req) });
@@ -329,13 +349,67 @@ router.post('/admins', (req, res) => {
     flash(req, 'Name is required and password must be at least 8 characters.', 'error');
     return res.redirect('/admin/admins');
   }
-  db.prepare('INSERT INTO admins (name, email, password_hash, active) VALUES (?, ?, ?, 1)').run(
+  const usernameError = invalidUsernameField(req.body.username, null);
+  if (usernameError) {
+    flash(req, usernameError, 'error');
+    return res.redirect('/admin/admins');
+  }
+  const submittedUsername = (req.body.username || '').trim().toLowerCase();
+  const username = submittedUsername || generateUniqueUsername(db, name, null);
+  db.prepare('INSERT INTO admins (name, email, username, password_hash, active) VALUES (?, ?, ?, ?, 1)').run(
     name,
     req.body.email || null,
+    username,
     hashPassword(password)
   );
-  logActivity(req, { action: 'admin.create', description: `Added admin "${name}"` });
-  flash(req, `${name} added — they can log in at /admin with the password you just set.`);
+  logActivity(req, { action: 'admin.create', description: `Added admin "${name}" (username "${username}")` });
+  flash(req, `${name} added — they can log in at /admin with the username "${username}" and the password you just set.`);
+  res.redirect('/admin/admins');
+});
+
+// Pure identity edit (name/email/username) — deliberately separate from
+// reset-password below, same "one form, one job" split every other admin
+// page in this app already uses. Username is deliberately NOT auto-
+// regenerated when the name changes (same reasoning as players.slug) — an
+// admin who already knows their username shouldn't have it silently change
+// out from under them because their display name got corrected.
+router.post('/admins/:id/edit', (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) {
+    flash(req, 'Name is required.', 'error');
+    return res.redirect('/admin/admins');
+  }
+  const before = db.prepare('SELECT name, email, username FROM admins WHERE id = ?').get(req.params.id);
+  if (!before) {
+    flash(req, 'That admin no longer exists.', 'error');
+    return res.redirect('/admin/admins');
+  }
+  const submittedUsername = (req.body.username || '').trim().toLowerCase();
+  let newUsername = before.username;
+  if (submittedUsername && submittedUsername !== before.username) {
+    const usernameError = invalidUsernameField(submittedUsername, req.params.id);
+    if (usernameError) {
+      flash(req, usernameError, 'error');
+      return res.redirect('/admin/admins');
+    }
+    newUsername = submittedUsername;
+  }
+  const newEmail = (req.body.email || '').trim() || null;
+  db.prepare('UPDATE admins SET name = ?, email = ?, username = ? WHERE id = ?').run(name, newEmail, newUsername, req.params.id);
+  if (before.name !== name || before.email !== newEmail || before.username !== newUsername) {
+    logActivity(req, {
+      action: 'admin.edit',
+      description: `Updated admin "${before.name}" (username "${before.username}") → "${name}" (username "${newUsername}")`,
+    });
+  }
+  // Editing your own name/username doesn't need to log you out — unlike
+  // deactivation, the session still points at the same admin id, and
+  // req.session.adminName is only used for display/log attribution, not
+  // for re-authenticating anything on the next request.
+  if (Number(req.params.id) === req.session.adminId) {
+    req.session.adminName = name;
+  }
+  flash(req, 'Admin updated.');
   res.redirect('/admin/admins');
 });
 
@@ -384,9 +458,19 @@ router.post('/admins/:id/reset-password', (req, res) => {
 // --- Database backups -------------------------------------------------
 
 router.get('/backup', (req, res) => {
+  // b.mtime is a real Date (from fs.statSync), an absolute instant -- no
+  // string-parsing gotcha the way email_log's raw SQLite string needed, just
+  // the same utcToZonedParts() conversion so "Created" reads in the site's
+  // one configured timezone instead of raw UTC, per Kyle's "no UTC anywhere"
+  // rule (see also the Activity Log and Stats page fixes alongside this one).
+  const backupTz = getTimezone();
+  const backups = backup.listBackups().map((b) => {
+    const parts = utcToZonedParts(b.mtime, backupTz);
+    return { ...b, createdDisplay: `${email.fmtDate(parts.date)}, ${email.fmtTime(parts.time)}` };
+  });
   res.render('admin/backup', {
     title: 'Backup',
-    backups: backup.listBackups(),
+    backups,
     retention: backup.DEFAULT_RETENTION,
     offsiteConfigured: offsiteBackup.isConfigured(),
     flashMsg: popFlash(req),
@@ -1806,32 +1890,71 @@ router.get('/blackouts', (req, res) => {
   // consumer of blackout_dates already effectively does (the scheduler folds
   // everything into a Set keyed by player+date, so a duplicate row was never
   // actually a scheduling problem, only a display one, here).
-  const rows = [];
+  const datesByPlayer = new Map();
   if (playerSessions.size) {
     const playerIds = [...playerSessions.keys()];
     const placeholders = playerIds.map(() => '?').join(',');
     const dateRows = db
       .prepare(`SELECT player_id, date FROM blackout_dates WHERE player_id IN (${placeholders})`)
       .all(...playerIds);
-    const datesByPlayer = new Map();
     for (const row of dateRows) {
       if (!datesByPlayer.has(row.player_id)) datesByPlayer.set(row.player_id, new Set());
       datesByPlayer.get(row.player_id).add(row.date);
     }
-    for (const [playerId, entry] of playerSessions) {
-      rows.push({
-        name: entry.name,
-        sessions: entry.sessions,
-        dates: [...(datesByPlayer.get(playerId) || [])].sort(),
-      });
-    }
   }
-  rows.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Kyle, 2026-08-31: "I'm not liking the format... is there a way to clean
+  // that up a bit to show what dates correspond to sessions?" The old
+  // layout (one row per player, a flat comma-joined date list next to a
+  // flat session list) never actually correlated the two — a player in two
+  // sessions with different weeks had no way to tell which blackout date
+  // belonged to which session from this page alone. Restructured to be
+  // organized by session first (matching the "by session" mental model the
+  // per-session blackouts.ejs page already uses), with each session's own
+  // table showing only the players/dates that actually fall on *that*
+  // session's own match weeks — a direct date-to-week intersection, not a
+  // flat dump.
+  const weeksBySession = new Map(); // sessionId -> Set(match_date)
+  for (const s of sessions) {
+    const dates = db.prepare('SELECT match_date FROM weeks WHERE session_id = ?').all(s.id).map((w) => w.match_date);
+    weeksBySession.set(s.id, new Set(dates));
+  }
+
+  const bySession = sessions.map((s) => {
+    const playerRows = [];
+    for (const [playerId, entry] of playerSessions) {
+      if (!entry.sessions.some((es) => es.id === s.id)) continue;
+      const playerDates = datesByPlayer.get(playerId) || new Set();
+      const matching = [...playerDates].filter((d) => weeksBySession.get(s.id).has(d)).sort();
+      if (matching.length > 0) playerRows.push({ name: entry.name, dates: matching });
+    }
+    playerRows.sort((a, b) => a.name.localeCompare(b.name));
+    return { session: s, playerRows };
+  });
+
+  // Anything left over — a real blackout date on record for a player that
+  // doesn't land on any of *their* currently active sessions' own match
+  // weeks (a date entered for a since-archived session, a date beyond the
+  // currently generated week range, or simple leftover from before a
+  // session's schedule existed). Still real data worth showing, just not
+  // tied to a specific session's table above.
+  const otherRows = [];
+  for (const [playerId, entry] of playerSessions) {
+    const playerDates = datesByPlayer.get(playerId) || new Set();
+    const accounted = new Set();
+    for (const es of entry.sessions) {
+      for (const d of weeksBySession.get(es.id)) accounted.add(d);
+    }
+    const leftover = [...playerDates].filter((d) => !accounted.has(d)).sort();
+    if (leftover.length > 0) otherRows.push({ name: entry.name, dates: leftover });
+  }
+  otherRows.sort((a, b) => a.name.localeCompare(b.name));
 
   res.render('admin/all_blackouts', {
     title: 'All Blackout Dates',
     sessions,
-    rows,
+    bySession,
+    otherRows,
   });
 });
 
@@ -2123,7 +2246,7 @@ router.get('/sessions/:id/stats', (req, res) => {
   // under the new person's name. COALESCE falls back to wa.player_id only
   // for the edge case of a pre-migration row that somehow still has no
   // snapshot (shouldn't happen post-backfill, but defensive regardless).
-  const subHistory = db
+  const rawSubHistory = db
     .prepare(
       `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date, p.name as original_player
        FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
@@ -2132,6 +2255,26 @@ router.get('/sessions/:id/stats', (req, res) => {
        WHERE w.session_id = ? ORDER BY w.match_date DESC`
     )
     .all(session.id);
+  // created_at/escalated_at are plain SQLite datetime('now') -- UTC, same
+  // shape as email_log.sent_at/admin_activity_log.created_at -- converted
+  // the same way per Kyle's "no UTC anywhere" rule. escalated_at is
+  // nullable (only set once a request actually escalates), left as '—' in
+  // the view when absent rather than converted.
+  const statsTz = getTimezone();
+  const subHistory = rawSubHistory.map((s) => {
+    const requestedParts = utcToZonedParts(new Date(`${s.created_at.replace(' ', 'T')}Z`), statsTz);
+    const escalatedDisplay = s.escalated_at
+      ? (() => {
+          const p = utcToZonedParts(new Date(`${s.escalated_at.replace(' ', 'T')}Z`), statsTz);
+          return `${email.fmtDate(p.date)}, ${email.fmtTime(p.time)}`;
+        })()
+      : null;
+    return {
+      ...s,
+      requestedDisplay: `${email.fmtDate(requestedParts.date)}, ${email.fmtTime(requestedParts.time)}`,
+      escalatedDisplay,
+    };
+  });
 
   res.render('admin/stats', { title: 'Stats', session, stats, roster, partnerCounts, subHistory });
 });
@@ -2235,10 +2378,16 @@ router.get('/sub-list', (req, res) => {
   const list = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
   // Which sessions each master-list person is currently assigned to, purely
   // for visibility on this page — one query rather than one per row. Actual
-  // assignment happens on each session's own /subs page, not here.
+  // assignment happens on each session's own /subs page, not here. Selects
+  // the whole session row (not just id/name) so the view can call
+  // sessionFullTitle() on it — Kyle, 2026-08-30: with every session now
+  // deliberately given a generic name (see "Dashboard session titles" in
+  // CLAUDE.md — day/time/court/club come from the composed title, not the
+  // name field anymore), a bare session name alone isn't enough to tell two
+  // sessions apart here.
   const rows = db
     .prepare(
-      `SELECT ssl.broader_list_id, s.id as session_id, s.name as session_name
+      `SELECT ssl.broader_list_id, s.*
        FROM session_sub_list ssl JOIN sessions s ON s.id = ssl.session_id
        WHERE s.archived_at IS NULL ORDER BY s.name`
     )
@@ -2246,7 +2395,7 @@ router.get('/sub-list', (req, res) => {
   const sessionsByListId = new Map();
   for (const r of rows) {
     if (!sessionsByListId.has(r.broader_list_id)) sessionsByListId.set(r.broader_list_id, []);
-    sessionsByListId.get(r.broader_list_id).push({ id: r.session_id, name: r.session_name });
+    sessionsByListId.get(r.broader_list_id).push(r);
   }
   res.render('admin/sub_list', { title: 'Broader Sub List', list, sessionsByListId, flashMsg: popFlash(req) });
 });
@@ -2447,6 +2596,7 @@ router.get('/email-log', (req, res) => {
 
   res.render('admin/email_log', {
     title: 'Email Log',
+    wideMain: true,
     rows,
     categories,
     counts,
@@ -2481,9 +2631,18 @@ router.get('/activity-log', (req, res) => {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-  const rows = db
+  // Selects the session's own name/day/time/court/club columns (not s.*,
+  // which would collide with al.id) so the view can call sessionFullTitle()
+  // on each row's linked session — Kyle, 2026-08-31: with every session now
+  // deliberately given a generic internal name (see "Dashboard session
+  // titles" in CLAUDE.md), the bare name alone wasn't enough to tell two
+  // sessions apart here, same fix already applied to the Sub List and All
+  // Blackout Dates pages.
+  const rawRows = db
     .prepare(
-      `SELECT al.*, s.name as session_name
+      `SELECT al.*, s.name as session_name, s.match_day_of_week as session_match_day_of_week,
+              s.match_time as session_match_time, s.court_info as session_court_info,
+              s.club_name as session_club_name
        FROM admin_activity_log al
        LEFT JOIN sessions s ON s.id = al.session_id
        ${where}
@@ -2491,13 +2650,38 @@ router.get('/activity-log', (req, res) => {
        LIMIT 300`
     )
     .all(...params);
+  // created_at is plain SQLite datetime('now') -- UTC, same shape as
+  // email_log.sent_at -- so it needs the identical explicit-UTC-parse +
+  // utcToZonedParts() conversion before display, per Kyle's "no UTC anywhere"
+  // rule. This page's "When" column had never been converted at all before.
+  const activityLogTz = getTimezone();
+  const rows = rawRows.map((r) => {
+    const utcInstant = new Date(`${r.created_at.replace(' ', 'T')}Z`);
+    const parts = utcToZonedParts(utcInstant, activityLogTz);
+    return {
+      ...r,
+      createdDisplay: `${email.fmtDate(parts.date)}, ${email.fmtTime(parts.time)}`,
+      sessionForTitle: r.session_id && r.session_name
+        ? {
+            name: r.session_name,
+            match_day_of_week: r.session_match_day_of_week,
+            match_time: r.session_match_time,
+            court_info: r.session_court_info,
+            club_name: r.session_club_name,
+          }
+        : null,
+    };
+  });
 
   const actions = db.prepare('SELECT DISTINCT action FROM admin_activity_log ORDER BY action').all().map((r) => r.action);
   const admins = db.prepare('SELECT DISTINCT admin_name FROM admin_activity_log ORDER BY admin_name').all().map((r) => r.admin_name);
-  const sessions = db.prepare(`SELECT id, name FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
+  // Full session rows (not just id/name) so the filter dropdown can also
+  // show the composed title, same reasoning as above.
+  const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
 
   res.render('admin/activity_log', {
     title: 'Activity Log',
+    wideMain: true,
     rows,
     actions,
     admins,

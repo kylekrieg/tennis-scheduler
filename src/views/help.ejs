@@ -26,7 +26,7 @@
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: jamie@example.com</div>
-    <div class="subject">Riverside Tennis Club — Wednesday Doubles, Sep 2, 6:00 PM, Court 2 — please confirm</div>
+    <div class="subject">Riverside Tennis Club — Tennis Wednesday, Sep 2, 6:00 PM, Court 2 — please confirm</div>
   </div>
   <div class="email-mock-body">
     <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
@@ -40,6 +40,11 @@
       <a href="#" class="btn-needsub">Need a sub? Click here</a>
     </p>
     <p class="email-mock-flag"><strong>You're on ball duty this week</strong> &mdash; please bring the balls.</p>
+    <p><strong>Next few weeks:</strong></p>
+    <ul style="margin:4px 0;">
+      <li>Wednesday, Sep 9 &mdash; Alice Chen, Marcus Lee, Priya Nair, Dan Ostrow</li>
+      <li>Wednesday, Sep 16 &mdash; Alice Chen, Marcus Lee, Priya Nair, Jamie Rivera (ball duty: Priya Nair)</li>
+    </ul>
     <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 2</p>
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
@@ -47,7 +52,7 @@
 
 <h2 id="blackout">Blackout dates</h2>
 <p>Already know a date won't work this season? Go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off every date you can't play — it saves instantly, no confirmation step. This only works before the admin generates the schedule; once it exists, blackout dates lock and you'll use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> instead.</p>
-<p>Enrolled in more than one session with a match on the same date? Enter the blackout date once — it carries over automatically and shows up already checked (greyed out) on the other session.</p>
+<p>Enrolled in more than one session with a match on the same date? Enter the blackout date once — it carries over automatically and shows up already checked (greyed out) on the other session. Want to see every blackout date you've ever entered, across every session at once, not just this one? Check "Show all my blackout dates" right under the name dropdown.</p>
 <p class="muted" style="margin-bottom:0;">You'll also get an email when a new session opens up for blackout dates, so you don't have to go looking:</p>
 <div class="email-mock">
   <div class="email-mock-header">
@@ -69,7 +74,7 @@
   </div>
 </div>
 <p class="muted" style="margin-bottom:0;">The button takes you straight here, with your name already selected:</p>
-<img class="screenshot" src="/img/help/blackout.png" alt="Blackout Dates page showing the session switcher banner, a name dropdown, and a checklist of match dates.">
+<img class="screenshot" src="/img/help/blackout.png?v=<%= assetVersion %>" alt="Blackout Dates page showing the session switcher banner, a name dropdown, and a checklist of match dates.">
 <p class="screenshot-caption">Pick your name, check off the dates you can't make, and save — that's the whole page.</p>
 
 <h2 id="request-sub">Request a Sub</h2>
@@ -93,12 +98,12 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<img class="screenshot" src="/img/help/request-sub.png" alt="Request a Sub page listing every upcoming week with a status badge and a red 'Need a sub for this week' button next to each date.">
+<img class="screenshot" src="/img/help/request-sub.png?v=<%= assetVersion %>" alt="Request a Sub page listing every upcoming week with a status badge and a red 'Need a sub for this week' button next to each date.">
 <p class="screenshot-caption">A red <span class="badge double_booked">double booked</span> badge next to a date is a strong hint that's the one worth requesting a sub for.</p>
 <p class="muted">Once you've requested a sub for a week, the button there is replaced with a note that it's already out; once someone claims it, that week shows <span class="badge subbed_out">subbed out</span> instead. Nothing to click either way — it's just there so you can check it worked.</p>
 
 <h2 id="swap">Swap a Week</h2>
-<p>Prefer to trade with one specific person instead of opening it to the whole roster? Go to <a href="/swap">Swap a Week</a>, pick your name, choose which of your own weeks to give up, then pick who to swap with and which of their weeks you want instead. They get an email and have to accept — nothing changes until they do. You're both still playing the same number of games, just different dates, so neither of you counts as a sub.</p>
+<p>Prefer to trade with one specific person instead of opening it to the whole roster? Go to <a href="/swap">Swap a Week</a>, pick your name, choose which of your own weeks to give up, then pick who to swap with and which of their weeks you want instead. Since this page has no login, submitting doesn't email the other player right away: you'll get a confirmation email first, and only once you click the link in it does the proposal actually go out to them — nothing changes until they accept. You're both still playing the same number of games, just different dates, so neither of you counts as a sub.</p>
 <p class="muted" style="margin-bottom:0;">Here's what the other player sees:</p>
 <div class="email-mock">
   <div class="email-mock-header">
@@ -122,7 +127,7 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<img class="screenshot" src="/img/help/swap.png" alt="Swap a Week page showing 'Which week do you want to give up?' with a table of dates and a 'Give up this week' button next to each.">
+<img class="screenshot" src="/img/help/swap.png?v=<%= assetVersion %>" alt="Swap a Week page showing 'Which week do you want to give up?' with a table of dates and a 'Give up this week' button next to each.">
 <p class="screenshot-caption">Step one: pick which of your own weeks you're offering up. The next page lets you pick who you want to swap with.</p>
 
 <h2 id="timing">The full timeline: what happens, and when</h2>
@@ -243,7 +248,12 @@
 <div class="flowchart">
   <div class="flow-step">
     <div class="flow-title">You propose a trade</div>
-    <div class="flow-detail">Pick one of your own upcoming weeks, a specific teammate, and one of their weeks you'd rather play instead.</div>
+    <div class="flow-detail">Pick one of your own upcoming weeks, a specific teammate, and one of their weeks you'd rather play instead — no link yet, since this page has no login.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step pending">
+    <div class="flow-title">Confirm it's you</div>
+    <div class="flow-detail">A verification email goes to you first. Nothing goes out to the other player until you click the link in it — that's what stops someone else proposing a swap on your behalf.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
@@ -299,18 +309,18 @@
 </div>
 
 <h2 id="my-page">My Page</h2>
-<p>The fastest way to see everything at once. Go to <a href="/me">My Page</a>, pick your name, and bookmark the link (or save it to your phone's home screen) — it always shows your current schedule across every session you're in, no need to pick your name again. Request a sub or propose a swap with one click on any upcoming match, and find your calendar-subscribe link here too.</p>
-<img class="screenshot" src="/img/help/my-page.png" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
+<p>The fastest way to see everything at once. Go to <a href="/me">My Page</a>, pick your name, and bookmark the link (or save it to your phone's home screen) — it always shows your current schedule across every session you're in, no need to pick your name again. Request a sub or propose a swap with one click on any upcoming match, and find your calendar-subscribe link here too. Each session's card also shows a quick target/played/ball-duty line for that session, and — if you've entered a blackout date that lands on one of that session's own match weeks — a note right above the card naming the date.</p>
+<img class="screenshot" src="/img/help/my-page.png?v=<%= assetVersion %>" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
 <p class="screenshot-caption">Enrolled in more than one session? Each one gets its own colored card here — same color you'll see everywhere else that session shows up.</p>
 
 <h2 id="schedule">Season Schedule &amp; Next 4 Weeks</h2>
 <p><a href="/schedule">Season Schedule</a> shows the whole season at a glance — every date, who's playing, how they're paired up, and who's on ball duty. <a href="/lookahead">Next 4 Weeks</a> is the same table trimmed to just what's coming up soon.</p>
-<img class="screenshot" src="/img/help/next-four-weeks.png" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
+<img class="screenshot" src="/img/help/next-four-weeks.png?v=<%= assetVersion %>" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
 <p class="screenshot-caption">Team A and Team B for each date, plus who's bringing the balls that week.</p>
 
 <h2 id="calendar">Calendar</h2>
 <p>Go to <a href="/calendar">Calendar</a> to add your matches to your phone or computer, two ways: a one-time download for the current season, or <strong>Subscribe</strong>, which stays up to date automatically as your schedule changes — the better choice if you don't want to think about it again.</p>
-<img class="screenshot" src="/img/help/calendar.png" alt="Personal Calendar page with two sections: a one-time .ics download and a Subscribe option with a webcal link.">
+<img class="screenshot" src="/img/help/calendar.png?v=<%= assetVersion %>" alt="Personal Calendar page with two sections: a one-time .ics download and a Subscribe option with a webcal link.">
 <p class="screenshot-caption">Subscribe once and re-schedules, subs, and swaps show up automatically — no need to come back and re-download.</p>
 
 <h2 id="pdf">Print Schedule</h2>
@@ -323,7 +333,7 @@
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: dan@example.com</div>
-    <div class="subject">Riverside Tennis Club — Pickup game Sep 4, 6:00 PM, Court 4 — want in?</div>
+    <div class="subject">Riverside Tennis Club — Pickup game Thursday, Sep 4, 6:00 PM, Court 4 — want in?</div>
   </div>
   <div class="email-mock-body">
     <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
@@ -335,13 +345,14 @@
     <p><a href="#" class="btn-confirm">I'm in</a></p>
     <p>If you're not free this time, no need to do anything — you'll get invited again for the next one.</p>
     <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 4</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
 <p>If sign-ups aren't a clean multiple of 4 as match day nears, anyone who hasn't signed up yet may get one short reminder asking if they're still in. Once it's decided — usually about a day before — you'll get one of two follow-ups. Landed on a court? A note telling you who you're playing with:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: dan@example.com</div>
-    <div class="subject">Riverside Tennis Club — You're in — Sep 4, 6:00 PM, Court 4</div>
+    <div class="subject">Riverside Tennis Club — You're in — Thursday, Sep 4, 6:00 PM, Court 4</div>
   </div>
   <div class="email-mock-body">
     <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
@@ -352,6 +363,7 @@
     <p>You're set for <strong>Thursday, Sep 4</strong> at 6:00 PM, Court 4.</p>
     <p><strong>Playing with:</strong> Alice Chen, Marcus Lee, Priya Nair</p>
     <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 4</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
 <p class="muted">— or, if your group never reached 4, a short note that this one didn't come together. Either way, there's nothing more to do; you'll be invited again for the next pickup game.</p>

@@ -1,12 +1,31 @@
 'use strict';
 const PDFDocument = require('pdfkit');
 const db = require('../db');
-const { sessionPublicLabel, sessionColor } = require('./email');
+const { sessionFullTitle, sessionColor, fmtTime, DOW_NAMES } = require('./email');
 const { doubleBookingMapForSession, getViewableSessions } = require('./sessionHelper');
 
 function fmtDateShort(iso) {
   const d = new Date(iso + 'T00:00:00Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** "Wed · 5:30 PM · Frontenac Tennis Club, Court 4" — day/time/place, no
+ * session name. Used only in the all-active-sessions PDF's "Session" column
+ * (Kyle, 2026-08-31: "remove the session name and add the day of the week
+ * and the time" — with several generically-named sessions active at once,
+ * the name itself wasn't the useful part of that column; day/time/court is
+ * what actually tells two rows apart). Day is abbreviated to fit the
+ * column's width; the per-row colored dot (see sessionColor below) is what
+ * disambiguates two sessions that happen to share day/time/place. */
+function pdfDayTimePlace(session) {
+  const parts = [];
+  if (session.match_day_of_week !== null && session.match_day_of_week !== undefined) {
+    parts.push(DOW_NAMES[session.match_day_of_week].slice(0, 3));
+  }
+  if (session.match_time) parts.push(fmtTime(session.match_time));
+  const place = [session.club_name, session.court_info].filter(Boolean).join(', ');
+  if (place) parts.push(place);
+  return parts.join(' · ');
 }
 
 /**
@@ -65,15 +84,30 @@ function streamSeasonPDF(sessionId, res) {
     }
   }
 
+  // Kyle, 2026-08-31: "let's make sure the time and day of week is
+  // included in the header" and "the session, day of week and court is
+  // included in the file name" — with several generically-named sessions
+  // active at once (see "Dashboard session titles" in CLAUDE.md), the bare
+  // session name alone wasn't enough to tell one printed PDF apart from
+  // another. sessionFullTitle() already composes name/day/time/court/club
+  // in one string, so the header switches to that instead of
+  // sessionPublicLabel() (which omits day/time). The filename is built
+  // separately from the same fields (day of week + court, not the full
+  // composed title, per Kyle's specific list) since a filename needs its
+  // own sanitization, not sessionFullTitle()'s "·"-joined display format.
+  const dow = session.match_day_of_week !== null && session.match_day_of_week !== undefined ? DOW_NAMES[session.match_day_of_week] : '';
+  const filenameParts = [session.name, dow, session.court_info].filter(Boolean).join(' ');
+  const filename = `${filenameParts.replace(/[^a-z0-9]+/gi, '_')}_schedule.pdf`;
+
   const doc = new PDFDocument({ size: 'LETTER', margin: 24 });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${session.name.replace(/[^a-z0-9]+/gi, '_')}_schedule.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
 
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const pageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom;
 
-  doc.fontSize(16).text(`${sessionPublicLabel(session)} — Full Season Schedule`, { align: 'center' });
+  doc.fontSize(16).text(`${sessionFullTitle(session)} — Full Season Schedule`, { align: 'center' });
   const headerHeight = 28;
 
   const multiCourt = session.players_per_week > 4;
@@ -288,7 +322,7 @@ function streamAllSessionsPDF(res) {
   for (const r of rows) {
     const teamAText = label(r.teams.A) || '—';
     const teamBText = label(r.teams.B) || '—';
-    const sessionText = sessionPublicLabel(r.session);
+    const sessionText = pdfDayTimePlace(r.session);
     const rowHeight =
       Math.max(
         fontSize + rowPad,

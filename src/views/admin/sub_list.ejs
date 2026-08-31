@@ -26,7 +26,7 @@
           <% if (forSessions.length === 0) { %>
             <span class="muted">not assigned to any session</span>
           <% } else { %>
-            <% forSessions.forEach(function(s, i) { %><a href="/admin/sessions/<%= s.id %>/subs"><%= s.name %></a><%= i < forSessions.length - 1 ? ', ' : '' %><% }) %>
+            <% forSessions.forEach(function(s, i) { %><a href="/admin/sessions/<%= s.id %>/subs"><%= sessionFullTitle(s) %></a><%= i < forSessions.length - 1 ? ' · ' : '' %><% }) %>
           <% } %>
         </td>
         <td>

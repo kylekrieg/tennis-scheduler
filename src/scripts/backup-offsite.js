@@ -15,15 +15,28 @@
 // missing off-site config shouldn't be treated as a hard failure.
 require('dotenv').config();
 const { pushBackupsOffsite } = require('../services/offsiteBackup');
+const { logSystemActivity } = require('../services/activityLog');
 
 try {
   const result = pushBackupsOffsite();
   if (result.skipped) {
+    // Not configured yet -- same as the admin-UI route, this isn't logged
+    // as an activity since nothing actually happened.
     console.log(`[backup-offsite] ${new Date().toISOString()} skipped: ${result.reason}`);
   } else {
     console.log(`[backup-offsite] ${new Date().toISOString()} pushed backups/ to remote via rsync`);
+    try {
+      logSystemActivity({ action: 'backup.push_offsite', description: 'Automatic off-site push: pushed backups/ to the off-site machine' });
+    } catch (logErr) {
+      console.error(`[backup-offsite] activity log write failed (push itself succeeded): ${logErr.message}`);
+    }
   }
 } catch (err) {
   console.error(`[backup-offsite] failed: ${err.message}`);
+  try {
+    logSystemActivity({ action: 'backup.push_offsite', description: `Automatic off-site push failed: ${err.message}` });
+  } catch (logErr) {
+    console.error(`[backup-offsite] activity log write also failed: ${logErr.message}`);
+  }
   process.exit(1);
 }

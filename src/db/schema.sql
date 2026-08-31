@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
+  username      TEXT,
   email         TEXT,
   password_hash TEXT NOT NULL,
   active        INTEGER NOT NULL DEFAULT 1,

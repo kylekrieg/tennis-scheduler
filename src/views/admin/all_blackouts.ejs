@@ -1,27 +1,50 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>All Blackout Dates</h1>
-<p class="muted">Every player currently enrolled in an active session, and every blackout date on record for them — across every session, not just one. This is read-only; to add or remove a date, use a specific session's Blackout Dates page (any session that player's on works, since a date is universal regardless of where it's entered).</p>
+<p class="muted">Organized by session, so it's clear which blackout date actually corresponds to which session's match weeks — only players with a blackout date landing on that session's own weeks are listed under it. This is read-only; to add or remove a date, use a specific session's Blackout Dates page (any session that player's on works, since a date is universal regardless of where it's entered).</p>
 
 <% if (sessions.length === 0) { %>
   <p class="muted">No active sessions yet.</p>
-<% } else if (rows.length === 0) { %>
-  <p class="muted">No players enrolled in any active session yet.</p>
 <% } else { %>
-  <div class="card wide">
-    <table>
-      <thead><tr><th style="white-space:nowrap;">Player</th><th>Session(s)</th><th>Blackout dates</th></tr></thead>
-      <tbody>
-        <% rows.forEach(function(row) { %>
-          <tr>
-            <td style="white-space:nowrap;"><%= row.name %></td>
-            <td>
-              <% row.sessions.forEach(function(s, i) { %><% if (i > 0) { %>, <% } %><a href="/admin/sessions/<%= s.id %>/blackouts"><%= s.name %></a><% }) %>
-            </td>
-            <td><%= row.dates.length ? row.dates.join(', ') : '—' %></td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
-  </div>
+  <% bySession.forEach(function(entry) { %>
+    <div class="card wide" style="border-left:6px solid <%= sessionColor(entry.session) %>;margin-top:16px;">
+      <h2 style="margin-top:0;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(entry.session) %>;margin-right:6px;"></span>
+        <a href="/admin/sessions/<%= entry.session.id %>/blackouts"><%= sessionFullTitle(entry.session) %></a>
+      </h2>
+      <% if (entry.playerRows.length === 0) { %>
+        <p class="muted">No blackout dates entered for this session's weeks yet.</p>
+      <% } else { %>
+        <table>
+          <thead><tr><th style="white-space:nowrap;">Player</th><th>Blackout dates for this session</th></tr></thead>
+          <tbody>
+            <% entry.playerRows.forEach(function(row) { %>
+              <tr>
+                <td style="white-space:nowrap;"><%= row.name %></td>
+                <td><%= row.dates.join(', ') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  <% }) %>
+
+  <% if (otherRows.length > 0) { %>
+    <div class="card wide" style="margin-top:16px;">
+      <h2 style="margin-top:0;">Other blackout dates on record</h2>
+      <p class="muted">Real dates on file for these players that don't land on any of their currently active sessions' own match weeks — usually a date entered for a since-archived session, or one beyond the currently generated week range. Nothing to act on here, just shown for completeness.</p>
+      <table>
+        <thead><tr><th style="white-space:nowrap;">Player</th><th>Dates</th></tr></thead>
+        <tbody>
+          <% otherRows.forEach(function(row) { %>
+            <tr>
+              <td style="white-space:nowrap;"><%= row.name %></td>
+              <td><%= row.dates.join(', ') %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
 <% } %>
 <%- include('../partials/footer') %>

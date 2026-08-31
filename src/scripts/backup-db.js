@@ -8,13 +8,27 @@
 // Pi itself dies, and what to do about that).
 require('dotenv').config();
 const { createBackup, pruneBackups, DEFAULT_RETENTION } = require('../services/backup');
+const { logSystemActivity } = require('../services/activityLog');
 
 try {
   const result = createBackup();
   const pruned = pruneBackups(DEFAULT_RETENTION);
   const kb = (result.size / 1024).toFixed(1);
-  console.log(`[backup] ${new Date().toISOString()} wrote ${result.filename} (${kb} KB)${pruned ? `, pruned ${pruned} old backup(s)` : ''}`);
+  const prunedNote = pruned ? `, pruned ${pruned} old backup(s)` : '';
+  console.log(`[backup] ${new Date().toISOString()} wrote ${result.filename} (${kb} KB)${prunedNote}`);
+  try {
+    logSystemActivity({ action: 'backup.create', description: `Automatic backup created: ${result.filename} (${kb} KB)${prunedNote}` });
+  } catch (logErr) {
+    // Don't let a logging failure look like the backup itself failed --
+    // the .db file is already safely written by this point.
+    console.error(`[backup] activity log write failed (backup itself succeeded): ${logErr.message}`);
+  }
 } catch (err) {
   console.error(`[backup] failed: ${err.message}`);
+  try {
+    logSystemActivity({ action: 'backup.create', description: `Automatic backup failed: ${err.message}` });
+  } catch (logErr) {
+    console.error(`[backup] activity log write also failed: ${logErr.message}`);
+  }
   process.exit(1);
 }

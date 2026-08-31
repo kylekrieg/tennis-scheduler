@@ -12,7 +12,21 @@
       <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
     <% }) %>
   </select>
+  <% if (selectedPlayerId) { %>
+    <div class="checkbox-row" style="margin-top:8px;">
+      <input type="checkbox" name="showAll" id="showAll" value="1" <%= showAll ? 'checked' : '' %> onchange="this.form.submit()">
+      <label for="showAll" style="margin:0;font-weight:400;">Show all my blackout dates (every session)</label>
+    </div>
+  <% } %>
 </form>
+
+<% if (selectedPlayerId && showAll) { %>
+  <% if (allBlackoutDatesList.length === 0) { %>
+    <p class="notice">You have no blackout dates on record anywhere.</p>
+  <% } else { %>
+    <p class="notice">All of your blackout dates, across every session: <strong><%= allBlackoutDatesList.join(', ') %></strong></p>
+  <% } %>
+<% } %>
 
 <% if (saved) { %><p class="notice">Blackout dates saved.</p><% } %>
 <% if (locked) { %><p class="flag error">This season's already been scheduled, so blackout dates can't be changed here anymore. Use <a href="/request-sub">Request a Sub</a> if you need to miss a specific week.</p><% } %>

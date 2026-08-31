@@ -863,4 +863,5 @@ module.exports = {
   sessionFullTitle,
   sessionColor,
   matchBanner,
+  DOW_NAMES,
 };

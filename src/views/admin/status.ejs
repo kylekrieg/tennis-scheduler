@@ -127,7 +127,11 @@
             <% } else if (e.type === 'lock') { %>Week locks
             <% } %>
           </td>
-          <td><a href="/admin/sessions/<%= e.session.id %>"><%= e.session.name %></a> <span class="muted"><%= fmtDate(e.week.match_date) %></span></td>
+          <td>
+            <a href="/admin/sessions/<%= e.session.id %>"><%= e.session.name %></a>
+            <span class="muted">· <%= fmtTime(e.session.match_time) %><% if (e.session.court_info) { %> · <%= e.session.court_info %><% } %></span>
+            <br><span class="muted"><%= fmtDate(e.week.match_date) %></span>
+          </td>
           <td>
             <% if (e.recipients.length === 0) { %><span class="muted">—</span>
             <% } else { %><%= e.recipients.join(', ') %><% } %>

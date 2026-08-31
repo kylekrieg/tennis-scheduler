@@ -12,7 +12,7 @@
     <select name="session" id="session">
       <option value="">All</option>
       <% sessions.forEach(function(s) { %>
-        <option value="<%= s.id %>" <%= String(filters.session) === String(s.id) ? 'selected' : '' %>><%= s.name %></option>
+        <option value="<%= s.id %>" <%= String(filters.session) === String(s.id) ? 'selected' : '' %>><%= sessionFullTitle(s) %></option>
       <% }) %>
     </select>
   </div>
@@ -39,17 +39,17 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Description</th><th>Session</th></tr></thead>
+  <thead><tr><th style="white-space:nowrap;min-width:150px;">When</th><th>Admin</th><th>Action</th><th>Description</th><th>Session</th></tr></thead>
   <tbody>
     <% rows.forEach(function(r) { %>
       <tr>
-        <td class="muted"><%= r.created_at %></td>
+        <td class="muted" style="white-space:nowrap;"><%= r.createdDisplay %></td>
         <td><%= r.admin_name %></td>
         <td><span class="badge scheduled"><%= r.action %></span></td>
         <td><%= r.description %></td>
         <td class="muted">
-          <% if (r.session_id && r.session_name) { %>
-            <a href="/admin/sessions/<%= r.session_id %>"><%= r.session_name %></a>
+          <% if (r.session_id && r.sessionForTitle) { %>
+            <a href="/admin/sessions/<%= r.session_id %>"><%= sessionFullTitle(r.sessionForTitle) %></a>
           <% } else if (r.session_id) { %>
             (deleted session)
           <% } else { %>—<% } %>

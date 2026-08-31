@@ -4,7 +4,7 @@ This is the "start here" document for whoever picks up this codebase next — wr
 
 ## What this is
 
-A self-hosted, no-login season scheduler for a recurring doubles tennis group. Plain Node/Express/EJS, SQLite via Node's built-in `node:sqlite` (no native build step, by design — see "Gotchas" below), running on a Raspberry Pi. Two session types: regular (season-long, fairness-optimized scheduling with confirm/sub/swap flows) and ad-hoc (first-come-first-served pickup games). No user accounts for players — everything is single-use emailed links; only admins log in, with a single shared password-only login.
+A self-hosted, no-login season scheduler for a recurring doubles tennis group. Plain Node/Express/EJS, SQLite via Node's built-in `node:sqlite` (no native build step, by design — see "Gotchas" below), running on a Raspberry Pi. Two session types: regular (season-long, fairness-optimized scheduling with confirm/sub/swap flows) and ad-hoc (first-come-first-served pickup games). No user accounts for players — everything is single-use emailed links; only admins log in, each with their own username + password (see "Admin accounts" in `CLAUDE.md`).
 
 ## How the documentation fits together
 
