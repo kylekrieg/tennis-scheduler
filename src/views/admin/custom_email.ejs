@@ -10,6 +10,10 @@
     <input type="radio" name="recipient_type" value="session" id="type_session">
     <label for="type_session" style="margin:0;font-weight:400;">Whole session roster</label>
   </div>
+  <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="template_test" id="type_template_test">
+    <label for="type_template_test" style="margin:0;font-weight:400;">Test a template</label>
+  </div>
 
   <div id="player-picker">
     <label for="player_id">Player</label>
@@ -26,10 +30,24 @@
     <p class="muted" style="margin-top:4px;">Goes to every active player currently on this session's roster — the same list "Notify roster" or ad-hoc invites would use.</p>
   </div>
 
-  <label for="subject">Subject</label>
-  <input type="text" name="subject" id="subject" required>
-  <label for="body">Message</label>
-  <textarea name="body" id="body" required></textarea>
+  <div id="template-picker" style="display:none;">
+    <label for="template_key">Template</label>
+    <select name="template_key" id="template_key">
+      <% templates.forEach(function(t) { %><option value="<%= t.key %>"><%= t.label %></option><% }) %>
+    </select>
+    <label for="test_player_id">Send test to</label>
+    <select name="test_player_id" id="test_player_id">
+      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
+    </select>
+    <p class="muted" style="margin-top:4px;">Sends the real template, built from this player's own current schedule where relevant, so you can confirm it renders and delivers correctly. Subject line gets a "[TEST]" prefix and it's logged under its own category — a real automatic reminder/follow-up/escalation for this player can never be skipped because of it. Any Confirm/Need-a-sub/Claim/Accept link in the email is inert (clicking it does nothing) — this is for checking the email itself, not testing the click-through flow.</p>
+  </div>
+
+  <div id="subject-body-fields">
+    <label for="subject">Subject</label>
+    <input type="text" name="subject" id="subject" required>
+    <label for="body">Message</label>
+    <textarea name="body" id="body" required></textarea>
+  </div>
   <div class="actions"><button class="btn green" type="submit">Send</button></div>
 </form>
 
@@ -37,11 +55,20 @@
   (function () {
     var playerPicker = document.getElementById('player-picker');
     var sessionPicker = document.getElementById('session-picker');
+    var templatePicker = document.getElementById('template-picker');
+    var subjectBody = document.getElementById('subject-body-fields');
+    var subject = document.getElementById('subject');
+    var body = document.getElementById('body');
     document.querySelectorAll('input[name="recipient_type"]').forEach(function (r) {
       r.addEventListener('change', function () {
         var toSession = this.value === 'session';
-        playerPicker.style.display = toSession ? 'none' : '';
+        var toTemplate = this.value === 'template_test';
+        playerPicker.style.display = toSession || toTemplate ? 'none' : '';
         sessionPicker.style.display = toSession ? '' : 'none';
+        templatePicker.style.display = toTemplate ? '' : 'none';
+        subjectBody.style.display = toTemplate ? 'none' : '';
+        subject.required = !toTemplate;
+        body.required = !toTemplate;
       });
     });
   })();

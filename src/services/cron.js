@@ -23,7 +23,7 @@ const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 async function sendReminderEmailsForWeek(week, session) {
   const assignments = db
     .prepare(
-      `SELECT wa.*, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+      `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa JOIN players p ON p.id = wa.player_id
        WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed')`
     )
     .all(week.id);
@@ -156,7 +156,7 @@ async function processFollowUps() {
 
         const assignments = db
           .prepare(
-            `SELECT wa.*, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+            `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa JOIN players p ON p.id = wa.player_id
              WHERE wa.week_id = ? AND wa.status = 'scheduled'`
           )
           .all(week.id);

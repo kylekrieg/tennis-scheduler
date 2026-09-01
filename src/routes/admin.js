@@ -27,6 +27,7 @@ const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
+const testEmail = require('../services/testEmail');
 const { rateLimiter } = require('../middleware/rateLimiter');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
@@ -1718,7 +1719,7 @@ router.post('/sessions/:id/weeks/:weekId/ball-duty', (req, res) => {
 });
 
 router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(async (req, res) => {
-  const assignment = db.prepare('SELECT wa.*, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?').get(req.params.assignmentId);
+  const assignment = db.prepare('SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?').get(req.params.assignmentId);
   const week = subFlow.getWeekWithSession(req.params.weekId);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   if (!assignment) return res.status(404).send('Not found');
@@ -2489,7 +2490,8 @@ router.post('/sessions/:id/subs', (req, res) => {
 router.get('/email', (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
   const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
-  res.render('admin/custom_email', { title: 'Send Email', players, sessions, flashMsg: popFlash(req) });
+  const templates = testEmail.listTemplates();
+  res.render('admin/custom_email', { title: 'Send Email', players, sessions, templates, flashMsg: popFlash(req) });
 });
 
 // recipient_type='session' fans the same message out to every active
@@ -2498,7 +2500,33 @@ router.get('/email', (req, res) => {
 // notices, ad-hoc invites, etc.), instead of a single player_id. One
 // sendCustomEmail() call per recipient, so email_log gets one row per
 // person same as any other bulk send — nothing new to reconcile there.
+//
+// recipient_type='template_test' (Kyle, 2026-09-01: "Is there a way to send
+// test messages for all the email templates we've made?... if we wanted to
+// send a test email to confirm an email is working to someone on the
+// roster, we could") is a third, distinct branch — it doesn't touch
+// subject/body at all, it fires one of the app's real ~21 email templates
+// (reminder, sub request, swap, ad-hoc, admin report, etc.) at a chosen
+// roster player via testEmail.js's sendTestEmail(), which builds real-ish
+// content from that player's own current schedule but forces every send
+// into "test mode" (see email.js's sendMail() and testEmail.js's own doc
+// comment) — a distinct 'test' email_log category so it can never satisfy a
+// cron dedup check, and fake/inert tokens so no link in the email can
+// actually mutate anything if clicked. Default behavior for this page (the
+// two branches above) is completely unchanged.
 router.post('/email', asyncHandler(async (req, res) => {
+  if (req.body.recipient_type === 'template_test') {
+    const result = await testEmail.sendTestEmail(req.body.template_key, Number(req.body.test_player_id) || 0);
+    if (!result.ok) {
+      flash(req, result.error || 'Could not send test email.', 'error');
+      return res.redirect('/admin/email');
+    }
+    const tpl = testEmail.TEMPLATES[req.body.template_key];
+    const player = db.prepare('SELECT name FROM players WHERE id = ?').get(Number(req.body.test_player_id) || 0);
+    flash(req, `Test email ("${tpl ? tpl.label : req.body.template_key}") sent to ${player ? player.name : 'player'}. Links in it are inert — clicking them won't confirm, claim, or change anything real.`);
+    return res.redirect('/admin/email');
+  }
+
   const subject = req.body.subject;
   const body = req.body.body;
 
