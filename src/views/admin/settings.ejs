@@ -5,6 +5,10 @@
   <input type="text" name="timezone" id="timezone" value="<%= timezone %>">
   <p class="muted">Used for all cron scheduling (reminders, escalations) and displayed times.</p>
 
+  <label for="site_title" style="margin-top:16px;display:block;">Site title</label>
+  <input type="text" name="site_title" id="site_title" value="<%= siteTitle %>">
+  <p class="muted">The brand text in the upper-left corner of every public-facing page (the "You're viewing" banner and nav don't change — just this one link). Emoji are fine to include directly in the text.</p>
+
   <div class="actions"><button class="btn green" type="submit">Save</button></div>
 </form>
 <p class="muted" style="margin-top:16px;">Looking for club name or court location? Those are set per session now, since one install can run sessions for different clubs or courts — set them on each session's <strong>Edit session &amp; roster</strong> page.</p>

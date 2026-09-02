@@ -262,6 +262,30 @@ ensureColumn('players', 'slug', 'TEXT');
   }
 }
 
+// broader_sub_list.slug (Kyle, 2026-09-01): "should we create a slug URL
+// for the broader sub list so an admin could control them so there is no
+// conflicts?" Same bookmarkable-URL idea as players.slug above, but
+// exposed on the Broader Sub List admin page ahead of time — reserved the
+// moment someone's added, rather than only generated (with no admin
+// visibility) when claimSub() creates their real players row at claim
+// time (see subFlow.js). Every existing row predates this column, so
+// backfill every NULL slug once, same "id ASC, unconditional
+// WHERE-guarded" pattern as players.slug just above — except uniqueness
+// is checked against BOTH players.slug (the real namespace this value
+// lands in once claimed) and every other broader_sub_list.slug, via
+// generateUniqueBroaderSubSlug() — see its doc comment in playerSlug.js.
+ensureColumn('broader_sub_list', 'slug', 'TEXT');
+{
+  const { generateUniqueBroaderSubSlug } = require('../services/playerSlug');
+  const unslugged = raw.prepare('SELECT id, name FROM broader_sub_list WHERE slug IS NULL ORDER BY id ASC').all();
+  if (unslugged.length > 0) {
+    const setSlug = raw.prepare('UPDATE broader_sub_list SET slug = ? WHERE id = ?');
+    for (const bl of unslugged) {
+      setSlug.run(generateUniqueBroaderSubSlug(raw, bl.name, bl.id), bl.id);
+    }
+  }
+}
+
 // Admin usernames (Kyle, 2026-08-29): every admin row created before this
 // column existed has no username — backfill each one from their name, same
 // "unconditional WHERE-guarded, id-ASC, collision-resolved" pattern as
@@ -281,6 +305,15 @@ ensureColumn('admins', 'username', 'TEXT');
     }
   }
 }
+
+// Configurable public-site title (Kyle, 2026-09-01): the "🎾 Doubles
+// Schedule" brand link in the upper-left corner of every player-facing page
+// (partials/header.ejs) was hardcoded — admin-only, site-wide config, same
+// as timezone, so it lives on the same app_settings singleton row rather
+// than a new table. Defaulted to the exact string that was hardcoded before
+// this, so every existing install keeps showing the identical text until an
+// admin actually changes it.
+ensureColumn('app_settings', 'site_title', "TEXT NOT NULL DEFAULT '🎾 Doubles Schedule'");
 
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of

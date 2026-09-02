@@ -69,4 +69,43 @@ function generateUniqueSlug(db, name, excludePlayerId) {
   return candidate;
 }
 
-module.exports = { SLUG_RE, slugify, slugTaken, generateUniqueSlug };
+/**
+ * broader_sub_list.slug (Kyle, 2026-09-01): "should we create a slug URL
+ * for the broader sub list? We could even have an edge case where a
+ * broader sub takes the place of a regular roster player." Same
+ * bookmarkable-URL idea as players.slug — but exposed to the admin up
+ * front on the Broader Sub List page, so a real collision (two "John S"s
+ * on the sub list) can be resolved before either person ever claims a
+ * spot, rather than only being discovered when claimSub() auto-generates
+ * one at claim time (see subFlow.js, which uses a sub-list entry's slug
+ * directly once they claim and become a real players row).
+ *
+ * Uniqueness has to be checked against BOTH tables: players.slug (the real
+ * namespace this value lands in the moment someone claims) and every
+ * OTHER broader_sub_list.slug (so two people who've never claimed anything
+ * yet can't collide with each other before either one is in `players` at
+ * all).
+ */
+function broaderSubSlugTaken(db, slug, excludeListId) {
+  if (db.prepare('SELECT id FROM players WHERE slug = ?').get(slug)) return true;
+  const row = excludeListId
+    ? db.prepare('SELECT id FROM broader_sub_list WHERE slug = ? AND id != ?').get(slug, excludeListId)
+    : db.prepare('SELECT id FROM broader_sub_list WHERE slug = ?').get(slug);
+  return !!row;
+}
+
+/** Same "-2, -3, ..." collision-resolution as generateUniqueSlug() above,
+ * but checked against the combined players + broader_sub_list namespace
+ * via broaderSubSlugTaken(). */
+function generateUniqueBroaderSubSlug(db, name, excludeListId) {
+  const base = slugify(name);
+  let candidate = base;
+  let n = 2;
+  while (broaderSubSlugTaken(db, candidate, excludeListId)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+module.exports = { SLUG_RE, slugify, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug };

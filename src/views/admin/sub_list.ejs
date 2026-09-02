@@ -7,11 +7,14 @@
   <input type="text" name="name" id="name" required>
   <label for="email">Email</label>
   <input type="email" name="email" id="email" required>
+  <label for="slug">URL slug (optional)</label>
+  <input type="text" name="slug" id="slug" placeholder="auto-generated from name if left blank">
+  <p class="muted" style="font-size:12px;margin-top:2px;">Reserved now, used for their My Page link (<code>/me/&lt;slug&gt;</code>) the moment they claim their first sub. Lowercase letters, numbers, and hyphens only — leave blank to generate one from the name automatically.</p>
   <div class="actions"><button class="btn green" type="submit">Add</button></div>
 </form>
 
 <table class="wide">
-  <thead><tr><th>Name</th><th>Email</th><th>Assigned to</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>Email</th><th>URL slug</th><th>Assigned to</th><th>Actions</th></tr></thead>
   <tbody>
     <% list.forEach(function(l) { %>
       <% var forSessions = sessionsByListId.get(l.id) || []; %>
@@ -22,6 +25,10 @@
           </form>
         </td>
         <td><input type="email" name="email" value="<%= l.email %>" form="edit-<%= l.id %>" style="width:200px;"></td>
+        <td>
+          <input type="text" name="slug" value="<%= l.slug %>" form="edit-<%= l.id %>" style="width:120px;">
+          <div class="muted" style="font-size:11px;">/me/<%= l.slug %></div>
+        </td>
         <td>
           <% if (forSessions.length === 0) { %>
             <span class="muted">not assigned to any session</span>
@@ -35,7 +42,8 @@
         </td>
       </tr>
     <% }) %>
-    <% if (list.length === 0) { %><tr><td colspan="4" class="muted">Empty.</td></tr><% } %>
+    <% if (list.length === 0) { %><tr><td colspan="5" class="muted">Empty.</td></tr><% } %>
   </tbody>
 </table>
+<p class="muted">The URL slug is reserved the moment someone's added to this list, and reused as-is the first time they claim a sub (rather than generating a fresh one then) — so if two people would otherwise land on the same slug (e.g. two "John S"s), you can resolve it here before either one ever claims anything. Editing it later never changes an existing "My Page" link someone's already been sent — only edit it directly here to fix a real collision.</p>
 <%- include('../partials/footer') %>

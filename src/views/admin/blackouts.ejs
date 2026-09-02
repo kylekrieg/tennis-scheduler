@@ -1,5 +1,5 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
-<h1>Blackout Dates — <%= session.name %></h1>
+<h1>Blackout Dates — <%= sessionFullTitle(session) %></h1>
 
 <% if (session.status === 'draft') { %>
   <div class="card wide">

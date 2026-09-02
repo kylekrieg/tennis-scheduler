@@ -6,6 +6,7 @@ const email = require('./email');
 const { zonedTimeToUtc } = require('./tz');
 const { getTimezone } = require('./settings');
 const { carriedOverBlackoutsForSession } = require('./sessionHelper');
+const { generateUniqueSlug } = require('./playerSlug');
 
 /**
  * The master broader_sub_list, scoped down to just the people an admin has
@@ -347,8 +348,21 @@ async function claimSub(rawToken) {
     // Broader-list subs must exist as a player row so they can be scheduled/emailed like anyone else.
     let existing = db.prepare('SELECT * FROM players WHERE email = ?').get(bl.email);
     if (!existing) {
-      const info = db.prepare('INSERT INTO players (name, email) VALUES (?, ?)').run(bl.name, bl.email);
-      existing = { id: info.lastInsertRowid, name: bl.name, email: bl.email };
+      // Reuse the slug already reserved on the broader_sub_list row itself
+      // (Kyle, 2026-09-01 — see admin/sub_list.ejs and playerSlug.js's
+      // generateUniqueBroaderSubSlug()) rather than generating a fresh one
+      // here: every sub-list entry gets a slug the moment it's added (or,
+      // for a pre-existing entry, at the next boot's backfill), specifically
+      // so an admin can see and control it — and resolve a real collision
+      // between two pending entries — before either one ever claims a spot.
+      // Ignoring bl.slug and generating a brand-new one at claim time would
+      // silently throw that admin control away. The generateUniqueSlug()
+      // fallback only matters for the narrow edge case of a bl.slug that's
+      // somehow still blank (shouldn't happen post-backfill, but avoids a
+      // literal "/me/" link if it ever does).
+      const slug = bl.slug || generateUniqueSlug(db, bl.name, null);
+      const info = db.prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)').run(bl.name, bl.email, slug);
+      existing = { id: info.lastInsertRowid, name: bl.name, email: bl.email, slug };
     }
     subPlayer = existing;
   }

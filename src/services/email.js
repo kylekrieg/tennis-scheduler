@@ -1,6 +1,8 @@
 'use strict';
 const nodemailer = require('nodemailer');
 const db = require('../db');
+const { getTimezone } = require('./settings');
+const { utcToZonedParts } = require('./tz');
 
 let transport = null;
 function getTransport() {
@@ -187,6 +189,43 @@ function sessionPublicLabel(session) {
 const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
+ * "today"/"tomorrow"/"Wednesday" (and the matching possessive form) for the
+ * follow-up reminder's subject and body — computed against the real gap
+ * between the moment the email is actually being sent and the match date,
+ * not assumed. Kyle, 2026-09-01: noticed a test follow-up email always said
+ * "today's doubles match" and asked whether that changes based on when it's
+ * actually sent. It didn't — the wording was hardcoded. That's a real
+ * mismatch given how `follow_up_lead_hours` is designed: its default (27h)
+ * is deliberately set to land the afternoon *before* a typical evening
+ * match (see "Follow-up timing became a per-session configurable lead time"
+ * in CLAUDE.md), so in the common case this email fires the day before and
+ * "today's" was simply wrong. An admin can still configure a short lead
+ * time that fires same-day, or an unusually long one that fires more than a
+ * day out, so this checks the actual gap rather than assuming either.
+ *
+ * `matchDateStr` and "today" are both compared as plain 'YYYY-MM-DD'
+ * strings in the app's configured timezone (utcToZonedParts), not the
+ * server's own local time — same reasoning as every other lead-hours
+ * display conversion in this app (see tz.js's utcToZonedParts doc comment).
+ */
+function relativeDayPhrase(matchDateStr) {
+  const tz = getTimezone();
+  const todayStr = utcToZonedParts(new Date(), tz).date;
+  const diffDays = Math.round((Date.parse(matchDateStr + 'T00:00:00Z') - Date.parse(todayStr + 'T00:00:00Z')) / 86400000);
+  if (diffDays === 0) return { subject: 'today', possessive: "today's" };
+  if (diffDays === 1) return { subject: 'tomorrow', possessive: "tomorrow's" };
+  if (diffDays > 1) {
+    const dow = DOW_NAMES[new Date(matchDateStr + 'T00:00:00Z').getUTCDay()];
+    return { subject: dow, possessive: `${dow}'s` };
+  }
+  // The match date has already passed — shouldn't normally happen, since a
+  // follow-up only ever fires before match time (see cron.js's
+  // processFollowUps), but fail toward something that still reads sensibly
+  // rather than a flatly wrong "today's" for a match that's already over.
+  return { subject: 'that match', possessive: 'that' };
+}
+
+/**
  * "Session name · Day of week · Match Time · Court/location · Club/group
  * name" — the full composed title Kyle asked for (2026-08-29), first built
  * for the admin dashboard's session headings and then extended to the
@@ -367,11 +406,12 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
 async function sendFollowUpReminder({ player, week, session, confirmToken, needSubToken, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
-  const subject = `Playing today? ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles — please confirm`;
+  const dayPhrase = relativeDayPhrase(week.match_date);
+  const subject = `Playing ${dayPhrase.subject}? ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles — please confirm`;
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${player.name},</p>
-    <p>Quick nudge — you haven't confirmed for today's doubles match at ${fmtTime(session.match_time)}, and it's coming up. Please let us know either way:</p>
+    <p>Quick nudge — you haven't confirmed for ${dayPhrase.possessive} doubles match at ${fmtTime(session.match_time)}, and it's coming up. Please let us know either way:</p>
     <p>
       <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
       <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>

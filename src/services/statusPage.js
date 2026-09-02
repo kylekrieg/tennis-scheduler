@@ -37,7 +37,7 @@ function getAttentionItems() {
   }
 
   if (sessions.length === 0) {
-    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [] };
+    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], staleBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [] };
   }
 
   // Players enrolled in two non-archived sessions on the same day of week
@@ -121,6 +121,29 @@ function getAttentionItems() {
     )
     .all(...sessionIds);
 
+  // ball_duty_player_id set, but pointing at someone not actually playing
+  // that week anymore — invisible to missingBallDuty above (NULL-only).
+  // Real bug found by Kyle 2026-09-01: a same-session swap accepted from the
+  // joint conflict resolver ("Accept all suggested changes") moved a player
+  // off a week they had ball duty on, leaving the column stale — see "Ball
+  // duty left stale after a joint-resolver swap" in CLAUDE.md. That resolver
+  // path now auto-hands ball duty to whoever moved in, but this stays as a
+  // safety net for any other way this could happen.
+  const staleBallDuty = db
+    .prepare(
+      `SELECT w.*, s.id as session_id, s.name as session_name, p.name as stale_player_name
+       FROM weeks w JOIN sessions s ON s.id = w.session_id
+       JOIN players p ON p.id = w.ball_duty_player_id
+       WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NOT NULL
+         AND w.locked = 0 AND w.match_date >= date('now')
+         AND NOT EXISTS (
+           SELECT 1 FROM week_assignments wa WHERE wa.week_id = w.id AND wa.player_id = w.ball_duty_player_id
+             AND wa.status IN ('scheduled','confirmed')
+         )
+       ORDER BY w.match_date`
+    )
+    .all(...sessionIds);
+
   // Pending direct swaps that have already been nudged (see swapFlow.js's
   // nudgeOverdueSwaps()) and still have no answer — the swap equivalent of
   // unfilledSubs above, flattened to specifics the same way. Self-clearing:
@@ -145,7 +168,7 @@ function getAttentionItems() {
     )
     .all(...sessionIds);
 
-  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps };
+  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps };
 }
 
 /**

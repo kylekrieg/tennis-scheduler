@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
-<h1><%= session.name %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %><% if (session.schedule_locked_at) { %> <span class="badge confirmed">schedule locked</span><% } %></h1>
-<p class="muted"><%= session.start_date %> – <%= session.end_date %> · <%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %><% if (session.schedule_locked_at) { %> · schedule locked <%= session.schedule_locked_at %><% } %></p>
+<h1><%= sessionFullTitle(session) %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %><% if (session.schedule_locked_at) { %> <span class="badge confirmed">schedule locked</span><% } %></h1>
+<p class="muted"><%= session.start_date %> – <%= session.end_date %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %><% if (session.schedule_locked_at) { %> · schedule locked <%= session.schedule_locked_at %><% } %></p>
 
 <div class="actions">
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a>
@@ -49,13 +49,13 @@
           <% var thisWins = (c.resolution === 'a_wins' && c.sessionA.id === session.id) || (c.resolution === 'b_wins' && c.sessionB.id === session.id); %>
           <tr>
             <td><%= c.player.name %></td>
-            <td><a href="/admin/sessions/<%= other.id %>"><%= other.name %></a> <span class="muted">(<%= ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][other.match_day_of_week] %> <%= fmtTime(other.match_time) %>, <%= other.start_date %> – <%= other.end_date %>)</span></td>
+            <td><a href="/admin/sessions/<%= other.id %>"><%= sessionFullTitle(other) %></a> <span class="muted">(<%= other.start_date %> – <%= other.end_date %>)</span></td>
             <td class="muted">
               here: <%= thisPriority != null ? thisPriority : 'not set' %>, there: <%= otherPriority != null ? otherPriority : 'not set' %> —
               <% if (c.resolution === 'unresolved') { %>no priority set
               <% } else if (c.resolution === 'tied') { %>tied
               <% } else if (thisWins) { %>this session higher
-              <% } else { %><%= other.name %> higher<% } %>
+              <% } else { %><%= sessionFullTitle(other) %> higher<% } %>
             </td>
           </tr>
         <% }) %>
@@ -75,7 +75,7 @@
           <tr>
             <td><%= row.playerName %></td>
             <td><%= row.dates.map(fmtDate).join(', ') %></td>
-            <td><a href="/admin/sessions/<%= row.other.id %>"><%= row.other.name %></a></td>
+            <td><a href="/admin/sessions/<%= row.other.id %>"><%= sessionFullTitle(row.other) %></a></td>
           </tr>
         <% }) %>
       </tbody>
@@ -85,7 +85,7 @@
     </p>
     <div class="actions">
       <% distinctOtherSessions.forEach(function(other) { %>
-        <a class="btn neutral" href="/admin/sessions/<%= session.id %>/resolve-conflicts?with=<%= other.id %>">Resolve conflicts with <%= other.name %>&hellip;</a>
+        <a class="btn neutral" href="/admin/sessions/<%= session.id %>/resolve-conflicts?with=<%= other.id %>">Resolve conflicts with <%= sessionFullTitle(other) %>&hellip;</a>
       <% }) %>
     </div>
   </div>
@@ -124,9 +124,13 @@
           <% } else if (r.assignments.length === 0) { %>
             <span class="muted">— no players scheduled</span>
           <% } else { %>
+            <% if (r.ballDutyMismatch) { %>
+              <span class="badge needs_sub" title="weeks.ball_duty_player_id is set to a player not actually playing this week — often left behind by a same-session swap (a direct player-to-player swap, or the joint conflict resolver's 'Accept all suggested changes'). Pick someone below.">ball duty needs reassigning (was <%= r.ballDutyName %>)</span>
+            <% } %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/ball-duty" style="display:flex;align-items:center;gap:4px;">
               <select name="player_id" style="width:auto;min-width:110px;padding:4px 6px;font-size:12px;">
-                <% r.assignments.forEach(function(a) { %><option value="<%= a.player_id %>" <%= a.player_id === r.week.ball_duty_player_id ? 'selected' : '' %>><%= a.name %></option><% }) %>
+                <% if (r.ballDutyMismatch) { %><option value="" selected disabled>— pick someone —</option><% } %>
+                <% r.assignments.forEach(function(a) { %><option value="<%= a.player_id %>" <%= (!r.ballDutyMismatch && a.player_id === r.week.ball_duty_player_id) ? 'selected' : '' %>><%= a.name %></option><% }) %>
               </select>
               <button class="btn small neutral" type="submit">Set</button>
             </form>

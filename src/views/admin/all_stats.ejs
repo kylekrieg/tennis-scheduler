@@ -1,0 +1,67 @@
+<%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
+<h1>Stats Summary</h1>
+<p class="muted">One row per active session — roster size, season progress, confirmation status of upcoming matches, open sub requests, and ball duty issues needing a look. For the full per-player target/played/ball-duty breakdown and partner matrix, click into a session's own Stats page. Regular sessions only, scheduled or active (a draft session has no schedule yet, and ad-hoc sessions have no target/confirm/sub/ball-duty concepts for these columns to describe).</p>
+
+<% if (rows.length === 0) { %>
+  <p class="muted">No active sessions yet.</p>
+<% } else { %>
+  <table>
+    <thead>
+      <tr>
+        <th>Session</th>
+        <th>Players</th>
+        <th>Weeks</th>
+        <th>Upcoming: confirmed</th>
+        <th>Upcoming: not yet</th>
+        <th>Open subs</th>
+        <th>Ball duty issues</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% rows.forEach(function(r) { %>
+        <tr>
+          <td style="white-space:nowrap;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(r.session) %>;margin-right:6px;"></span>
+            <a href="/admin/sessions/<%= r.session.id %>"><%= sessionFullTitle(r.session) %></a>
+          </td>
+          <td><%= r.players %></td>
+          <td style="white-space:nowrap;"><%= r.weeksPlayed %> / <%= r.weeksTotal %> played</td>
+          <td><%= r.confirmed %></td>
+          <td><%= r.unconfirmed %><% if (r.needsSub > 0) { %> <span class="badge needs_sub" title="also has an open 'needs a sub' slot"><%= r.needsSub %> needs sub</span><% } %></td>
+          <td><% if (r.openSubs > 0) { %><span class="badge needs_sub"><%= r.openSubs %></span><% } else { %>0<% } %></td>
+          <td><% if (r.ballDutyIssues > 0) { %><span class="badge needs_sub" title="missing or assigned to someone not actually playing that week"><%= r.ballDutyIssues %></span><% } else { %>0<% } %></td>
+          <td style="white-space:nowrap;"><a href="/admin/sessions/<%= r.session.id %>/stats">Full stats →</a></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <% rows.forEach(function(r) { %>
+    <div class="card wide" style="border-left:6px solid <%= sessionColor(r.session) %>;margin-top:16px;">
+      <h2 style="margin-top:0;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(r.session) %>;margin-right:6px;"></span>
+        <a href="/admin/sessions/<%= r.session.id %>/stats"><%= sessionFullTitle(r.session) %></a>
+      </h2>
+      <% if (r.playerStats.length === 0) { %>
+        <p class="muted">No players enrolled yet.</p>
+      <% } else { %>
+        <table>
+          <thead><tr><th>Player</th><th>Target</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
+          <tbody>
+            <% r.playerStats.forEach(function(s) { %>
+              <tr>
+                <td><%= s.player.name %></td>
+                <td><%= s.target %><% if (s.originalTarget != null && s.originalTarget !== s.target) { %> <span class="muted">(originally <%= s.originalTarget %>)</span><% } %></td>
+                <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
+                <td><%= s.subBonus %></td>
+                <td><%= s.ballDuty %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  <% }) %>
+<% } %>
+<%- include('../partials/footer') %>

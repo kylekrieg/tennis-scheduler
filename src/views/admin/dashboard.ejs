@@ -24,10 +24,11 @@
       <% if (f.unconfirmed > 0) { %><div class="flag"><%= f.unconfirmed %> upcoming assignment(s) not yet confirmed.</div><% } %>
       <% if (f.unfilledSubs > 0) { %><div class="flag"><%= f.unfilledSubs %> unfilled sub request(s).</div><% } %>
       <% if (f.unfilledBallDuty > 0) { %><div class="flag"><%= f.unfilledBallDuty %> upcoming week(s) missing ball duty.</div><% } %>
+      <% if (f.staleBallDuty > 0) { %><div class="flag error"><%= f.staleBallDuty %> upcoming week(s) with ball duty assigned to someone not actually playing that week — open the session to reassign.</div><% } %>
       <% if (f.overlapping > 0) { %><div class="flag error"><%= f.overlapping %> player(s) enrolled in another overlapping session — the scheduler won't prevent a double-booking on its own, open the session to check.</div><% } %>
       <% if (f.doubleBooked > 0) { %><div class="flag error"><%= f.doubleBooked %> player(s) actually double-booked into another session on the same date — open the session to fix.</div><% } %>
       <% if (f.staleSwaps > 0) { %><div class="flag"><%= f.staleSwaps %> pending swap request(s) nudged but still unanswered — open the session to check or cancel.</div><% } %>
-      <% if (!f.conflicts.length && f.needsAttention === 0 && f.session.reminders_enabled && f.unconfirmed === 0 && f.unfilledSubs === 0 && f.unfilledBallDuty === 0 && f.overlapping === 0 && f.doubleBooked === 0 && f.staleSwaps === 0) { %><p class="muted">All clear.</p><% } %>
+      <% if (!f.conflicts.length && f.needsAttention === 0 && f.session.reminders_enabled && f.unconfirmed === 0 && f.unfilledSubs === 0 && f.unfilledBallDuty === 0 && f.staleBallDuty === 0 && f.overlapping === 0 && f.doubleBooked === 0 && f.staleSwaps === 0) { %><p class="muted">All clear.</p><% } %>
     </div>
   </div>
 <% }) %>

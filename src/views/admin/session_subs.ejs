@@ -1,5 +1,5 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
-<h1>Subs for <%= session.name %></h1>
+<h1>Subs for <%= sessionFullTitle(session) %></h1>
 <p class="muted">Only the people checked below get an escalation email if a sub request for <strong><%= session.name %></strong> goes unanswered by that week's roster. The master list itself (add/remove people) is managed at <a href="/admin/sub-list">Broader Sub List</a> — this page just picks which of them apply here.</p>
 
 <% if (masterList.length === 0) { %>

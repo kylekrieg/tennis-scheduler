@@ -1,5 +1,6 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <h1><%= session ? 'Edit Session' : 'New Session' %></h1>
+<% if (session) { %><p class="muted"><%= sessionFullTitle(session) %></p><% } %>
 
 <% var isAdhoc = session ? session.session_type === 'adhoc' : false; %>
 

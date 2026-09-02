@@ -24,8 +24,17 @@ CREATE TABLE IF NOT EXISTS admins (
 
 CREATE TABLE IF NOT EXISTS app_settings (
   id            INTEGER PRIMARY KEY CHECK (id = 1),
-  timezone      TEXT NOT NULL DEFAULT 'America/Chicago'
+  timezone      TEXT NOT NULL DEFAULT 'America/Chicago',
+  site_title    TEXT NOT NULL DEFAULT '🎾 Doubles Schedule'   -- admin-editable brand text, upper-left of every public page (Settings)
 );
+-- Deliberately does NOT list site_title here: this INSERT runs unconditionally
+-- on every boot (raw.exec(schema) in db/index.js), before ensureColumn() ever
+-- gets a chance to add that column to an existing installation's app_settings
+-- table — referencing it here crashed the whole app on boot for any existing
+-- DB, since the real table didn't have the column yet at the moment this runs.
+-- A fresh install's app_settings row already gets '🎾 Doubles Schedule' for
+-- free from the column's own DEFAULT above; an existing row gets it from
+-- ensureColumn's backfill further down in db/index.js.
 INSERT OR IGNORE INTO app_settings (id, timezone) VALUES (1, 'America/Chicago');
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -96,7 +105,8 @@ CREATE TABLE IF NOT EXISTS blackout_pending (
 CREATE TABLE IF NOT EXISTS broader_sub_list (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
-  email         TEXT NOT NULL UNIQUE
+  email         TEXT NOT NULL UNIQUE,
+  slug          TEXT  -- admin-editable "My Page" slug reserved ahead of time (Kyle, 2026-09-01) — used directly by claimSub() the moment this person claims a sub and becomes a real players row. See playerSlug.js's broaderSubSlugTaken()/generateUniqueBroaderSubSlug().
 );
 
 -- Which master-list subs apply to which session (Kyle, 2026-08-13): the

@@ -60,7 +60,7 @@
 </table>
 
 <h2 id="timing">6. The full email/notification timeline</h2>
-<p>Section 5 covers what you do; this is the exact timing of what the app does on its own — the same three decision trees on the player-facing <a href="/help#timing">How It Works</a> page, redrawn here from your side with the admin actions that intersect each flow, plus a fourth flow that's admin-only: the status report email addressed to you. Worth knowing cold, since it's what tells you whether something's actually stuck or just hasn't hit its next automatic step yet.</p>
+<p>Section 5 covers what you do; this is the exact timing of what the app does on its own — the same three decision trees on the player-facing <a href="/help#timing">How It Works</a> page, redrawn here from your side with the admin actions that intersect each flow, plus the separate ad-hoc pickup-game flow (mirroring <a href="/help#adhoc">How It Works</a>'s own version of it), and a fifth flow that's admin-only: the status report email addressed to you. Worth knowing cold, since it's what tells you whether something's actually stuck or just hasn't hit its next automatic step yet.</p>
 
 <h3>Confirming you're playing</h3>
 <div class="flowchart">
@@ -237,8 +237,66 @@
   <p class="flow-note">You can cancel a pending swap directly from the session detail page. Reassigning either side's slot while a swap is still pending cancels it automatically too, so a stale swap can't silently override a manual fix.</p>
 </div>
 
+<h3>Ad-hoc pickup games</h3>
+<p>Regular sessions only, above — an ad-hoc (pickup-game) session (a separate type you pick with a radio button when creating it, fixed for that session's whole life) runs a completely different flow with none of the confirm/sub/swap machinery. There's no season roster, no targets, no blackout dates, no fairness math, no confirm step; signing up for a court <em>is</em> a player's confirmation.</p>
+<div class="flowchart">
+  <div class="flow-step">
+    <div class="flow-when">Configurable — hours before match time (default 56; "Invite email" on the session form)</div>
+    <div class="flow-title">Invite email sent to every active roster player</div>
+    <div class="flow-detail">One single-use "I'm in" link each. First-come-first-served — a court forms the instant 4 people have signed up, no waiting for any deadline.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-title">Sign-ups accumulate</div>
+    <div class="flow-detail">Every complete group of 4, in sign-up order, becomes its own court — no cap on how many can fill. The week's card on the session detail page shows the live breakdown (courts formed / waiting group / not yet signed up) at any point, computed fresh, not stored.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">Sign-ups land on a clean multiple of 4</div>
+      <div class="flow-step success">
+        <div class="flow-title">No reminder needed</div>
+        <div class="flow-detail">Every court's already full.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">There's a leftover group of 1-3</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-step pending">
+        <div class="flow-when">Configurable — hours before match time (default 30; "Reminder email" on the session form)</div>
+        <div class="flow-title">One reminder, to stragglers only</div>
+        <div class="flow-detail">Only sent to whoever on the roster hasn't signed up yet — nobody already on a full court gets it.</div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-when">Configurable — hours before match time (default 24; "Final roster email" on the session form)</div>
+    <div class="flow-title">Courts finalize</div>
+    <div class="flow-detail">Every complete group gets materialized into real <code>week_assignments</code> rows, status <code>confirmed</code> directly. Idempotent — safe if this ever runs twice for the same week.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">A court formed</div>
+      <div class="flow-step success">
+        <div class="flow-title">"You're in" email to that court</div>
+        <div class="flow-detail">Names their teammates and court number. Done.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">A group never reached 4</div>
+      <div class="flow-step urgent">
+        <div class="flow-title">"Not enough signed up" email</div>
+        <div class="flow-detail">Sent to whoever was left in the leftover group. That group doesn't play this time — no <code>week_assignments</code> rows for them.</div>
+      </div>
+    </div>
+  </div>
+  <p class="flow-note">You can sign a player up or withdraw them manually from the week's card at any point before it finalizes — the only way to fix a mistake, since players have no self-service "undo" once they've clicked "I'm in." There's currently no equivalent of Reassign for a court that's already finalized — see the backlog note in CLAUDE.md if a pickup week ever genuinely needs reshuffling after the fact.</p>
+</div>
+
 <h3>Admin status report</h3>
-<p>The only one of these four that's addressed to you, not a player — see §1 for how to turn it on. No branches: it's a single scheduled send per configured address, per week.</p>
+<p>The only one of these five that's addressed to you, not a player — see §1 for how to turn it on. No branches: it's a single scheduled send per configured address, per week, and only for regular sessions (an ad-hoc session has no confirm/sub/swap state for it to summarize).</p>
 <div class="flowchart">
   <div class="flow-step">
     <div class="flow-when">N hours before match time (default 8, set per session)</div>

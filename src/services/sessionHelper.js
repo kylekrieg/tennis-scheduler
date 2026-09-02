@@ -7,12 +7,20 @@ const db = require('../db');
 // session for a person to look through (the session picker used by
 // /schedule "Season Schedule", /lookahead "Next 4 Weeks", /blackout,
 // /calendar, /swap, /request-sub, My Page's session cards, and the admin
-// dashboard) now sorts by match_day_of_week (0=Sun..6=Sat, same convention
-// used everywhere else in this app) then match_time, instead of start_date/
-// creation order. Two sessions on the same day/time fall back to `name` so
-// the order is still fully deterministic rather than left to sqlite's
-// unspecified tie-breaking.
-const SESSION_DISPLAY_ORDER = 'ORDER BY match_day_of_week, match_time, name';
+// dashboard) sorts by match_day_of_week (0=Sun..6=Sat, same convention used
+// everywhere else in this app) then match_time, instead of start_date/
+// creation order.
+//
+// Third tiebreaker changed from `name` to `court_info` (Kyle, 2026-09-01:
+// "Can we sort them by day of week, then match time, then court/location?")
+// — with every real session now given a deliberately generic internal
+// `name` (see "Dashboard session titles are composed from fields" in
+// CLAUDE.md), two same-day-same-time sessions sorting by name was
+// effectively arbitrary; court/location is the more meaningful tiebreaker
+// now. A session with no court_info set sorts first (SQLite orders NULL/''
+// before any real value ascending), which is an acceptable, rare edge case
+// rather than something worth a COALESCE for.
+const SESSION_DISPLAY_ORDER = 'ORDER BY match_day_of_week, match_time, court_info';
 
 /** Sessions with a generated schedule worth showing on public pages.
  * Archived sessions (archived_at set — see "Archiving" in CLAUDE.md) are
@@ -182,8 +190,8 @@ function findActualDoubleBookings(sessionId = null) {
   const rows = db
     .prepare(
       `SELECT p.id as playerId, p.name as playerName, w1.match_date as date,
-              s1.id as session1Id, s1.name as session1Name, s1.club_name as session1Club, s1.court_info as session1Court, s1.match_time as session1Time,
-              s2.id as session2Id, s2.name as session2Name, s2.club_name as session2Club, s2.court_info as session2Court, s2.match_time as session2Time
+              s1.id as session1Id, s1.name as session1Name, s1.club_name as session1Club, s1.court_info as session1Court, s1.match_time as session1Time, s1.match_day_of_week as session1Dow,
+              s2.id as session2Id, s2.name as session2Name, s2.club_name as session2Club, s2.court_info as session2Court, s2.match_time as session2Time, s2.match_day_of_week as session2Dow
        FROM week_assignments wa1
        JOIN weeks w1 ON w1.id = wa1.week_id
        JOIN sessions s1 ON s1.id = w1.session_id
@@ -203,8 +211,13 @@ function findActualDoubleBookings(sessionId = null) {
   return rows.map((r) => ({
     player: { id: r.playerId, name: r.playerName },
     date: r.date,
-    sessionA: { id: r.session1Id, name: r.session1Name, club_name: r.session1Club, court_info: r.session1Court, match_time: r.session1Time },
-    sessionB: { id: r.session2Id, name: r.session2Name, club_name: r.session2Club, court_info: r.session2Court, match_time: r.session2Time },
+    // match_day_of_week is included alongside the other display fields so
+    // every consumer can call sessionFullTitle(sessionA/B) directly for the
+    // full "name · day · time · court · club" composition (Kyle, 2026-09-01:
+    // the "needs attention" boxes were still showing the bare session name)
+    // rather than needing a second lookup just to get the day of week.
+    sessionA: { id: r.session1Id, name: r.session1Name, club_name: r.session1Club, court_info: r.session1Court, match_time: r.session1Time, match_day_of_week: r.session1Dow },
+    sessionB: { id: r.session2Id, name: r.session2Name, club_name: r.session2Club, court_info: r.session2Court, match_time: r.session2Time, match_day_of_week: r.session2Dow },
   }));
 }
 

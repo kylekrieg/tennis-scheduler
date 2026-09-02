@@ -4,7 +4,7 @@
 
 <h2>Needs attention</h2>
 <%
-  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length;
+  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.staleBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length;
 %>
 <% if (totalAttention === 0) { %>
   <p class="notice">All clear across every session — nothing needs attention right now.</p>
@@ -58,12 +58,22 @@
   </div>
 <% } %>
 
+<% if (attention.staleBallDuty.length > 0) { %>
+  <div class="card wide" style="border-color:#b42318;">
+    <h3 style="margin-top:0;">Ball duty needs reassigning</h3>
+    <p class="muted">Set to a player who isn't actually playing that week anymore — usually left behind by a same-session swap (a direct player-to-player swap, or the joint conflict resolver's "Accept all suggested changes"). Open the session and pick someone from the dropdown.</p>
+    <% attention.staleBallDuty.forEach(function(w) { %>
+      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %>: was <%= w.stale_player_name %></div>
+    <% }) %>
+  </div>
+<% } %>
+
 <% if (attention.overlappingEnrollments.length > 0) { %>
   <div class="card wide">
     <h3 style="margin-top:0;">Overlapping session enrollment</h3>
     <p class="muted">Enrolled in two sessions that meet the same day of week with overlapping dates. Priority (set on each session's Edit page) is advisory only — the scheduler doesn't auto-exclude anyone based on it, so this is a risk to keep an eye on, not something that resolves itself. If it turns into an actual double-booking, it'll show up under "Double-booked" below.</p>
     <% attention.overlappingEnrollments.forEach(function(c) { %>
-      <div class="flag error"><%= c.player.name %> — <a href="/admin/sessions/<%= c.sessionA.id %>"><strong><%= c.sessionA.name %></strong></a> &amp; <a href="/admin/sessions/<%= c.sessionB.id %>"><strong><%= c.sessionB.name %></strong></a> (<%= c.resolution === 'unresolved' ? 'no priority set' : c.resolution === 'tied' ? 'priority tied' : 'priority set' %>)</div>
+      <div class="flag error"><%= c.player.name %> — <a href="/admin/sessions/<%= c.sessionA.id %>"><strong><%= sessionFullTitle(c.sessionA) %></strong></a> &amp; <a href="/admin/sessions/<%= c.sessionB.id %>"><strong><%= sessionFullTitle(c.sessionB) %></strong></a> (<%= c.resolution === 'unresolved' ? 'no priority set' : c.resolution === 'tied' ? 'priority tied' : 'priority set' %>)</div>
     <% }) %>
   </div>
 <% } %>
@@ -73,7 +83,7 @@
     <h3 style="margin-top:0;">Double-booked</h3>
     <p class="muted">Actually assigned to play in two different sessions on the same date — a confirmed conflict, not just a risk. Often the result of an accepted player-to-player swap that happened to collide with another session. Fix by reassigning one of the two slots.</p>
     <% attention.doubleBookings.forEach(function(d) { %>
-      <div class="flag error"><%= d.player.name %> — <%= fmtDate(d.date) %>: <a href="/admin/sessions/<%= d.sessionA.id %>"><strong><%= d.sessionA.name %></strong></a> &amp; <a href="/admin/sessions/<%= d.sessionB.id %>"><strong><%= d.sessionB.name %></strong></a></div>
+      <div class="flag error"><%= d.player.name %> — <%= fmtDate(d.date) %>: <a href="/admin/sessions/<%= d.sessionA.id %>"><strong><%= sessionFullTitle(d.sessionA) %></strong></a> &amp; <a href="/admin/sessions/<%= d.sessionB.id %>"><strong><%= sessionFullTitle(d.sessionB) %></strong></a></div>
     <% }) %>
   </div>
 <% } %>

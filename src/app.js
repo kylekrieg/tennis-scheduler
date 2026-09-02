@@ -7,6 +7,7 @@ const session = require('express-session');
 const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
 const { fmtDate, fmtTime, sessionPublicLabel, sessionFullTitle, sessionColor } = require('./services/email');
+const { getSiteTitle } = require('./services/settings');
 
 const app = express();
 
@@ -56,6 +57,19 @@ app.locals.assetVersion = Date.now();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Admin-configurable public-site brand text (Kyle, 2026-09-01), read fresh
+// on every request rather than baked in once like assetVersion above — an
+// admin editing it on the Settings page should take effect immediately, not
+// require a restart. res.locals (not app.locals) is what makes that
+// possible: it's a per-request object, so this always reflects the current
+// app_settings row. Used by partials/header.ejs's public-facing brand link
+// only — admin_header.ejs keeps its own separate, hardcoded "🎾 Admin"
+// brand, per Kyle's own scoping of this to "public facing pages."
+app.use((req, res, next) => {
+  res.locals.siteTitle = getSiteTitle();
+  next();
+});
 
 // Pre-launch security review (Kyle, 2026-08-29): trust the first hop so
 // Express can see the real scheme (http vs. https) a request actually

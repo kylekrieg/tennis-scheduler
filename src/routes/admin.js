@@ -8,7 +8,7 @@ const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { findAdminByCredentials, hashPassword } = require('../services/auth');
 const { USERNAME_RE, usernameTaken, generateUniqueUsername } = require('../services/adminUsername');
-const { getTimezone, setTimezone } = require('../services/settings');
+const { getTimezone, setTimezone, getSiteTitle, setSiteTitle } = require('../services/settings');
 const { zonedTimeToUtc, utcToZonedParts } = require('../services/tz');
 const { runScheduler, ensureWeeksExist } = require('../services/scheduleRun');
 const adhocFlow = require('../services/adhocFlow');
@@ -24,7 +24,7 @@ const statusPage = require('../services/statusPage');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
-const { SLUG_RE, slugTaken, generateUniqueSlug } = require('../services/playerSlug');
+const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
 const testEmail = require('../services/testEmail');
@@ -68,6 +68,56 @@ function overlapWarningText(sessionId) {
   }
   const parts = [...byPlayer.values()].map((p) => `${p.name} (also in ${[...new Set(p.others)].join('; ')})`);
   return `Heads up: ${parts.length} player(s) are enrolled in another session on the same day of week with overlapping dates — nothing prevents the scheduler from double-booking them automatically, so check the schedule once both are generated: ${parts.join('; ')}.`;
+}
+
+// Shared by the per-session Stats page (GET /sessions/:id/stats) and the
+// all-active-sessions Stats Summary page (GET /stats) — Kyle, 2026-09-01:
+// "let's build the full per-player breakdown under the summary you just
+// built." Factored out here rather than left duplicated in each route,
+// since it's four queries plus a roster join, not a one-line count like the
+// small flags shared elsewhere in this file (unfilledSubs, staleBallDuty,
+// etc.) — worth keeping in one place so the two pages can't drift apart on
+// what "played" or "ball duty" actually means.
+function sessionRosterStats(sessionId) {
+  const roster = db
+    .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
+    .all(sessionId);
+  const targets = db.prepare('SELECT player_id, target_games, original_target FROM session_players WHERE session_id = ?').all(sessionId);
+  const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
+  const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
+
+  const playedCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0 GROUP BY player_id`
+    )
+    .all(sessionId);
+  const playedMap = new Map(playedCounts.map((r) => [r.player_id, r.n]));
+
+  const subBonusCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status != 'subbed_out' GROUP BY player_id`
+    )
+    .all(sessionId);
+  const subBonusMap = new Map(subBonusCounts.map((r) => [r.player_id, r.n]));
+
+  const ballDutyCounts = db
+    .prepare(
+      `SELECT ball_duty_player_id as player_id, COUNT(*) as n FROM weeks
+       WHERE session_id = ? AND ball_duty_player_id IS NOT NULL GROUP BY ball_duty_player_id`
+    )
+    .all(sessionId);
+  const ballDutyMap = new Map(ballDutyCounts.map((r) => [r.player_id, r.n]));
+
+  return roster.map((p) => ({
+    player: p,
+    target: targetMap.get(p.id) || 0,
+    originalTarget: originalTargetMap.get(p.id),
+    played: playedMap.get(p.id) || 0,
+    subBonus: subBonusMap.get(p.id) || 0,
+    ballDuty: ballDutyMap.get(p.id) || 0,
+  }));
 }
 
 function flash(req, message, type = 'ok') {
@@ -190,6 +240,25 @@ router.get('/', (req, res) => {
         `SELECT COUNT(*) as n FROM weeks WHERE session_id = ? AND ball_duty_player_id IS NULL AND needs_attention = 0 AND match_date >= date('now')`
       )
       .get(s.id).n;
+    // ball_duty_player_id set, but pointing at someone not actually playing
+    // that week anymore — invisible to unfilledBallDuty above (which only
+    // catches NULL). Real bug found by Kyle 2026-09-01: a same-session swap
+    // accepted from the joint conflict resolver ("Accept all suggested
+    // changes") moved a player off a week that had them down for ball duty,
+    // leaving the column stale — see "Ball duty left stale after a
+    // joint-resolver swap" in CLAUDE.md. That resolver path now auto-hands
+    // ball duty to whoever moved in, but this flag stays as a safety net for
+    // any other way this could happen (a plain Reassign, a direct manual DB
+    // edit, etc.) so it's never silently invisible again.
+    const staleBallDuty = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM weeks w WHERE w.session_id = ? AND w.ball_duty_player_id IS NOT NULL
+         AND w.locked = 0 AND w.match_date >= date('now') AND NOT EXISTS (
+           SELECT 1 FROM week_assignments wa WHERE wa.week_id = w.id AND wa.player_id = w.ball_duty_player_id
+             AND wa.status IN ('scheduled','confirmed')
+         )`
+      )
+      .get(s.id).n;
     const conflicts = s.schedule_conflicts ? JSON.parse(s.schedule_conflicts) : [];
     // Distinct players enrolled in another session on the same day of week
     // with overlapping dates (see sessionHelper.js
@@ -220,7 +289,7 @@ router.get('/', (req, res) => {
          WHERE iw.session_id = ? AND sw.status = 'pending' AND sw.nudged_at IS NOT NULL`
       )
       .get(s.id).n;
-    return { session: s, unconfirmed, unfilledSubs, unfilledBallDuty, needsAttention, conflicts, overlapping, doubleBooked, staleSwaps };
+    return { session: s, unconfirmed, unfilledSubs, unfilledBallDuty, staleBallDuty, needsAttention, conflicts, overlapping, doubleBooked, staleSwaps };
   });
 
   res.render('admin/dashboard', { title: 'Admin', flags, adhocSessions, archivedSessions, flashMsg: popFlash(req) });
@@ -246,6 +315,94 @@ router.get('/status', (req, res) => {
   const attention = statusPage.getAttentionItems();
   const upcoming = statusPage.getUpcomingActions(days);
   res.render('admin/status', { title: 'Status', attention, upcoming, days, flashMsg: popFlash(req) });
+});
+
+// All-active-sessions stats summary (Kyle, 2026-09-01): "if we were going to
+// write a 1 page stats summary for all the active sessions, where would that
+// go?" — one row per session rather than reproducing the full per-player
+// target/played/ball-duty table from the per-session Stats page (that page
+// already has its own per-player table plus the partner matrix; repeating
+// that here for every active session's whole roster is exactly what would
+// stop this from fitting on one page). Each row links into that session's
+// own Stats page for the per-player detail. Regular sessions only — ad-hoc
+// sessions have no target/confirm/sub/ball-duty concepts for any of these
+// columns to mean anything (see "Ad-hoc sessions" in CLAUDE.md), same reason
+// the per-session Stats page is never linked from an ad-hoc session's detail
+// page. Scoped to scheduled/active (not draft, which has no schedule yet —
+// every column would just read zero).
+router.get('/stats', (req, res) => {
+  const sessions = db
+    .prepare(
+      `SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' AND status IN ('scheduled', 'active') ${SESSION_DISPLAY_ORDER}`
+    )
+    .all();
+
+  const rows = sessions.map((s) => {
+    const players = db.prepare('SELECT COUNT(*) as n FROM session_players WHERE session_id = ?').get(s.id).n;
+    const weeksTotal = db.prepare('SELECT COUNT(*) as n FROM weeks WHERE session_id = ?').get(s.id).n;
+    const weeksPlayed = db.prepare('SELECT COUNT(*) as n FROM weeks WHERE session_id = ? AND locked = 1').get(s.id).n;
+
+    // Confirmation status of every assignment on a week that hasn't happened
+    // yet — the same "scheduled vs. confirmed" split the dashboard's
+    // unconfirmed flag tracks, just the full breakdown rather than one count.
+    const statusCounts = db
+      .prepare(
+        `SELECT wa.status, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+         WHERE w.session_id = ? AND w.locked = 0 GROUP BY wa.status`
+      )
+      .all(s.id);
+    const statusMap = new Map(statusCounts.map((r) => [r.status, r.n]));
+
+    // Same definition as the dashboard's unfilledSubs flag.
+    const openSubs = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+         JOIN weeks w ON w.id = wa.week_id WHERE w.session_id = ? AND sr.status IN ('open','escalated','unfilled')`
+      )
+      .get(s.id).n;
+
+    // Same definitions as the dashboard's unfilledBallDuty/staleBallDuty
+    // flags (see "Ball duty left stale after a joint-resolver swap" in
+    // CLAUDE.md for staleBallDuty) — combined into one "needs attention"
+    // count here since this is a summary row, not a to-do list; either kind
+    // means the same actionable thing at this level of detail.
+    const missingBallDuty = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM weeks WHERE session_id = ? AND ball_duty_player_id IS NULL AND needs_attention = 0 AND match_date >= date('now')`
+      )
+      .get(s.id).n;
+    const staleBallDuty = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM weeks w WHERE w.session_id = ? AND w.ball_duty_player_id IS NOT NULL
+         AND w.locked = 0 AND w.match_date >= date('now') AND NOT EXISTS (
+           SELECT 1 FROM week_assignments wa WHERE wa.week_id = w.id AND wa.player_id = w.ball_duty_player_id
+             AND wa.status IN ('scheduled','confirmed')
+         )`
+      )
+      .get(s.id).n;
+
+    // Full per-player target/played/ball-duty breakdown — Kyle, 2026-09-01,
+    // right after the summary table above shipped: "let's build the full
+    // per-player breakdown under the summary you just built." Same
+    // sessionRosterStats() helper the per-session Stats page uses, so the
+    // two pages can never disagree on what "played" or "ball duty" means.
+    const playerStats = sessionRosterStats(s.id);
+
+    return {
+      session: s,
+      players,
+      weeksTotal,
+      weeksPlayed,
+      confirmed: statusMap.get('confirmed') || 0,
+      unconfirmed: statusMap.get('scheduled') || 0,
+      needsSub: statusMap.get('needs_sub') || 0,
+      openSubs,
+      ballDutyIssues: missingBallDuty + staleBallDuty,
+      playerStats,
+    };
+  });
+
+  res.render('admin/all_stats', { title: 'Stats Summary', rows, flashMsg: popFlash(req) });
 });
 
 router.post('/sessions/:id/archive', (req, res) => {
@@ -303,6 +460,7 @@ router.get('/settings', (req, res) => {
   res.render('admin/settings', {
     title: 'Settings',
     timezone: getTimezone(),
+    siteTitle: getSiteTitle(),
     flashMsg: popFlash(req),
   });
 });
@@ -313,6 +471,22 @@ router.post('/settings', (req, res) => {
   if (oldTz !== req.body.timezone) {
     logActivity(req, { action: 'settings.timezone', description: `Changed timezone from ${oldTz} to ${req.body.timezone}` });
   }
+
+  // Site title: reject blank (an empty brand link would look broken, not
+  // "not set") the same way every other required-text field in this app
+  // does, but otherwise accept anything typed — it's free text, including
+  // emoji, not a slug/username needing a format check.
+  const newTitle = (req.body.site_title || '').trim();
+  if (!newTitle) {
+    flash(req, 'Site title cannot be blank.', 'error');
+    return res.redirect('/admin/settings');
+  }
+  const oldTitle = getSiteTitle();
+  setSiteTitle(newTitle);
+  if (oldTitle !== newTitle) {
+    logActivity(req, { action: 'settings.site_title', description: `Changed site title from "${oldTitle}" to "${newTitle}"` });
+  }
+
   flash(req, 'Settings updated.');
   res.redirect('/admin/settings');
 });
@@ -613,6 +787,19 @@ function invalidSlugField(rawSlug, excludePlayerId) {
   if (!slug) return null;
   if (!SLUG_RE.test(slug)) return 'URL slug can only contain lowercase letters, numbers, and hyphens (e.g. "brian-b").';
   if (slugTaken(db, slug, excludePlayerId)) return 'That URL slug is already in use by another player — pick a different one.';
+  return null;
+}
+
+// Same idea, for broader_sub_list.slug (Kyle, 2026-09-01) — see
+// playerSlug.js's broaderSubSlugTaken() doc comment for why this checks
+// both tables (players.slug, the real namespace this lands in once
+// claimed, and every other broader_sub_list.slug, so two pending entries
+// can't collide with each other before either one ever claims a spot).
+function invalidBroaderSubSlugField(rawSlug, excludeListId) {
+  const slug = (rawSlug || '').trim();
+  if (!slug) return null;
+  if (!SLUG_RE.test(slug)) return 'URL slug can only contain lowercase letters, numbers, and hyphens (e.g. "brian-b").';
+  if (broaderSubSlugTaken(db, slug, excludeListId)) return 'That URL slug is already in use — pick a different one.';
   return null;
 }
 
@@ -1199,6 +1386,20 @@ router.get('/sessions/:id', (req, res) => {
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
+    // `weeks.ball_duty_player_id` can end up pointing at someone no longer
+    // actually playing this week (e.g. a manual Reassign, or — the real bug
+    // this was built to catch, see "Ball duty left stale after a joint-
+    // resolver swap" in CLAUDE.md — a same-session swap accepted from the
+    // joint conflict resolver that moved the ball-duty player to a
+    // different week entirely). Checked against `assignments` with an
+    // active status only, same "actually playing" definition the rest of
+    // this app uses (subbed_out doesn't count). Flagged here so the
+    // session-detail template can show it plainly instead of the ball-duty
+    // <select> silently defaulting to whichever player happens to be first
+    // in the list, which used to look like a real (but meaningless) answer.
+    const ballDutyMismatch =
+      !!w.ball_duty_player_id &&
+      !assignments.some((a) => a.player_id === w.ball_duty_player_id && (a.status === 'scheduled' || a.status === 'confirmed'));
     // playerName joined in here specifically so the week-card badge can say
     // whose slot is open ("sub open — Alice") rather than just "sub open"
     // with no way to tell which of the week's players it's about without
@@ -1227,6 +1428,7 @@ router.get('/sessions/:id', (req, res) => {
       week: w,
       assignments,
       ballDutyName: ballDuty ? ballDuty.name : null,
+      ballDutyMismatch,
       openSubRequest,
       openSwapRequest,
       blackedOutNames: blackedOutByDate.get(w.match_date) || [],
@@ -2167,53 +2369,14 @@ router.post('/sessions/:id/weeks/:weekId/adhoc/withdraw', (req, res) => {
 
 router.get('/sessions/:id/stats', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
-  const roster = db
-    .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
-    .all(session.id);
-  const targets = db
-    .prepare('SELECT player_id, target_games, original_target FROM session_players WHERE session_id = ?')
-    .all(session.id);
-  const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
   // original_target is snapshotted once at first enrollment and never
   // touched again, even if target_games itself later gets edited down to
   // "remaining open weeks" after a mid-season roster change — see
   // db/index.js's ensureColumn comment. Shown here so the season-long number
   // isn't lost the moment an admin has to resubmit the roster form for an
   // unrelated reason.
-  const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
-
-  const playedCounts = db
-    .prepare(
-      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0 GROUP BY player_id`
-    )
-    .all(session.id);
-  const playedMap = new Map(playedCounts.map((r) => [r.player_id, r.n]));
-
-  const subBonusCounts = db
-    .prepare(
-      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status != 'subbed_out' GROUP BY player_id`
-    )
-    .all(session.id);
-  const subBonusMap = new Map(subBonusCounts.map((r) => [r.player_id, r.n]));
-
-  const ballDutyCounts = db
-    .prepare(
-      `SELECT ball_duty_player_id as player_id, COUNT(*) as n FROM weeks
-       WHERE session_id = ? AND ball_duty_player_id IS NOT NULL GROUP BY ball_duty_player_id`
-    )
-    .all(session.id);
-  const ballDutyMap = new Map(ballDutyCounts.map((r) => [r.player_id, r.n]));
-
-  const stats = roster.map((p) => ({
-    player: p,
-    target: targetMap.get(p.id) || 0,
-    originalTarget: originalTargetMap.get(p.id),
-    played: playedMap.get(p.id) || 0,
-    subBonus: subBonusMap.get(p.id) || 0,
-    ballDuty: ballDutyMap.get(p.id) || 0,
-  }));
+  const stats = sessionRosterStats(session.id);
+  const roster = stats.map((s) => s.player);
 
   // Partner matrix. Keyed by week + court + team, not just week + team — with
   // more than one court, "Team A" on court 1 and "Team A" on court 2 are
@@ -2407,12 +2570,21 @@ router.post('/sub-list', (req, res) => {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/sub-list');
   }
+  const slugError = invalidBroaderSubSlugField(req.body.slug, null);
+  if (slugError) {
+    flash(req, slugError, 'error');
+    return res.redirect('/admin/sub-list');
+  }
   try {
-    db.prepare('INSERT INTO broader_sub_list (name, email) VALUES (?, ?)').run(
-      req.body.name.trim(),
-      req.body.email.trim()
+    const name = req.body.name.trim();
+    const submittedSlug = (req.body.slug || '').trim();
+    const slug = submittedSlug || generateUniqueBroaderSubSlug(db, name, null);
+    db.prepare('INSERT INTO broader_sub_list (name, email, slug) VALUES (?, ?, ?)').run(
+      name,
+      req.body.email.trim(),
+      slug
     );
-    logActivity(req, { action: 'sublist.add', description: `Added ${req.body.name.trim()} (${req.body.email.trim()}) to the broader sub list` });
+    logActivity(req, { action: 'sublist.add', description: `Added ${name} (${req.body.email.trim()}) to the broader sub list` });
     flash(req, 'Added to sub list.');
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -2421,22 +2593,36 @@ router.post('/sub-list', (req, res) => {
 });
 
 router.post('/sub-list/:id/edit', (req, res) => {
+  // Slug deliberately NOT auto-regenerated when the name changes, same
+  // reasoning as players.slug (see invalidSlugField's doc comment) —
+  // only touched here if the admin explicitly types a different value in,
+  // e.g. to resolve a real collision between two pending sub-list entries.
   const fieldError = invalidPlayerFields(req.body);
   if (fieldError) {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/sub-list');
   }
-  const before = db.prepare('SELECT name, email FROM broader_sub_list WHERE id = ?').get(req.params.id);
+  const before = db.prepare('SELECT name, email, slug FROM broader_sub_list WHERE id = ?').get(req.params.id);
   if (!before) {
     flash(req, 'That sub-list entry no longer exists.', 'error');
     return res.redirect('/admin/sub-list');
   }
   const newName = req.body.name.trim();
   const newEmail = req.body.email.trim();
-  db.prepare('UPDATE broader_sub_list SET name = ?, email = ? WHERE id = ?').run(newName, newEmail, req.params.id);
+  const submittedSlug = (req.body.slug || '').trim();
+  let newSlug = before.slug;
+  if (submittedSlug && submittedSlug !== before.slug) {
+    const slugError = invalidBroaderSubSlugField(submittedSlug, req.params.id);
+    if (slugError) {
+      flash(req, slugError, 'error');
+      return res.redirect('/admin/sub-list');
+    }
+    newSlug = submittedSlug;
+  }
+  db.prepare('UPDATE broader_sub_list SET name = ?, email = ?, slug = ? WHERE id = ?').run(newName, newEmail, newSlug, req.params.id);
   logActivity(req, {
     action: 'sublist.edit',
-    description: `Edited sub-list entry: ${before.name} (${before.email}) → ${newName} (${newEmail})`,
+    description: `Edited sub-list entry: ${before.name} (${before.email}) → ${newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}`,
   });
   flash(req, 'Sub-list entry updated.');
   res.redirect('/admin/sub-list');

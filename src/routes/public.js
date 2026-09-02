@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const { buildPlayerICS, buildPlayerFeedICS } = require('../services/ics');
@@ -769,13 +769,16 @@ router.get('/me/:idOrSlug', (req, res) => {
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Mirrors buildPlayerFeedICS's scope in ics.js: every scheduled/active,
-  // non-archived session this player is currently enrolled in.
+  // non-archived session this player is currently enrolled in. Shares
+  // SESSION_DISPLAY_ORDER (day/time/court) with every other session listing
+  // in the app rather than a locally hand-written ORDER BY, so this page
+  // can't quietly drift out of sync with the rest.
   const sessions = db
     .prepare(
       `SELECT s.* FROM sessions s
        JOIN session_players sp ON sp.session_id = s.id
        WHERE sp.player_id = ? AND s.status IN ('scheduled', 'active') AND s.archived_at IS NULL
-       ORDER BY s.match_day_of_week, s.match_time, s.name`
+       ${SESSION_DISPLAY_ORDER}`
     )
     .all(playerId);
 
@@ -866,7 +869,7 @@ router.get('/me/:idOrSlug', (req, res) => {
       `SELECT s.* FROM sessions s
        JOIN session_players sp ON sp.session_id = s.id
        WHERE sp.player_id = ? AND s.status = 'draft' AND s.archived_at IS NULL
-       ORDER BY s.match_day_of_week, s.match_time, s.name`
+       ${SESSION_DISPLAY_ORDER}`
     )
     .all(playerId);
 

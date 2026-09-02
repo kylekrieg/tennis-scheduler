@@ -324,8 +324,8 @@ function applyResolutions(sessionAId, sessionBId) {
       const rowLeave = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(assignmentIdLeave);
       const rowPartner = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(assignmentIdPartner);
       if (!rowLeave || !rowPartner) continue; // defensive: row vanished since computed
-      const weekLeave = db.prepare('SELECT locked FROM weeks WHERE id = ?').get(rowLeave.week_id);
-      const weekPartner = db.prepare('SELECT locked FROM weeks WHERE id = ?').get(rowPartner.week_id);
+      const weekLeave = db.prepare('SELECT * FROM weeks WHERE id = ?').get(rowLeave.week_id);
+      const weekPartner = db.prepare('SELECT * FROM weeks WHERE id = ?').get(rowPartner.week_id);
       if ((weekLeave && weekLeave.locked) || (weekPartner && weekPartner.locked)) continue; // defensive: locked since computed
 
       db.prepare(`UPDATE week_assignments SET player_id = ?, status = 'scheduled' WHERE id = ?`).run(
@@ -336,6 +336,24 @@ function applyResolutions(sessionAId, sessionBId) {
         r.playerId,
         assignmentIdPartner
       );
+
+      // Ball duty is attached to a week (weeks.ball_duty_player_id), not to
+      // a player, and — unlike a plain self-service player-to-player swap
+      // (swapFlow.js's respondToSwap(), which deliberately leaves this
+      // stale for the admin to notice and fix by hand, see its own doc
+      // comment) — this function always knows exactly who's leaving a week
+      // and who's arriving to take their slot, with zero ambiguity. Kyle,
+      // 2026-09-01, after a real bug this exact gap caused (see CLAUDE.md's
+      // "Ball duty left stale after a joint-resolver swap"): auto-hand ball
+      // duty to whoever moved in, rather than leaving it silently pointing
+      // at someone who no longer plays that week at all.
+      if (weekLeave && weekLeave.ball_duty_player_id === r.playerId) {
+        db.prepare('UPDATE weeks SET ball_duty_player_id = ? WHERE id = ?').run(swappedWithPlayerId, weekLeave.id);
+      }
+      if (weekPartner && weekPartner.ball_duty_player_id === swappedWithPlayerId) {
+        db.prepare('UPDATE weeks SET ball_duty_player_id = ? WHERE id = ?').run(r.playerId, weekPartner.id);
+      }
+
       tokenStore.invalidateTokensForAssignment(assignmentIdLeave);
       tokenStore.invalidateTokensForAssignment(assignmentIdPartner);
       subFlow.closeActiveSubRequestForAssignment(assignmentIdLeave);
