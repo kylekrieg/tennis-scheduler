@@ -25,6 +25,149 @@ email-driven confirmation and substitution system. Built from
 - **Dark mode**: a toggle in the top-right of every page (public and admin) switches the whole site between light and dark. It remembers your choice per-browser and otherwise follows your system's light/dark setting the first time you visit.
 - **Ad-hoc sessions** — a second session type (choose it once, at creation) for recurring pickup games instead of a fairness-scheduled season: no roster targets, no blackout dates, no confirm/need-a-sub flow. An invite email goes out to the roster a configurable number of hours before each match (56h by default); courts fill first-come-first-served as players click "I'm in" — 4 signs in a court immediately, no waiting for a deadline. If sign-ups aren't a clean multiple of 4, a reminder goes to stragglers (30h default); a final email announces the courts (24h default), and anyone left in an incomplete group is told it didn't fill this time. Once a court forms it shows up on the player's normal schedule, My Page, calendar, and PDF like any other match — just with no sub/swap actions on it.
 
+## Screenshots
+
+A few of the player-facing pages, and the admin dashboard:
+
+<table>
+<tr>
+<td width="50%">
+
+**Next 4 Weeks** — every upcoming date, teams, and ball duty at a glance
+<img src="src/public/img/help/next-four-weeks.png" alt="Next 4 Weeks page" width="100%">
+
+</td>
+<td width="50%">
+
+**My Page** — a bookmarkable dashboard across every session you're in
+<img src="src/public/img/help/my-page.png" alt="My Page" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Request a Sub** — no login, pick your name, pick the week
+<img src="src/public/img/help/request-sub.png" alt="Request a Sub page" width="100%">
+
+</td>
+<td width="50%">
+
+**Swap a Week** — trade a week with a specific teammate instead
+<img src="src/public/img/help/swap.png" alt="Swap a Week page" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Blackout Dates** — self-service, carries over automatically between sessions on the same date
+<img src="src/public/img/help/blackout.png" alt="Blackout Dates page" width="100%">
+
+</td>
+<td width="50%">
+
+**Personal Calendar** — one-time download or a standing subscription that stays current
+<img src="src/public/img/help/calendar.png" alt="Personal Calendar page" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Admin Dashboard** — every session's status, flags, and conflicts in one place
+<img src="src/public/img/admin-guide/dashboard.png" alt="Admin Dashboard" width="100%">
+
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+## How the self-service flows work
+
+The player-facing `/help` page walks through each of these interactively; the diagrams below are the same timelines, so you can see the whole shape of each flow — including what happens if nobody ever responds — without clicking through the site.
+
+### Confirming a match
+
+```mermaid
+flowchart TD
+    A["📧 Reminder email sent<br/>(2 days before match — admin-configurable)"] --> B{"Response?"}
+    B -->|Confirm| C["✅ Confirmed — done"]
+    B -->|Need a sub| D[Jumps into the Request a Sub flow]
+    B -->|No response| E["⏰ One follow-up nudge<br/>(~27 hours before match)"]
+    E --> F{"Response?"}
+    F -->|Confirm| C
+    F -->|Need a sub| D
+    F -->|No response| G["Match time arrives<br/>Stays 'scheduled', week locks, links stop working<br/>Admin sees an 'unconfirmed' flag — nothing further happens automatically"]
+
+    style C fill:#dcfce7,stroke:#16a34a
+    style G fill:#fee2e2,stroke:#dc2626
+    style E fill:#fef3c7,stroke:#d97706
+```
+
+### Request a Sub
+
+```mermaid
+flowchart TD
+    A1["From a reminder email:<br/>click 'Need a sub'"] --> C["'Are you sure?' page<br/>(one more click)"]
+    A2["From the Request a Sub page:<br/>pick your week"] --> V["Verification email sent to you first"]
+    V -->|click the link| C
+    A3["Admin flags a slot<br/>'needs a sub' directly"] --> W["Fan-out waits until this week's<br/>normal reminder time instead of firing right away"]
+    C -->|confirm| F["Email sent to everyone not already<br/>playing that week (except blacked-out players)"]
+    W --> F
+    F --> G{"Claimed?"}
+    G -->|Yes| H["✅ Spot filled<br/>Original player marked subbed out,<br/>sub confirmed, rest of the group notified"]
+    G -->|Not yet| I["24 hours before match:<br/>escalates to the session's sub list"]
+    I --> J{"Sub list claims it?"}
+    J -->|Yes| H
+    J -->|Still no one| K["Match time arrives:<br/>marked unfilled, flagged for the admin"]
+
+    style H fill:#dcfce7,stroke:#16a34a
+    style K fill:#fee2e2,stroke:#dc2626
+    style I fill:#fef3c7,stroke:#d97706
+```
+
+*An admin can close a sub request out at any point — reassigning the slot, marking the original player confirmed after all, or clearing the request entirely (which puts them back to "scheduled").*
+
+### Swap a Week
+
+```mermaid
+flowchart TD
+    A["Propose a trade:<br/>pick your week + a teammate + their week"] --> V["Verification email sent to you first"]
+    V -->|click the link| B[Proposal sent to the other player]
+    B --> C{"Their response?"}
+    C -->|Accept| D["✅ Swap complete<br/>Both confirmed, everyone in both weeks notified"]
+    C -->|Decline| E["Nothing changes —<br/>you're notified"]
+    C -->|No response| F["48 hours before the earlier of<br/>the two match dates: one nudge email"]
+    F --> G{"Their response?"}
+    G -->|Accept| D
+    G -->|Decline| E
+    G -->|Still nothing| H["Earlier match date arrives:<br/>proposal quietly expires"]
+
+    style D fill:#dcfce7,stroke:#16a34a
+    style H fill:#fee2e2,stroke:#dc2626
+    style F fill:#fef3c7,stroke:#d97706
+```
+
+### Ad-hoc pickup games
+
+```mermaid
+flowchart TD
+    A["Invite email sent to the whole roster<br/>(~56 hours before match — admin-configurable)"] --> B["Sign-ups come in —<br/>every complete group of 4 becomes its own court"]
+    B --> C{"Multiple of 4?"}
+    C -->|Yes| D["No reminder needed —<br/>every court's already full"]
+    C -->|Leftover of 1–3| E["~30 hours before match:<br/>one reminder to stragglers only"]
+    D --> F["~24 hours before match:<br/>courts finalize — this is the only confirmation step"]
+    E --> F
+    F --> G{"Landed on a full court?"}
+    G -->|Yes| H["✅ 'You're in' email —<br/>names teammates and court"]
+    G -->|No| I["'Not enough signed up' email —<br/>invited again next time"]
+
+    style H fill:#dcfce7,stroke:#16a34a
+    style I fill:#fee2e2,stroke:#dc2626
+    style E fill:#fef3c7,stroke:#d97706
+```
+
 ## What's here
 
 ```
