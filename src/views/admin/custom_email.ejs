@@ -11,6 +11,10 @@
     <label for="type_session" style="margin:0;font-weight:400;">Whole session roster</label>
   </div>
   <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="week" id="type_week">
+    <label for="type_week" style="margin:0;font-weight:400;">This week's players (one session)</label>
+  </div>
+  <div class="checkbox-row">
     <input type="radio" name="recipient_type" value="template_test" id="type_template_test">
     <label for="type_template_test" style="margin:0;font-weight:400;">Test a template</label>
   </div>
@@ -25,9 +29,17 @@
   <div id="session-picker" style="display:none;">
     <label for="session_id">Session</label>
     <select name="session_id" id="session_id">
-      <% sessions.forEach(function(s) { %><option value="<%= s.id %>"><%= s.name %><%= s.archived_at ? ' (archived)' : '' %></option><% }) %>
+      <% sessions.forEach(function(s) { %><option value="<%= s.id %>"><%= sessionFullTitle(s) %><%= s.archived_at ? ' (archived)' : '' %></option><% }) %>
     </select>
     <p class="muted" style="margin-top:4px;">Goes to every active player currently on this session's roster — the same list "Notify roster" or ad-hoc invites would use.</p>
+  </div>
+
+  <div id="week-picker" style="display:none;">
+    <label for="week_session_id">Session</label>
+    <select name="week_session_id" id="week_session_id">
+      <% sessions.forEach(function(s) { %><option value="<%= s.id %>"><%= sessionFullTitle(s) %><%= s.archived_at ? ' (archived)' : '' %></option><% }) %>
+    </select>
+    <p class="muted" style="margin-top:4px;">One email, with everyone in the To: field together — not one email per person. Goes to whoever is currently <strong>scheduled or confirmed</strong> for this session's next upcoming match (a "needs a sub" slot or one already subbed out is skipped, since that's not who's actually playing). If this week's match has already happened, it automatically uses the next upcoming one instead.</p>
   </div>
 
   <div id="template-picker" style="display:none;">
@@ -55,6 +67,7 @@
   (function () {
     var playerPicker = document.getElementById('player-picker');
     var sessionPicker = document.getElementById('session-picker');
+    var weekPicker = document.getElementById('week-picker');
     var templatePicker = document.getElementById('template-picker');
     var subjectBody = document.getElementById('subject-body-fields');
     var subject = document.getElementById('subject');
@@ -62,9 +75,11 @@
     document.querySelectorAll('input[name="recipient_type"]').forEach(function (r) {
       r.addEventListener('change', function () {
         var toSession = this.value === 'session';
+        var toWeek = this.value === 'week';
         var toTemplate = this.value === 'template_test';
-        playerPicker.style.display = toSession || toTemplate ? 'none' : '';
+        playerPicker.style.display = toSession || toWeek || toTemplate ? 'none' : '';
         sessionPicker.style.display = toSession ? '' : 'none';
+        weekPicker.style.display = toWeek ? '' : 'none';
         templatePicker.style.display = toTemplate ? '' : 'none';
         subjectBody.style.display = toTemplate ? 'none' : '';
         subject.required = !toTemplate;

@@ -9,20 +9,39 @@ const { carriedOverBlackoutsForSession } = require('./sessionHelper');
 const { generateUniqueSlug } = require('./playerSlug');
 
 /**
- * The master broader_sub_list, scoped down to just the people an admin has
- * assigned to this specific session (session_sub_list) — see "Per-session
- * sub list" in CLAUDE.md. Used both by escalateOverdueRequests() to decide
- * who actually gets emailed, and by admin.js's session-subs page to render
- * the current checklist state.
+ * This session's sub candidate pool — used both by escalateOverdueRequests()
+ * to decide who actually gets emailed, and by admin.js's session-subs page
+ * to render the current checklist state. See "Per-session sub list" in
+ * CLAUDE.md.
+ *
+ * Two sources, merged into one list (Kyle, 2026-09-02): the master
+ * broader_sub_list, scoped down via session_sub_list same as always, PLUS
+ * real players assigned directly via session_sub_players — added so one
+ * session's roster can double as another session's sub pool (the
+ * 16-players/two-sessions-of-8 scenario) without manually duplicating each
+ * person into broader_sub_list by hand. Each row is tagged `candidateType`
+ * ('broader' | 'player') so callers that need to distinguish them (right
+ * now, only escalateOverdueRequests()'s sub_offers insert, which has to
+ * point at the correct FK column) can — everything else (email templates,
+ * the self-notice's "here's your sub list" summary) only ever reads
+ * `.name`/`.email`, which both row shapes have, so they work unmodified.
  */
 function sessionSubList(sessionId) {
-  return db
+  const fromBroaderList = db
     .prepare(
-      `SELECT bl.* FROM session_sub_list ssl
+      `SELECT bl.*, 'broader' as candidateType FROM session_sub_list ssl
        JOIN broader_sub_list bl ON bl.id = ssl.broader_list_id
-       WHERE ssl.session_id = ? ORDER BY bl.name`
+       WHERE ssl.session_id = ?`
     )
     .all(sessionId);
+  const fromPlayers = db
+    .prepare(
+      `SELECT p.*, 'player' as candidateType FROM session_sub_players ssp
+       JOIN players p ON p.id = ssp.player_id
+       WHERE ssp.session_id = ? AND p.active = 1`
+    )
+    .all(sessionId);
+  return [...fromBroaderList, ...fromPlayers].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function getWeekWithSession(weekId) {
@@ -476,11 +495,33 @@ async function escalateOverdueRequests() {
 
     escalatedCount++;
 
-    // Per-session subset of the master broader_sub_list, not the whole
-    // list — see "Per-session sub list" in CLAUDE.md. Looked up per
-    // request (not hoisted above the loop) since different open requests
-    // can belong to different sessions with different sub lists.
-    const sessionSubs = sessionSubList(session.id);
+    // Per-session sub pool (broader_sub_list + real players, see
+    // sessionSubList()'s doc comment), not the whole master list. Looked up
+    // per request (not hoisted above the loop) since different open
+    // requests can belong to different sessions with different sub lists.
+    let sessionSubs = sessionSubList(session.id);
+
+    // Skip a player-type candidate who's told the app they can't play this
+    // exact date. Deliberately NOT the same session-scoped blackoutSet +
+    // carriedOverBlackoutsForSession() pattern fanOutSubRequest() uses for
+    // the initial roster fan-out — that carryover helper only looks at
+    // players currently enrolled on the TARGET session's own roster (see
+    // its doc comment in sessionHelper.js), which a sub *candidate*
+    // (assigned via session_sub_players, not session_players) never is by
+    // definition. A direct, session-agnostic lookup is both simpler and
+    // more correct here: per Kyle's own 2026-08-27 call on blackout dates
+    // ("a blackout date is a blackout date... it doesn't need any
+    // context"), a real player's blackout entry is meant to be universal
+    // regardless of which session's page it was entered from, so this
+    // checks every blackout_dates row for that exact calendar date, not
+    // just ones tied to this specific session. broader_sub_list candidates
+    // are unaffected — they have no blackout dates of their own to check
+    // (they're not a `players` row, and thus not enrolled anywhere, until
+    // they actually claim something).
+    const blackedOutPlayerIds = new Set(
+      db.prepare('SELECT DISTINCT player_id FROM blackout_dates WHERE date = ?').all(week.match_date).map((r) => r.player_id)
+    );
+    sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !blackedOutPlayerIds.has(s.id));
 
     if (sessionSubs.length === 0) {
       db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
@@ -491,12 +532,18 @@ async function escalateOverdueRequests() {
       req.id
     );
 
-    for (const bl of sessionSubs) {
+    for (const candidate of sessionSubs) {
       const raw = generateRawToken();
-      db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
-      ).run(req.id, bl.id, hashToken(raw), 'pending');
-      await email.sendEscalationEmail({ recipient: bl, week, session, claimToken: raw });
+      if (candidate.candidateType === 'player') {
+        db.prepare(
+          'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
+        ).run(req.id, candidate.id, hashToken(raw), 'pending');
+      } else {
+        db.prepare(
+          'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
+        ).run(req.id, candidate.id, hashToken(raw), 'pending');
+      }
+      await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw });
     }
   }
 

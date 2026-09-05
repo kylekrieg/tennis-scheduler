@@ -32,8 +32,8 @@ try {
   // Order matters here under PRAGMA foreign_keys = ON. sessions cascades away
   // most things (session_players, blackout_dates, blackout_pending, weeks ->
   // week_assignments -> week_assignment_tokens, each week's sub_requests ->
-  // sub_offers, and session_sub_list) — but two references have no cascade
-  // action defined
+  // sub_offers, session_sub_list, and session_sub_players) — but two
+  // references have no cascade action defined
   // (deliberately, elsewhere, so a sent-email or a sub-invite record can
   // outlive the row that created it): email_log.related_week_id, and
   // sub_offers' candidate_player_id/broader_list_id. Left in place, either

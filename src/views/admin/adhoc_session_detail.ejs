@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-  <h1 style="margin-bottom:0;"><%= session.name %> <span class="badge scheduled">ad-hoc</span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %></h1>
+  <h1 style="margin-bottom:0;"><%= sessionFullTitle(session) %> <span class="badge scheduled">ad-hoc</span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %></h1>
   <div class="actions">
     <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit / roster</a>
     <% if (!session.archived_at) { %>
@@ -11,8 +11,7 @@
   </div>
 </div>
 <p class="muted">
-  <%= ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][session.match_day_of_week] %> <%= fmtTime(session.match_time) %>
-  &middot; Invite <%= session.adhoc_invite_lead_hours %>h before &middot; Reminder <%= session.adhoc_reminder_lead_hours %>h before (if short) &middot; Final roster <%= session.adhoc_final_lead_hours %>h before
+  Invite <%= session.adhoc_invite_lead_hours %>h before &middot; Reminder <%= session.adhoc_reminder_lead_hours %>h before (if short) &middot; Final roster <%= session.adhoc_final_lead_hours %>h before
 </p>
 <p class="muted">Roster: <%= roster.length %> player(s) currently invited to every match. First-come-first-served — 4 sign-ups locks in a court immediately, no waiting for any deadline. See <a href="/help#adhoc">How It Works</a> for what players see.</p>
 

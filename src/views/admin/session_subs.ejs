@@ -1,17 +1,36 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <h1>Subs for <%= sessionFullTitle(session) %></h1>
-<p class="muted">Only the people checked below get an escalation email if a sub request for <strong><%= session.name %></strong> goes unanswered by that week's roster. The master list itself (add/remove people) is managed at <a href="/admin/sub-list">Broader Sub List</a> — this page just picks which of them apply here.</p>
+<p class="muted">Only the people checked below get an escalation email if a sub request for <strong><%= sessionFullTitle(session) %></strong> goes unanswered by that week's roster. Pick from the master sub list, real players (e.g. another session's roster), or both — the two lists just merge into one pool when a request actually escalates.</p>
 
-<% if (masterList.length === 0) { %>
-  <p class="notice">The master sub list is empty. <a href="/admin/sub-list">Add people to it</a> first, then come back here to assign them to this session.</p>
+<% if (masterList.length === 0 && playerList.length === 0) { %>
+  <p class="notice">There's no one to pick from yet — <a href="/admin/sub-list">add people to the Broader Sub List</a> or <a href="/admin/players">add players</a> first, then come back here to assign them to this session.</p>
 <% } else { %>
   <form method="post" action="/admin/sessions/<%= session.id %>/subs" class="card wide">
-    <% masterList.forEach(function(bl) { %>
-      <div class="checkbox-row">
-        <input type="checkbox" name="sub_ids" value="<%= bl.id %>" id="sub<%= bl.id %>" <%= assigned.has(bl.id) ? 'checked' : '' %>>
-        <label for="sub<%= bl.id %>" style="margin:0;font-weight:400;"><%= bl.name %> <span class="muted">(<%= bl.email %>)</span></label>
-      </div>
-    <% }) %>
+    <h2 style="margin-top:0;">Broader Sub List</h2>
+    <% if (masterList.length === 0) { %>
+      <p class="muted">The master sub list is empty. <a href="/admin/sub-list">Add people to it</a> to pick from here.</p>
+    <% } else { %>
+      <% masterList.forEach(function(bl) { %>
+        <div class="checkbox-row">
+          <input type="checkbox" name="sub_ids" value="<%= bl.id %>" id="sub<%= bl.id %>" <%= assignedBroaderIds.has(bl.id) ? 'checked' : '' %>>
+          <label for="sub<%= bl.id %>" style="margin:0;font-weight:400;"><%= bl.name %> <span class="muted">(<%= bl.email %>)</span></label>
+        </div>
+      <% }) %>
+    <% } %>
+
+    <h2>Players</h2>
+    <p class="muted" style="margin-top:0;">Every active player not already on this session's own roster — pick anyone who's willing to sub in here, whether or not they're enrolled elsewhere.</p>
+    <% if (playerList.length === 0) { %>
+      <p class="muted">No eligible players (everyone active is already on this session's own roster).</p>
+    <% } else { %>
+      <% playerList.forEach(function(p) { %>
+        <div class="checkbox-row">
+          <input type="checkbox" name="player_ids" value="<%= p.id %>" id="subplayer<%= p.id %>" <%= assignedPlayerIds.has(p.id) ? 'checked' : '' %>>
+          <label for="subplayer<%= p.id %>" style="margin:0;font-weight:400;"><%= p.name %> <span class="muted">(<%= p.email %>)</span></label>
+        </div>
+      <% }) %>
+    <% } %>
+
     <div class="actions"><button class="btn green" type="submit">Save</button></div>
   </form>
 <% } %>

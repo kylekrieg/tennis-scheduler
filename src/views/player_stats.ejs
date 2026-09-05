@@ -1,0 +1,36 @@
+<%- include('partials/header', {title, wideMain: true}) %>
+<h1>Player Stats</h1>
+<p class="muted">Target, games played, sub-bonus games, and ball duty for every player in each active session. Same numbers as the season schedule and calendar — just totaled up in one place.</p>
+
+<% if (rows.length === 0) { %>
+  <p class="muted">No active sessions right now.</p>
+<% } %>
+
+<% rows.forEach(function(r) { %>
+  <div class="card wide" style="margin-bottom:20px;border-left:6px solid <%= sessionColor(r.session) %>;">
+    <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:<%= sessionColor(r.session) %>;flex-shrink:0;"></span>
+      <%= sessionFullTitle(r.session) %>
+    </h2>
+    <% if (r.playerStats.length === 0) { %>
+      <p class="muted">No players enrolled yet.</p>
+    <% } else { %>
+      <table class="wide">
+        <thead><tr><th>Player</th><th>Target</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
+        <tbody>
+          <% r.playerStats.forEach(function(s) { %>
+            <tr>
+              <td><a href="/me/<%= s.player.slug || s.player.id %>"><%= s.player.name %></a></td>
+              <td><%= s.target %><% if (s.originalTarget != null && s.originalTarget !== s.target) { %> <span class="muted">(originally <%= s.originalTarget %>)</span><% } %></td>
+              <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
+              <td><%= s.subBonus %></td>
+              <td><%= s.ballDuty %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+<% }) %>
+
+<%- include('partials/footer') %>

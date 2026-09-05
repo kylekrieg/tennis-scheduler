@@ -122,6 +122,23 @@ CREATE TABLE IF NOT EXISTS session_sub_list (
   UNIQUE(session_id, broader_list_id)
 );
 
+-- Kyle, 2026-09-02: "why don't we allow a session's sub list to pull and
+-- select players from both the all players list and also the broader sub
+-- list?" -- session_sub_list above only ever drew from broader_sub_list, so
+-- making one session's roster available as another session's sub pool (the
+-- 16-players/two-sessions-of-8 scenario discussed the night before) meant
+-- manually duplicating each person into broader_sub_list by hand, kept in
+-- sync with nothing. This is the second, sibling join table: real players
+-- assigned directly as a session's sub candidates, no broader_sub_list
+-- detour needed. See subFlow.js's sessionSubList(), which now merges rows
+-- from both tables into one combined candidate list.
+CREATE TABLE IF NOT EXISTS session_sub_players (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  UNIQUE(session_id, player_id)
+);
+
 CREATE TABLE IF NOT EXISTS weeks (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id            INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

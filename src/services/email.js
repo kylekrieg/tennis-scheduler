@@ -861,8 +861,15 @@ function escapeHtml(str) {
 // before the \n-to-<br> conversion so a literal "<br>" typed by the admin
 // reads as text, not markup, and the real line-break conversion still works
 // on the now-escaped text.
-async function sendCustomEmail({ to, subject, body, session = null, test = false }) {
-  const banner = session ? matchBanner(session, null) : '';
+// `week` is optional (default null, same matchBanner(session, null) banner as
+// before) — added 2026-09-02 for the "email this week's scheduled/subbed-in
+// players" recipient mode (admin.js's POST /email, 'week' branch): once the
+// caller has resolved a specific week, showing its real date in the banner
+// (matchBanner(session, week), same treatment sendAdminWeekReport() already
+// gives a week-specific email) is strictly more useful than the session-only
+// banner every other custom-email path still uses, and costs nothing extra.
+async function sendCustomEmail({ to, subject, body, session = null, week = null, test = false }) {
+  const banner = session ? matchBanner(session, week) : '';
   const html = `${banner}<p>${escapeHtml(body).replace(/\n/g, '<br>')}</p>${footer(session)}`;
   return sendMail({ to, subject, html, category: 'custom', session, test });
 }

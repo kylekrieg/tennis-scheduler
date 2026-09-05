@@ -55,7 +55,7 @@
         </td>
         <td class="muted">
           <% if (r.session_id) { %>
-            <a href="/admin/sessions/<%= r.session_id %>"><%= r.session_name %></a><% if (r.match_date) { %> — <%= r.match_date %><% } %>
+            <a href="/admin/sessions/<%= r.session_id %>"><%= sessionFullTitle(r.sessionForTitle) %></a><% if (r.match_date) { %> — <%= r.match_date %><% } %>
           <% } else { %>—<% } %>
         </td>
       </tr>

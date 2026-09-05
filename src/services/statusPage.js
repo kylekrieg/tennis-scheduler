@@ -65,61 +65,79 @@ function getAttentionItems() {
   // covers e.g. a week whose ball duty needs reassignment after its holder
   // requested a sub. Locked (already-played) weeks are excluded — nothing
   // left to do about the past.
-  const needsAttentionWeeks = db
-    .prepare(
-      `SELECT w.*, s.id as session_id, s.name as session_name
-       FROM weeks w JOIN sessions s ON s.id = w.session_id
-       WHERE w.session_id IN (${placeholders}) AND w.needs_attention = 1 AND w.locked = 0
-       ORDER BY w.match_date`
-    )
-    .all(...sessionIds);
+  // sessionById lets every flattened row below carry a real nested `session`
+  // object (for sessionFullTitle()) without repeating s.match_day_of_week/
+  // match_time/court_info/club_name in every single query below — each query
+  // still selects session_id/session_name for its existing href/display use,
+  // attachSession() just looks the rest up from the `sessions` array already
+  // fetched at the top of this function.
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
+  const attachSession = (rows, idField = 'session_id') =>
+    rows.map((r) => ({ ...r, session: sessionById.get(r[idField]) || { name: r.session_name } }));
+
+  const needsAttentionWeeks = attachSession(
+    db
+      .prepare(
+        `SELECT w.*, s.id as session_id, s.name as session_name
+         FROM weeks w JOIN sessions s ON s.id = w.session_id
+         WHERE w.session_id IN (${placeholders}) AND w.needs_attention = 1 AND w.locked = 0
+         ORDER BY w.match_date`
+      )
+      .all(...sessionIds)
+  );
 
   // Same "actually been reminded" condition the dashboard's unconfirmed
   // count uses, just returning the rows instead of a count.
-  const unconfirmed = db
-    .prepare(
-      `SELECT wa.id as assignment_id, p.name as player_name, w.match_date, w.id as week_id,
-              s.id as session_id, s.name as session_name
-       FROM week_assignments wa
-       JOIN weeks w ON w.id = wa.week_id
-       JOIN players p ON p.id = wa.player_id
-       JOIN sessions s ON s.id = w.session_id
-       WHERE w.session_id IN (${placeholders}) AND wa.status = 'scheduled' AND w.match_date >= date('now')
-         AND EXISTS (
-           SELECT 1 FROM email_log el
-           WHERE el.category = 'reminder' AND el.related_week_id = w.id AND el.to_email = p.email
-         )
-       ORDER BY w.match_date, p.name`
-    )
-    .all(...sessionIds);
+  const unconfirmed = attachSession(
+    db
+      .prepare(
+        `SELECT wa.id as assignment_id, p.name as player_name, w.match_date, w.id as week_id,
+                s.id as session_id, s.name as session_name
+         FROM week_assignments wa
+         JOIN weeks w ON w.id = wa.week_id
+         JOIN players p ON p.id = wa.player_id
+         JOIN sessions s ON s.id = w.session_id
+         WHERE w.session_id IN (${placeholders}) AND wa.status = 'scheduled' AND w.match_date >= date('now')
+           AND EXISTS (
+             SELECT 1 FROM email_log el
+             WHERE el.category = 'reminder' AND el.related_week_id = w.id AND el.to_email = p.email
+           )
+         ORDER BY w.match_date, p.name`
+      )
+      .all(...sessionIds)
+  );
 
-  const unfilledSubs = db
-    .prepare(
-      `SELECT sr.id, sr.status, w.match_date, w.id as week_id,
-              s.id as session_id, s.name as session_name, p.name as original_player_name
-       FROM sub_requests sr
-       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
-       JOIN weeks w ON w.id = wa.week_id
-       JOIN sessions s ON s.id = w.session_id
-       JOIN players p ON p.id = wa.player_id
-       WHERE w.session_id IN (${placeholders}) AND sr.status IN ('open', 'escalated', 'unfilled')
-       ORDER BY w.match_date`
-    )
-    .all(...sessionIds);
+  const unfilledSubs = attachSession(
+    db
+      .prepare(
+        `SELECT sr.id, sr.status, w.match_date, w.id as week_id,
+                s.id as session_id, s.name as session_name, p.name as original_player_name
+         FROM sub_requests sr
+         JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+         JOIN weeks w ON w.id = wa.week_id
+         JOIN sessions s ON s.id = w.session_id
+         JOIN players p ON p.id = wa.player_id
+         WHERE w.session_id IN (${placeholders}) AND sr.status IN ('open', 'escalated', 'unfilled')
+         ORDER BY w.match_date`
+      )
+      .all(...sessionIds)
+  );
 
   // Excludes needs_attention weeks — those already show up above with a more
   // specific reason; "missing ball duty" on a week with zero players is a
   // misleading way to describe the real problem (see the dashboard's
   // identical exclusion, added for the same reason).
-  const missingBallDuty = db
-    .prepare(
-      `SELECT w.*, s.id as session_id, s.name as session_name
-       FROM weeks w JOIN sessions s ON s.id = w.session_id
-       WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NULL AND w.needs_attention = 0
-         AND w.match_date >= date('now')
-       ORDER BY w.match_date`
-    )
-    .all(...sessionIds);
+  const missingBallDuty = attachSession(
+    db
+      .prepare(
+        `SELECT w.*, s.id as session_id, s.name as session_name
+         FROM weeks w JOIN sessions s ON s.id = w.session_id
+         WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NULL AND w.needs_attention = 0
+           AND w.match_date >= date('now')
+         ORDER BY w.match_date`
+      )
+      .all(...sessionIds)
+  );
 
   // ball_duty_player_id set, but pointing at someone not actually playing
   // that week anymore — invisible to missingBallDuty above (NULL-only).
@@ -129,44 +147,48 @@ function getAttentionItems() {
   // duty left stale after a joint-resolver swap" in CLAUDE.md. That resolver
   // path now auto-hands ball duty to whoever moved in, but this stays as a
   // safety net for any other way this could happen.
-  const staleBallDuty = db
-    .prepare(
-      `SELECT w.*, s.id as session_id, s.name as session_name, p.name as stale_player_name
-       FROM weeks w JOIN sessions s ON s.id = w.session_id
-       JOIN players p ON p.id = w.ball_duty_player_id
-       WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NOT NULL
-         AND w.locked = 0 AND w.match_date >= date('now')
-         AND NOT EXISTS (
-           SELECT 1 FROM week_assignments wa WHERE wa.week_id = w.id AND wa.player_id = w.ball_duty_player_id
-             AND wa.status IN ('scheduled','confirmed')
-         )
-       ORDER BY w.match_date`
-    )
-    .all(...sessionIds);
+  const staleBallDuty = attachSession(
+    db
+      .prepare(
+        `SELECT w.*, s.id as session_id, s.name as session_name, p.name as stale_player_name
+         FROM weeks w JOIN sessions s ON s.id = w.session_id
+         JOIN players p ON p.id = w.ball_duty_player_id
+         WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NOT NULL
+           AND w.locked = 0 AND w.match_date >= date('now')
+           AND NOT EXISTS (
+             SELECT 1 FROM week_assignments wa WHERE wa.week_id = w.id AND wa.player_id = w.ball_duty_player_id
+               AND wa.status IN ('scheduled','confirmed')
+           )
+         ORDER BY w.match_date`
+      )
+      .all(...sessionIds)
+  );
 
   // Pending direct swaps that have already been nudged (see swapFlow.js's
   // nudgeOverdueSwaps()) and still have no answer — the swap equivalent of
   // unfilledSubs above, flattened to specifics the same way. Self-clearing:
   // once the target player responds (or the admin cancels it), status leaves
   // 'pending' and it drops out of this query on its own.
-  const staleSwaps = db
-    .prepare(
-      `SELECT sw.id, sw.nudged_at,
-              ip.name as initiator_name, tp.name as target_name,
-              iw.match_date as initiator_match_date, tw.match_date as target_match_date,
-              s.id as session_id, s.name as session_name
-       FROM swap_requests sw
-       JOIN week_assignments ia ON ia.id = sw.initiator_assignment_id
-       JOIN week_assignments ta ON ta.id = sw.target_assignment_id
-       JOIN weeks iw ON iw.id = ia.week_id
-       JOIN weeks tw ON tw.id = ta.week_id
-       JOIN sessions s ON s.id = iw.session_id
-       JOIN players ip ON ip.id = ia.player_id
-       JOIN players tp ON tp.id = ta.player_id
-       WHERE s.id IN (${placeholders}) AND sw.status = 'pending' AND sw.nudged_at IS NOT NULL
-       ORDER BY sw.nudged_at`
-    )
-    .all(...sessionIds);
+  const staleSwaps = attachSession(
+    db
+      .prepare(
+        `SELECT sw.id, sw.nudged_at,
+                ip.name as initiator_name, tp.name as target_name,
+                iw.match_date as initiator_match_date, tw.match_date as target_match_date,
+                s.id as session_id, s.name as session_name
+         FROM swap_requests sw
+         JOIN week_assignments ia ON ia.id = sw.initiator_assignment_id
+         JOIN week_assignments ta ON ta.id = sw.target_assignment_id
+         JOIN weeks iw ON iw.id = ia.week_id
+         JOIN weeks tw ON tw.id = ta.week_id
+         JOIN sessions s ON s.id = iw.session_id
+         JOIN players ip ON ip.id = ia.player_id
+         JOIN players tp ON tp.id = ta.player_id
+         WHERE s.id IN (${placeholders}) AND sw.status = 'pending' AND sw.nudged_at IS NOT NULL
+         ORDER BY sw.nudged_at`
+      )
+      .all(...sessionIds)
+  );
 
   return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps };
 }

@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const { buildPlayerICS, buildPlayerFeedICS } = require('../services/ics');
@@ -97,6 +97,34 @@ router.get('/preferences', (req, res) => {
   // available here — no new auth logic needed, just pick the right header
   // partial to include.
   res.render('preferences', { title: 'Preferences', isAdmin: !!(req.session && req.session.isAdmin) });
+});
+
+// Kyle, 2026-09-05: "I'd like to build a 'player stats' on the public site.
+// Maybe I like the stats we built for each session under the admin panel
+// but I think we need to remove the session stats at the top and just
+// display the exploded view of each session with each player." That's
+// admin.js's GET /stats (Stats Summary) — its top summary row (open subs,
+// ball-duty issues, confirmation counts) is genuinely admin-only "needs
+// attention" info, but the per-player Target/Played/Sub bonus/Ball duty
+// table underneath each session is exactly the kind of thing a player
+// already wants to know ("how am I doing this season") and isn't sensitive
+// at all — every number in it is already derivable from the public
+// schedule/PDF/calendar. Reuses the exact same sessionRosterStats() helper
+// (now in sessionHelper.js) so this page and both admin stats pages can
+// never disagree on what "played" or "ball duty" means.
+//
+// Scope is active/scheduled regular sessions only — same as
+// getViewableSessions()'s definition of "worth showing on public pages"
+// (archived sessions are meant to go fully quiet, and ad-hoc sessions have
+// no target/ball-duty concept for this table to describe at all).
+router.get('/stats', (req, res) => {
+  const sessions = db
+    .prepare(
+      `SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' AND status IN ('scheduled', 'active') ${SESSION_DISPLAY_ORDER}`
+    )
+    .all();
+  const rows = sessions.map((s) => ({ session: s, playerStats: sessionRosterStats(s.id) }));
+  res.render('player_stats', { title: 'Player Stats', rows });
 });
 
 router.get('/schedule', (req, res) => {

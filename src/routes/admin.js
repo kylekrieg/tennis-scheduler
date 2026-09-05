@@ -21,7 +21,7 @@ const cron = require('../services/cron');
 const backup = require('../services/backup');
 const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
@@ -70,55 +70,10 @@ function overlapWarningText(sessionId) {
   return `Heads up: ${parts.length} player(s) are enrolled in another session on the same day of week with overlapping dates — nothing prevents the scheduler from double-booking them automatically, so check the schedule once both are generated: ${parts.join('; ')}.`;
 }
 
-// Shared by the per-session Stats page (GET /sessions/:id/stats) and the
-// all-active-sessions Stats Summary page (GET /stats) — Kyle, 2026-09-01:
-// "let's build the full per-player breakdown under the summary you just
-// built." Factored out here rather than left duplicated in each route,
-// since it's four queries plus a roster join, not a one-line count like the
-// small flags shared elsewhere in this file (unfilledSubs, staleBallDuty,
-// etc.) — worth keeping in one place so the two pages can't drift apart on
-// what "played" or "ball duty" actually means.
-function sessionRosterStats(sessionId) {
-  const roster = db
-    .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
-    .all(sessionId);
-  const targets = db.prepare('SELECT player_id, target_games, original_target FROM session_players WHERE session_id = ?').all(sessionId);
-  const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
-  const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
-
-  const playedCounts = db
-    .prepare(
-      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0 GROUP BY player_id`
-    )
-    .all(sessionId);
-  const playedMap = new Map(playedCounts.map((r) => [r.player_id, r.n]));
-
-  const subBonusCounts = db
-    .prepare(
-      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status != 'subbed_out' GROUP BY player_id`
-    )
-    .all(sessionId);
-  const subBonusMap = new Map(subBonusCounts.map((r) => [r.player_id, r.n]));
-
-  const ballDutyCounts = db
-    .prepare(
-      `SELECT ball_duty_player_id as player_id, COUNT(*) as n FROM weeks
-       WHERE session_id = ? AND ball_duty_player_id IS NOT NULL GROUP BY ball_duty_player_id`
-    )
-    .all(sessionId);
-  const ballDutyMap = new Map(ballDutyCounts.map((r) => [r.player_id, r.n]));
-
-  return roster.map((p) => ({
-    player: p,
-    target: targetMap.get(p.id) || 0,
-    originalTarget: originalTargetMap.get(p.id),
-    played: playedMap.get(p.id) || 0,
-    subBonus: subBonusMap.get(p.id) || 0,
-    ballDuty: ballDutyMap.get(p.id) || 0,
-  }));
-}
+// sessionRosterStats() (per-player target/played/sub-bonus/ball-duty
+// breakdown) now lives in sessionHelper.js, shared by the per-session Stats
+// page, the all-active-sessions Stats Summary page, and (as of 2026-09-05)
+// the public player-stats page in public.js — see that file's doc comment.
 
 function flash(req, message, type = 'ok') {
   req.session.flash = { message, type };
@@ -152,6 +107,13 @@ router.post('/login', adminLoginLimiter, (req, res) => {
       req.session.isAdmin = true;
       req.session.adminId = admin.id;
       req.session.adminName = admin.name;
+      // Logged via the normal logActivity() (not logSystemActivity()) since
+      // req.session.adminId/adminName are already set above — a login is
+      // always attributable to a specific admin, unlike the cron-triggered
+      // backup scripts logSystemActivity() exists for. Attributing it to
+      // "System (automatic)" would throw away the one thing worth knowing:
+      // which admin actually logged in.
+      logActivity(req, { action: 'admin.login', description: `${admin.name} (${admin.username}) logged in` });
       res.redirect('/admin');
     });
   }
@@ -409,7 +371,7 @@ router.post('/sessions/:id/archive', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
   db.prepare(`UPDATE sessions SET archived_at = datetime('now') WHERE id = ?`).run(session.id);
-  logActivity(req, { action: 'session.archive', description: `Archived session "${session.name}"`, sessionId: session.id });
+  logActivity(req, { action: 'session.archive', description: `Archived session "${email.sessionFullTitle(session)}"`, sessionId: session.id });
   flash(req, `"${session.name}" archived — hidden from the dashboard and player-facing pages, but nothing was deleted.`);
   res.redirect('/admin');
 });
@@ -418,7 +380,7 @@ router.post('/sessions/:id/unarchive', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
   db.prepare('UPDATE sessions SET archived_at = NULL WHERE id = ?').run(session.id);
-  logActivity(req, { action: 'session.unarchive', description: `Restored session "${session.name}" from archive`, sessionId: session.id });
+  logActivity(req, { action: 'session.unarchive', description: `Restored session "${email.sessionFullTitle(session)}" from archive`, sessionId: session.id });
   flash(req, `"${session.name}" restored — visible again on the dashboard and player-facing pages.`);
   res.redirect('/admin');
 });
@@ -442,7 +404,7 @@ router.post('/sessions/:id/lock-schedule', (req, res) => {
     return res.redirect(`/admin/sessions/${session.id}`);
   }
   db.prepare(`UPDATE sessions SET schedule_locked_at = datetime('now') WHERE id = ?`).run(session.id);
-  logActivity(req, { action: 'session.lock_schedule', description: `Locked the schedule for "${session.name}"`, sessionId: session.id });
+  logActivity(req, { action: 'session.lock_schedule', description: `Locked the schedule for "${email.sessionFullTitle(session)}"`, sessionId: session.id });
   flash(req, `"${session.name}"'s schedule is locked — this doesn't stop you from making further changes, it's just a marker that this version is the one you're standing behind.`);
   res.redirect(`/admin/sessions/${session.id}`);
 });
@@ -451,7 +413,7 @@ router.post('/sessions/:id/unlock-schedule', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
   db.prepare('UPDATE sessions SET schedule_locked_at = NULL WHERE id = ?').run(session.id);
-  logActivity(req, { action: 'session.unlock_schedule', description: `Unlocked the schedule for "${session.name}"`, sessionId: session.id });
+  logActivity(req, { action: 'session.unlock_schedule', description: `Unlocked the schedule for "${email.sessionFullTitle(session)}"`, sessionId: session.id });
   flash(req, `"${session.name}"'s schedule is unlocked again.`);
   res.redirect(`/admin/sessions/${session.id}`);
 });
@@ -960,7 +922,12 @@ router.post('/sessions', (req, res) => {
   }
   logActivity(req, {
     action: 'session.create',
-    description: `Created ${sessionType === 'adhoc' ? 'ad-hoc ' : ''}session "${b.name}"`,
+    // A fresh SELECT rather than building a session-shaped object out of raw
+    // `b` (the just-submitted form body) -- guarantees the exact same
+    // day/time/court/club values sessionFullTitle() would compose anywhere
+    // else, with no risk of a stray type/field-name mismatch between the
+    // form body's raw strings and what's actually now in the sessions table.
+    description: `Created ${sessionType === 'adhoc' ? 'ad-hoc ' : ''}session "${email.sessionFullTitle(db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId))}"`,
     sessionId,
   });
   const overlapWarning = overlapWarningText(sessionId);
@@ -1148,7 +1115,7 @@ router.post('/sessions/:id', (req, res) => {
   } else {
     saveRoster(req.params.id, b);
   }
-  logActivity(req, { action: 'session.update', description: `Updated session "${b.name}" (dates, roster, or settings)`, sessionId: Number(req.params.id) });
+  logActivity(req, { action: 'session.update', description: `Updated session "${email.sessionFullTitle(db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id))}" (dates, roster, or settings)`, sessionId: Number(req.params.id) });
   const overlapWarning = overlapWarningText(req.params.id);
   const baseMsg =
     sessionType === 'adhoc'
@@ -1161,10 +1128,16 @@ router.post('/sessions/:id', (req, res) => {
 router.post('/sessions/:id/schedule', (req, res) => {
   try {
     const result = runScheduler(req.params.id);
+    // Fetched once up front and reused by both possible logActivity() calls
+    // below, so the description text itself always names the session (not
+    // just the separate Session column) — Kyle, 2026-09-02: "make the full
+    // session title show up in the activity log... easier to troubleshoot
+    // with multiple different admins."
+    const sessionForLog = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
     if (!result.feasible) {
       logActivity(req, {
         action: 'session.schedule_failed',
-        description: `Ran "Schedule these players" — failed with ${result.conflicts.length} conflict(s)`,
+        description: `Ran "Schedule these players" for "${email.sessionFullTitle(sessionForLog)}" — failed with ${result.conflicts.length} conflict(s)`,
         sessionId: Number(req.params.id),
       });
       flash(req, `Scheduling failed: ${result.conflicts.length} conflict(s) found — see below.`, 'error');
@@ -1209,7 +1182,7 @@ router.post('/sessions/:id/schedule', (req, res) => {
       // Reuses the same human-readable `msg` built for the flash above as the
       // log description — it's already a clean summary, no reason to build a
       // second, near-duplicate string just for the log.
-      logActivity(req, { action: 'session.schedule', description: `Ran "Schedule these players": ${msg}`, sessionId: Number(req.params.id) });
+      logActivity(req, { action: 'session.schedule', description: `Ran "Schedule these players" for "${email.sessionFullTitle(sessionForLog)}": ${msg}`, sessionId: Number(req.params.id) });
       flash(req, msg, attention ? 'error' : 'ok');
     }
   } catch (err) {
@@ -1250,7 +1223,7 @@ router.post('/sessions/:id/delete', (req, res) => {
   // No sessionId on this entry — the session is gone by the time this runs,
   // and every already-existing entry that referenced it was just detached
   // above, so there's nothing left to point this new row at either.
-  logActivity(req, { action: 'session.delete', description: `Deleted session "${session.name}"` });
+  logActivity(req, { action: 'session.delete', description: `Deleted session "${email.sessionFullTitle(session)}"` });
   flash(req, `"${session.name}" was deleted. Players were not removed — only this session's schedule, roster enrollment, and history.`);
   res.redirect('/admin');
 });
@@ -1545,7 +1518,7 @@ router.post('/sessions/:id/resolve-conflicts/apply', (req, res) => {
   } else {
     logActivity(req, {
       action: 'session.joint_resolve_apply',
-      description: `Applied ${appliedCount} suggested change(s) from the joint conflict resolver between ${sessionA.name} and ${sessionB.name}`,
+      description: `Applied ${appliedCount} suggested change(s) from the joint conflict resolver between "${email.sessionFullTitle(sessionA)}" and "${email.sessionFullTitle(sessionB)}"`,
       sessionId: sessionAId,
     });
     flash(
@@ -2649,25 +2622,60 @@ router.get('/sessions/:id/subs', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
   const masterList = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
-  const assigned = new Set(subFlow.sessionSubList(session.id).map((s) => s.id));
-  res.render('admin/session_subs', { title: 'Session Subs', session, masterList, assigned, flashMsg: popFlash(req) });
+  // Real players available to pick as this session's subs (Kyle,
+  // 2026-09-02) — every active player EXCEPT anyone already enrolled on
+  // this session's own roster, since a player subbing for their own
+  // session's own roster makes no sense. Deliberately not scoped to "only
+  // players on some OTHER session's roster" — a player with no session at
+  // all yet is a legitimate pick too (e.g. someone the admin knows can
+  // sub around but hasn't put on any roster).
+  const playerList = db
+    .prepare(
+      `SELECT * FROM players WHERE active = 1 AND id NOT IN (SELECT player_id FROM session_players WHERE session_id = ?) ORDER BY name`
+    )
+    .all(session.id);
+  // Read the two join tables directly for checkbox state rather than
+  // subFlow.sessionSubList()'s combined shape — that list mixes
+  // broader_sub_list and players rows together, whose `id` columns can
+  // collide (broader_sub_list id 1 and players id 1 are unrelated rows),
+  // so a single merged Set would mark the wrong checkboxes.
+  const assignedBroaderIds = new Set(
+    db.prepare('SELECT broader_list_id FROM session_sub_list WHERE session_id = ?').all(session.id).map((r) => r.broader_list_id)
+  );
+  const assignedPlayerIds = new Set(
+    db.prepare('SELECT player_id FROM session_sub_players WHERE session_id = ?').all(session.id).map((r) => r.player_id)
+  );
+  res.render('admin/session_subs', {
+    title: 'Session Subs',
+    session,
+    masterList,
+    playerList,
+    assignedBroaderIds,
+    assignedPlayerIds,
+    flashMsg: popFlash(req),
+  });
 });
 
 router.post('/sessions/:id/subs', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
-  const selectedIds = [].concat(req.body.sub_ids || []).map(Number);
+  const selectedBroaderIds = [].concat(req.body.sub_ids || []).map(Number);
+  const selectedPlayerIds = [].concat(req.body.player_ids || []).map(Number);
   db.transaction(() => {
     db.prepare('DELETE FROM session_sub_list WHERE session_id = ?').run(session.id);
-    const insert = db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)');
-    for (const id of selectedIds) insert.run(session.id, id);
+    const insertBroader = db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)');
+    for (const id of selectedBroaderIds) insertBroader.run(session.id, id);
+    db.prepare('DELETE FROM session_sub_players WHERE session_id = ?').run(session.id);
+    const insertPlayer = db.prepare('INSERT OR IGNORE INTO session_sub_players (session_id, player_id) VALUES (?, ?)');
+    for (const id of selectedPlayerIds) insertPlayer.run(session.id, id);
   })();
+  const total = selectedBroaderIds.length + selectedPlayerIds.length;
   logActivity(req, {
     action: 'subs.session_assign',
-    description: `Set ${selectedIds.length} sub(s) for ${session.name}`,
+    description: `Set ${total} sub(s) for ${email.sessionFullTitle(session)} (${selectedBroaderIds.length} from the broader list, ${selectedPlayerIds.length} players)`,
     sessionId: session.id,
   });
-  flash(req, `Sub list updated for ${session.name} — ${selectedIds.length} assigned.`);
+  flash(req, `Sub list updated for ${session.name} — ${total} assigned.`);
   res.redirect(`/admin/sessions/${session.id}/subs`);
 });
 
@@ -2715,6 +2723,61 @@ router.post('/email', asyncHandler(async (req, res) => {
 
   const subject = req.body.subject;
   const body = req.body.body;
+
+  // recipient_type='week' (Kyle, 2026-09-02: "pick a session and be able to
+  // email all the players scheduled (or subbed in) for that week. If the
+  // scheduled match that week has past, it selects the next weeks scheduled
+  // (or subbed in) players. All players should be in the to field.") — unlike
+  // every other recipient mode here (one sendCustomEmail() call per person),
+  // this is genuinely one email with every recipient in the same `to` field,
+  // since Kyle explicitly asked for that rather than individual sends.
+  // "Scheduled (or subbed in)" -> week_assignments.status IN
+  // ('scheduled','confirmed') — this naturally excludes 'needs_sub' (not
+  // actually playing until someone replaces them) and 'subbed_out' (already
+  // replaced; the sub who took over shows up as their own 'confirmed' or
+  // 'scheduled' row instead). "If that week has past, the next week" reuses
+  // weeks.locked exactly as cron.js's processWeekLocking() already
+  // maintains it — the earliest not-yet-locked week for this session is
+  // "the next one that hasn't happened yet", so no separate date math is
+  // needed here.
+  if (req.body.recipient_type === 'week') {
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.body.week_session_id) || 0);
+    if (!session) {
+      flash(req, 'Session not found.', 'error');
+      return res.redirect('/admin/email');
+    }
+    const week = db
+      .prepare('SELECT * FROM weeks WHERE session_id = ? AND locked = 0 ORDER BY match_date ASC LIMIT 1')
+      .get(session.id);
+    if (!week) {
+      flash(req, `No upcoming (unlocked) week found for "${session.name}" — nothing sent.`, 'error');
+      return res.redirect('/admin/email');
+    }
+    const roster = db
+      .prepare(
+        `SELECT p.* FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+         WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed') ORDER BY p.name`
+      )
+      .all(week.id);
+    if (roster.length === 0) {
+      flash(req, `Nobody is currently scheduled or confirmed for "${session.name}"'s ${week.match_date} match — nothing sent.`, 'error');
+      return res.redirect('/admin/email');
+    }
+    // A one-time sub with no real email on file (see "One-time sub" in
+    // CLAUDE.md) shouldn't end up literally in the To: field — sendMail()
+    // already no-ops a single send to a @no-email.invalid address, but that
+    // guard doesn't apply to one address buried inside a joined multi-address
+    // string, so it's filtered out here before joining.
+    const recipients = roster.filter((p) => !p.email.endsWith('@no-email.invalid'));
+    if (recipients.length === 0) {
+      flash(req, `Everyone scheduled for "${session.name}"'s ${week.match_date} match has no email on file — nothing sent.`, 'error');
+      return res.redirect('/admin/email');
+    }
+    const toList = recipients.map((p) => p.email).join(', ');
+    await email.sendCustomEmail({ to: toList, subject, body, session, week });
+    flash(req, `Email sent to ${recipients.length} player(s) scheduled for "${session.name}" on ${week.match_date} (all in one To: field).`);
+    return res.redirect('/admin/email');
+  }
 
   if (req.body.recipient_type === 'session') {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.body.session_id) || 0);
@@ -2770,9 +2833,17 @@ router.get('/email-log', (req, res) => {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
+  // Selects the session's own day/time/court/club columns alongside name (not
+  // s.*, which would collide with el.id) so the view can call
+  // sessionFullTitle() on each row's linked session — same fix already
+  // applied to the Activity Log, Sub List, and All Blackout Dates pages, and
+  // now a standing rule (Kyle, 2026-09-02): wherever a session name is shown,
+  // include name/day/time/court/club together, not the bare name alone.
   const rows = db
     .prepare(
-      `SELECT el.*, w.match_date, s.id as session_id, s.name as session_name
+      `SELECT el.*, w.match_date, s.id as session_id, s.name as session_name,
+              s.match_day_of_week as session_match_day_of_week, s.match_time as session_match_time,
+              s.court_info as session_court_info, s.club_name as session_club_name
        FROM email_log el
        LEFT JOIN weeks w ON w.id = el.related_week_id
        LEFT JOIN sessions s ON s.id = w.session_id
@@ -2781,6 +2852,17 @@ router.get('/email-log', (req, res) => {
        LIMIT 300`
     )
     .all(...params);
+  rows.forEach((r) => {
+    r.sessionForTitle = r.session_id && r.session_name
+      ? {
+          name: r.session_name,
+          match_day_of_week: r.session_match_day_of_week,
+          match_time: r.session_match_time,
+          court_info: r.session_court_info,
+          club_name: r.session_club_name,
+        }
+      : null;
+  });
 
   // email_log.sent_at is stored via SQLite's plain `datetime('now')`, which
   // is UTC — never converted anywhere on the way in (see schema.sql and

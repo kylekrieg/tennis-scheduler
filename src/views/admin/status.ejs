@@ -15,7 +15,7 @@
     <h3 style="margin-top:0;">Scheduling conflicts</h3>
     <p class="muted">An entire "Schedule these players" run failed for these sessions — nothing was written for their open weeks. Open the session to see the full conflict details and fix them.</p>
     <% attention.conflicts.forEach(function(c) { %>
-      <div class="flag error"><a href="/admin/sessions/<%= c.session.id %>"><strong><%= c.session.name %></strong></a> — <%= c.detail %></div>
+      <div class="flag error"><a href="/admin/sessions/<%= c.session.id %>"><strong><%= sessionFullTitle(c.session) %></strong></a> — <%= c.detail %></div>
     <% }) %>
   </div>
 <% } %>
@@ -25,7 +25,7 @@
     <h3 style="margin-top:0;">Flagged weeks</h3>
     <p class="muted">Usually a short-staffed week the scheduler filled with who was available instead of blocking the season — see "Add a player" on the session page. Sometimes a ball-duty reassignment after a sub request.</p>
     <% attention.needsAttentionWeeks.forEach(function(w) { %>
-      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %>: <%= w.notes %></div>
+      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= sessionFullTitle(w.session) %></strong></a> — <%= fmtDate(w.match_date) %>: <%= w.notes %></div>
     <% }) %>
   </div>
 <% } %>
@@ -34,7 +34,7 @@
   <div class="card wide">
     <h3 style="margin-top:0;">Unfilled sub requests</h3>
     <% attention.unfilledSubs.forEach(function(s) { %>
-      <div class="flag"><a href="/admin/sessions/<%= s.session_id %>"><strong><%= s.session_name %></strong></a> — <%= fmtDate(s.match_date) %>: <%= s.original_player_name %>'s slot <span class="badge needs_sub"><%= s.status.replace('_',' ') %></span></div>
+      <div class="flag"><a href="/admin/sessions/<%= s.session_id %>"><strong><%= sessionFullTitle(s.session) %></strong></a> — <%= fmtDate(s.match_date) %>: <%= s.original_player_name %>'s slot <span class="badge needs_sub"><%= s.status.replace('_',' ') %></span></div>
     <% }) %>
   </div>
 <% } %>
@@ -44,7 +44,7 @@
     <h3 style="margin-top:0;">Not yet confirmed</h3>
     <p class="muted">Already been sent a reminder, haven't clicked either link yet.</p>
     <% attention.unconfirmed.forEach(function(u) { %>
-      <div class="flag"><a href="/admin/sessions/<%= u.session_id %>"><strong><%= u.session_name %></strong></a> — <%= fmtDate(u.match_date) %>: <%= u.player_name %></div>
+      <div class="flag"><a href="/admin/sessions/<%= u.session_id %>"><strong><%= sessionFullTitle(u.session) %></strong></a> — <%= fmtDate(u.match_date) %>: <%= u.player_name %></div>
     <% }) %>
   </div>
 <% } %>
@@ -53,7 +53,7 @@
   <div class="card wide">
     <h3 style="margin-top:0;">Missing ball duty</h3>
     <% attention.missingBallDuty.forEach(function(w) { %>
-      <div class="flag"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %></div>
+      <div class="flag"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= sessionFullTitle(w.session) %></strong></a> — <%= fmtDate(w.match_date) %></div>
     <% }) %>
   </div>
 <% } %>
@@ -63,7 +63,7 @@
     <h3 style="margin-top:0;">Ball duty needs reassigning</h3>
     <p class="muted">Set to a player who isn't actually playing that week anymore — usually left behind by a same-session swap (a direct player-to-player swap, or the joint conflict resolver's "Accept all suggested changes"). Open the session and pick someone from the dropdown.</p>
     <% attention.staleBallDuty.forEach(function(w) { %>
-      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= w.session_name %></strong></a> — <%= fmtDate(w.match_date) %>: was <%= w.stale_player_name %></div>
+      <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= sessionFullTitle(w.session) %></strong></a> — <%= fmtDate(w.match_date) %>: was <%= w.stale_player_name %></div>
     <% }) %>
   </div>
 <% } %>
@@ -93,7 +93,7 @@
     <h3 style="margin-top:0;">Pending swaps awaiting a response</h3>
     <p class="muted">Nudged once already and still no answer — the target player hasn't accepted or declined. Open the session to check in, or cancel it from the week's card.</p>
     <% attention.staleSwaps.forEach(function(sw) { %>
-      <div class="flag"><a href="/admin/sessions/<%= sw.session_id %>"><strong><%= sw.session_name %></strong></a> — <%= sw.initiator_name %> (<%= fmtDate(sw.initiator_match_date) %>) wants to swap with <%= sw.target_name %> (<%= fmtDate(sw.target_match_date) %>), nudged on <%= sw.nudged_at.split(' ')[0] %></div>
+      <div class="flag"><a href="/admin/sessions/<%= sw.session_id %>"><strong><%= sessionFullTitle(sw.session) %></strong></a> — <%= sw.initiator_name %> (<%= fmtDate(sw.initiator_match_date) %>) wants to swap with <%= sw.target_name %> (<%= fmtDate(sw.target_match_date) %>), nudged on <%= sw.nudged_at.split(' ')[0] %></div>
     <% }) %>
   </div>
 <% } %>
@@ -103,7 +103,7 @@
     <h3 style="margin-top:0;">Automatic reminders paused</h3>
     <p class="muted">Not necessarily a problem — e.g. deliberately off during testing — but easy to forget about. Manual sends still work regardless.</p>
     <% attention.pausedSessions.forEach(function(s) { %>
-      <div class="flag"><a href="/admin/sessions/<%= s.id %>"><strong><%= s.name %></strong></a></div>
+      <div class="flag"><a href="/admin/sessions/<%= s.id %>"><strong><%= sessionFullTitle(s) %></strong></a></div>
     <% }) %>
   </div>
 <% } %>
@@ -138,8 +138,7 @@
             <% } %>
           </td>
           <td>
-            <a href="/admin/sessions/<%= e.session.id %>"><%= e.session.name %></a>
-            <span class="muted">· <%= fmtTime(e.session.match_time) %><% if (e.session.court_info) { %> · <%= e.session.court_info %><% } %></span>
+            <a href="/admin/sessions/<%= e.session.id %>"><%= sessionFullTitle(e.session) %></a>
             <br><span class="muted"><%= fmtDate(e.week.match_date) %></span>
           </td>
           <td>

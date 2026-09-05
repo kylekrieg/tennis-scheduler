@@ -297,6 +297,64 @@ function carriedOverBlackoutsForSession(sessionId) {
   return map;
 }
 
+/**
+ * Per-player target/played/sub-bonus/ball-duty breakdown for one session's
+ * roster. Originally lived inline in admin.js's per-session Stats route,
+ * factored out (2026-09-01) when the all-active-sessions Stats Summary page
+ * needed the exact same numbers so the two admin pages could never disagree
+ * on what "played" or "ball duty" means. Moved here (2026-09-05) so the
+ * public player-stats page (GET /stats in public.js — "Kyle: I'd like to
+ * build a 'player stats' page on the public site... just the exploded view
+ * of each session with each player") can share it too, for the same reason:
+ * one definition of these numbers, not three.
+ *
+ * `played` counts games with status != 'subbed_out' AND is_sub = 0 — i.e.
+ * games that count toward the player's own configured target, not
+ * necessarily a match that's already happened. `ballDuty` is a season-wide
+ * count of weeks.ball_duty_player_id matches, not just upcoming ones.
+ */
+function sessionRosterStats(sessionId) {
+  const roster = db
+    .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
+    .all(sessionId);
+  const targets = db.prepare('SELECT player_id, target_games, original_target FROM session_players WHERE session_id = ?').all(sessionId);
+  const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
+  const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
+
+  const playedCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0 GROUP BY player_id`
+    )
+    .all(sessionId);
+  const playedMap = new Map(playedCounts.map((r) => [r.player_id, r.n]));
+
+  const subBonusCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status != 'subbed_out' GROUP BY player_id`
+    )
+    .all(sessionId);
+  const subBonusMap = new Map(subBonusCounts.map((r) => [r.player_id, r.n]));
+
+  const ballDutyCounts = db
+    .prepare(
+      `SELECT ball_duty_player_id as player_id, COUNT(*) as n FROM weeks
+       WHERE session_id = ? AND ball_duty_player_id IS NOT NULL GROUP BY ball_duty_player_id`
+    )
+    .all(sessionId);
+  const ballDutyMap = new Map(ballDutyCounts.map((r) => [r.player_id, r.n]));
+
+  return roster.map((p) => ({
+    player: p,
+    target: targetMap.get(p.id) || 0,
+    originalTarget: originalTargetMap.get(p.id),
+    played: playedMap.get(p.id) || 0,
+    subBonus: subBonusMap.get(p.id) || 0,
+    ballDuty: ballDutyMap.get(p.id) || 0,
+  }));
+}
+
 module.exports = {
   getViewableSessions,
   getBlackoutViewableSessions,
@@ -305,5 +363,6 @@ module.exports = {
   findActualDoubleBookings,
   doubleBookingMapForSession,
   carriedOverBlackoutsForSession,
+  sessionRosterStats,
   SESSION_DISPLAY_ORDER,
 };

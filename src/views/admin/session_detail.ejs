@@ -164,7 +164,7 @@
           <span class="pname"><strong><%= a.name %></strong> <span class="muted">(<% if (multiCourt) { %>Court <%= a.court %> · <% } %>Team <%= a.team %>)</span><% if (a.is_sub) { %> <span class="muted">sub</span><% } %></span>
           <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
             <span class="badge double_booked">double booked</span>
-            <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= a.doubleBooked.name %></a></span>
+            <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= sessionFullTitle(a.doubleBooked) %></a></span>
           <% } else if (a.status === 'scheduled' && a.reminded) { %>
             <span class="badge reminded" title="Reminder email sent, no response yet — status is still 'scheduled' underneath.">email sent - unconfirmed<%= a.followedUp ? ' (×2)' : '' %></span>
           <% } else { %>

@@ -12,8 +12,8 @@
 
 <h1>Resolve conflicts</h1>
 <p class="muted">
-  <a href="/admin/sessions/<%= sessionA.id %>"><%= sessionA.name %></a> &amp;
-  <a href="/admin/sessions/<%= sessionB.id %>"><%= sessionB.name %></a>
+  <a href="/admin/sessions/<%= sessionA.id %>"><%= sessionFullTitle(sessionA) %></a> &amp;
+  <a href="/admin/sessions/<%= sessionB.id %>"><%= sessionFullTitle(sessionB) %></a>
 </p>
 <p class="muted" style="max-width:760px;">
   For each real double-booking below, the app looked for a same-session week-swap (trading which week
@@ -42,13 +42,13 @@
               <td><%= r.playerName %></td>
               <td><%= fmtDate(r.date) %></td>
               <td>
-                <%= r.actualMoveSessionId === sessionA.id ? sessionB.name : sessionA.name %>
+                <%= sessionFullTitle(r.actualMoveSessionId === sessionA.id ? sessionB : sessionA) %>
                 <span class="muted">
                   (<% if (r.reason === 'priority') { %>priority<% } else if (r.reason === 'tied') { %>priority tied, arbitrary pick<% } else { %>no priority set, arbitrary pick<% } %>)
                 </span>
               </td>
               <td>
-                In <%= r.swap.session === sessionA.id ? sessionA.name : sessionB.name %>: move <%= r.playerName %> from
+                In <%= sessionFullTitle(r.swap.session === sessionA.id ? sessionA : sessionB) %>: move <%= r.playerName %> from
                 <%= fmtDate(r.swap.movedFromDate) %> to <%= fmtDate(r.swap.movedToDate) %>, swapping places with
                 <strong><%= r.swap.swappedWithPlayerName %></strong> (who moves the other way).
               </td>
@@ -75,7 +75,7 @@
             <tr>
               <td><%= r.playerName %></td>
               <td><%= fmtDate(r.date) %></td>
-              <td><%= sessionA.name %> &amp; <%= sessionB.name %></td>
+              <td><%= sessionFullTitle(sessionA) %> &amp; <%= sessionFullTitle(sessionB) %></td>
             </tr>
           <% }) %>
         </tbody>
@@ -86,7 +86,7 @@
   <h2>Before / after, side by side</h2>
   <p class="muted">Only weeks a suggested swap actually touches are shown — everything else in both sessions is untouched.</p>
   <div style="display:flex;gap:20px;flex-wrap:wrap;">
-    <% [{ label: sessionA.name, changes: result.changesA }, { label: sessionB.name, changes: result.changesB }].forEach(function(col) { %>
+    <% [{ label: sessionFullTitle(sessionA), changes: result.changesA }, { label: sessionFullTitle(sessionB), changes: result.changesB }].forEach(function(col) { %>
       <div class="card" style="flex:1;min-width:320px;">
         <h3 style="margin-top:0;"><%= col.label %></h3>
         <% if (col.changes.length === 0) { %>
