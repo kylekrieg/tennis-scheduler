@@ -8,6 +8,7 @@ const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
 const { fmtDate, fmtTime, sessionPublicLabel, sessionFullTitle, sessionColor } = require('./services/email');
 const { getSiteTitle } = require('./services/settings');
+const { weatherIconUrl, weatherSummaryText } = require('./services/weather');
 
 const app = express();
 
@@ -36,6 +37,16 @@ app.locals.sessionFullTitle = sessionFullTitle;
 // admin's own session-color picker on session_form.ejs needs it too), unlike
 // sessionPublicLabel which is deliberately player-facing only.
 app.locals.sessionColor = sessionColor;
+// Weather forecast widget helpers (Kyle, 2026-09-05) — both are pure
+// display formatting, no DB access of their own; the actual cached
+// week_weather row is precomputed per week row in the route (public.js's
+// weekRowsForSession/lookahead, admin.js's session detail routes) and
+// attached as `.weather`, same "compute in the route, just render in the
+// view" convention this app already uses for ballDutyName/doubleBooked/etc.
+// See weather.js's doc comment for why the site widget and emails only ever
+// read this cache, never call the OpenWeatherMap API themselves.
+app.locals.weatherIconUrl = weatherIconUrl;
+app.locals.weatherSummaryText = weatherSummaryText;
 // A cache-busting query param appended to every static CSS/JS <link>/<script>
 // tag (see header.ejs, admin_header.ejs, admin/login.ejs, preferences.ejs).
 // Set once per process, so it changes on every `pm2 restart` after a deploy —

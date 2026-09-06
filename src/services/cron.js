@@ -8,6 +8,7 @@ const subFlow = require('./subFlow');
 const swapFlow = require('./swapFlow');
 const adhocFlow = require('./adhocFlow');
 const adminReport = require('./adminReport');
+const weather = require('./weather');
 const { ensureWeeksExist } = require('./scheduleRun');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
@@ -439,6 +440,14 @@ async function tick() {
     await processAdhocInvites();
     await processAdhocReminders();
     await processAdhocFinalization();
+    // Own try/catch already lives inside refreshDueWeeks() per-session, same
+    // as every pass above — this call itself never throws, but wrapped
+    // consistently in case that ever changes.
+    try {
+      await weather.refreshDueWeeks();
+    } catch (err) {
+      console.error('[cron] weather.refreshDueWeeks failed:', err.message);
+    }
     processWeekLocking();
   } catch (err) {
     console.error('[cron] tick error:', err);

@@ -355,6 +355,45 @@ function sessionRosterStats(sessionId) {
   }));
 }
 
+/**
+ * "Who's actually playing this specific week" — for regular sessions this is
+ * exactly the definition already used by the admin Send Email page's "This
+ * week's players" mode (status IN scheduled/confirmed — see admin.js's
+ * POST /email). Ad-hoc sessions (Kyle, 2026-09-05) have no such status to
+ * read (see "Ad-hoc sessions" in CLAUDE.md): once a week's courts have
+ * finalized, real week_assignments rows exist and are used the same way a
+ * regular session's would be; before that, "playing" means whoever's
+ * currently signed up (adhoc_signups.signed_up_at IS NOT NULL) — there's no
+ * "confirmed" concept for ad-hoc since signing up already is the
+ * confirmation.
+ *
+ * Pulled out as a shared helper (rather than left inline in the custom-email
+ * route) specifically so the two places this now matters — the admin Send
+ * Email page's "this week's players" mode, and each week's own "Send email
+ * to players" button on the session detail pages — can't quietly disagree
+ * about who "this week" means.
+ */
+function weekEmailRecipients(week, session) {
+  if (session.session_type === 'adhoc') {
+    const finalized = db
+      .prepare(`SELECT p.* FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY p.name`)
+      .all(week.id);
+    if (finalized.length) return finalized;
+    return db
+      .prepare(
+        `SELECT p.* FROM adhoc_signups s JOIN players p ON p.id = s.player_id
+         WHERE s.week_id = ? AND s.signed_up_at IS NOT NULL ORDER BY p.name`
+      )
+      .all(week.id);
+  }
+  return db
+    .prepare(
+      `SELECT p.* FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+       WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed') ORDER BY p.name`
+    )
+    .all(week.id);
+}
+
 module.exports = {
   getViewableSessions,
   getBlackoutViewableSessions,
@@ -364,5 +403,6 @@ module.exports = {
   doubleBookingMapForSession,
   carriedOverBlackoutsForSession,
   sessionRosterStats,
+  weekEmailRecipients,
   SESSION_DISPLAY_ORDER,
 };

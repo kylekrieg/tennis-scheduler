@@ -315,6 +315,16 @@ ensureColumn('admins', 'username', 'TEXT');
 // admin actually changes it.
 ensureColumn('app_settings', 'site_title', "TEXT NOT NULL DEFAULT '🎾 Doubles Schedule'");
 
+// Weather forecast (Kyle, 2026-09-05) — per-session opt-in + location, so an
+// existing session's emails/site widget don't suddenly start showing weather
+// with no location configured. week_weather itself is a brand-new table,
+// created fresh by the CREATE TABLE IF NOT EXISTS above — no backfill needed
+// there, since a week with no cached forecast yet just renders nothing until
+// weather.js's cron pass first populates it.
+ensureColumn('sessions', 'weather_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('sessions', 'weather_lat', 'REAL');
+ensureColumn('sessions', 'weather_lon', 'REAL');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

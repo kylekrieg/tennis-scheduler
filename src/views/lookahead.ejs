@@ -13,7 +13,15 @@
       <% var courtNums = [...new Set(r.assignments.map(a => a.court))].sort((x, y) => x - y); if (courtNums.length === 0) courtNums = [1]; %>
       <% courtNums.forEach(function(court, ci) { %>
         <tr class="<%= r.week.needs_attention ? 'flagged' : '' %>">
-          <% if (ci === 0) { %><td rowspan="<%= courtNums.length %>" style="white-space:nowrap;"><%= r.week.match_date %></td><% } %>
+          <% if (ci === 0) { %><td rowspan="<%= courtNums.length %>" style="white-space:nowrap;">
+            <%= r.week.match_date %>
+            <% if (session.weather_enabled && r.weather) { %>
+              <div class="muted" style="font-size:11px;font-weight:normal;white-space:nowrap;margin-top:2px;">
+                <% if (weatherIconUrl(r.weather.icon)) { %><img src="<%= weatherIconUrl(r.weather.icon) %>" width="20" height="20" alt="" style="vertical-align:middle;margin-right:-2px;"><% } %>
+                <%= weatherSummaryText(r.weather) %>
+              </div>
+            <% } %>
+          </td><% } %>
           <% if (multiCourt) { %><td>Court <%= court %></td><% } %>
           <% ['A','B'].forEach(function(team) { %>
             <td>

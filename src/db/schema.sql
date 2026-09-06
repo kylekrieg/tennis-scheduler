@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   schedule_locked_at  TEXT,    -- NULL = not yet finalized; set manually via "Lock this schedule" once the admin is confident the schedule is done shifting — distinct from `status` leaving 'draft', which happens automatically on the first "Schedule these players" click. Doesn't restrict further edits; a marker/gate for behavior that should wait for a stable schedule. See "Lock this schedule" in CLAUDE.md.
   admin_report_emails      TEXT,    -- regular sessions only: comma-separated admin address(es) that get a pre-match status report for each week (who's confirmed/unconfirmed/needs a sub/subbed out/swapped). NULL/blank = feature off for this session. See "Admin pre-match status report" in CLAUDE.md.
   admin_report_lead_hours  INTEGER NOT NULL DEFAULT 8, -- hours before match_time the status report above goes out
+  weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in CLAUDE.md and src/services/weather.js.
+  weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
+  weather_lon         REAL,
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -294,6 +297,33 @@ CREATE TABLE IF NOT EXISTS adhoc_signups (
   UNIQUE(week_id, player_id)
 );
 CREATE INDEX IF NOT EXISTS idx_adhoc_signups_week ON adhoc_signups(week_id);
+
+-- One cached forecast per week (Kyle, 2026-09-05): "the weather forecast
+-- should update hourly between the first email for that week goes out to 1
+-- hour after the playing time." Refreshed by weather.js's refreshDueWeeks()
+-- (called from cron.js's tick loop), which upserts this single row per
+-- week_id rather than keeping history — the site widget and the
+-- confirmation/"who's in" emails both just read whatever's cached here at
+-- render/send time, they never call the OpenWeatherMap API themselves. Using
+-- week_id as the PRIMARY KEY (not a separate id/UNIQUE pair) is deliberate:
+-- there is only ever "the current forecast for this week," never more than
+-- one live at a time, so a plain 1:1 keyed table is the honest shape rather
+-- than an ever-growing log table nothing reads more than the latest row of.
+-- raw_json keeps the full API response for the one specific 3-hour forecast
+-- slot picked as closest to match time, in case a future feature wants more
+-- than the handful of fields broken out into their own columns below.
+CREATE TABLE IF NOT EXISTS week_weather (
+  week_id         INTEGER PRIMARY KEY REFERENCES weeks(id) ON DELETE CASCADE,
+  fetched_at      TEXT NOT NULL,   -- when this row was last (over)written — staleness check for the hourly refresh cadence
+  forecast_time   TEXT,            -- the actual forecast timestamp (UTC) of the specific 3-hour slot chosen as closest to the match's own start time
+  temp_f          REAL,
+  feels_like_f    REAL,
+  condition       TEXT,            -- e.g. "light rain" — OpenWeatherMap's own short description
+  icon            TEXT,            -- OpenWeatherMap icon code, e.g. "10d" — see weather.js's weatherIconUrl()
+  precip_chance   REAL,            -- 0.0-1.0 probability of precipitation ("pop" in OWM's response)
+  wind_mph        REAL,
+  raw_json        TEXT
+);
 
 CREATE INDEX IF NOT EXISTS idx_weeks_session ON weeks(session_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_week ON week_assignments(week_id);

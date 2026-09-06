@@ -128,6 +128,20 @@
   <input type="color" name="color" id="color" value="<%= session && session.color ? session.color : sessionColor(session || {id: 0}) %>" style="width:70px;height:38px;padding:2px;cursor:pointer;">
   <p class="muted">Shown next to this session's name on the schedule pages, session switcher, and match emails — pick something distinct if you're running two sessions at the same club, day, and time (e.g. Court 2 vs. Court 4), so a player can tell them apart at a glance instead of having to read the fine print. Defaults to an automatically assigned color if you don't set one.</p>
 
+  <label for="weather_enabled">Weather forecast</label>
+  <div class="checkbox-row">
+    <input type="checkbox" name="weather_enabled" id="weather_enabled" value="1" <%= session && session.weather_enabled ? 'checked' : '' %>>
+    <label for="weather_enabled" style="margin:0;font-weight:400;">Show a weather forecast for this session</label>
+  </div>
+  <p class="muted">When on, a small forecast appears next to each upcoming week on the public schedule/lookahead pages and this session's admin page, and is included in the <%= isAdhoc ? '"you\'re in" final-roster' : 'confirmation reminder' %> email. Updates roughly once an hour, starting once the first email for a week goes out and continuing until an hour after match time. Requires the coordinates below, and a server-wide OpenWeatherMap API key (set once in <code>.env</code> — see README.md) shared by every session.</p>
+
+  <label for="weather_lat">Latitude</label>
+  <input type="number" step="any" name="weather_lat" id="weather_lat" value="<%= session && session.weather_lat != null ? session.weather_lat : '' %>" placeholder="e.g. 38.6270" min="-90" max="90">
+
+  <label for="weather_lon">Longitude</label>
+  <input type="number" step="any" name="weather_lon" id="weather_lon" value="<%= session && session.weather_lon != null ? session.weather_lon : '' %>" placeholder="e.g. -90.1994" min="-180" max="180">
+  <p class="muted">The location to pull the forecast for — usually the club's address. Look up coordinates at <a href="https://www.latlong.net/" target="_blank" rel="noopener">latlong.net</a> if you don't have them handy. Only required if the checkbox above is on.</p>
+
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
     <p class="muted">Only currently-enrolled players are shown below. Search by name to find and add someone else — search reveals everyone in the system, not just this roster. A target &gt; 0 is what actually enrolls a player this session; the "Remove" button is a shortcut that zeroes a player's target and hides the row again (structural change either way — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>

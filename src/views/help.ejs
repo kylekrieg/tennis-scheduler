@@ -12,8 +12,10 @@
     <li><a href="#timing">The full timeline: what happens, and when</a></li>
     <li><a href="#my-page">My Page</a></li>
     <li><a href="#schedule">Season Schedule &amp; Next 4 Weeks</a></li>
+    <li><a href="#weather">Weather forecast</a></li>
     <li><a href="#calendar">Calendar</a></li>
     <li><a href="#pdf">Print Schedule</a></li>
+    <li><a href="#stats">Player Stats</a></li>
     <li><a href="#adhoc">Pickup games (ad-hoc sessions)</a></li>
     <li><a href="#double-booked">What does "double booked" mean?</a></li>
     <li><a href="#statuses">What do the badges mean?</a></li>
@@ -40,6 +42,10 @@
       <a href="#" class="btn-needsub">Need a sub? Click here</a>
     </p>
     <p class="email-mock-flag"><strong>You're on ball duty this week</strong> &mdash; please bring the balls.</p>
+    <p style="margin:12px 0;display:flex;align-items:center;gap:8px;">
+      <img src="https://openweathermap.org/img/wn/01d@2x.png" width="40" height="40" alt="clear sky" style="display:inline-block;">
+      <span><strong>Forecast for match time:</strong> 74&deg;F, clear sky (5% chance of rain)</span>
+    </p>
     <p><strong>Next few weeks:</strong></p>
     <ul style="margin:4px 0;">
       <li>Wednesday, Sep 9 &mdash; Alice Chen, Marcus Lee, Priya Nair, Dan Ostrow</li>
@@ -49,6 +55,7 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
+<p class="muted">The forecast line only shows up if your admin has turned on weather forecasts for this session — see <a href="#weather">Weather forecast</a> below.</p>
 
 <h2 id="blackout">Blackout dates</h2>
 <p>Already know a date won't work this season? Go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off every date you can't play — it saves instantly, no confirmation step. This only works before the admin generates the schedule; once it exists, blackout dates lock and you'll use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> instead.</p>
@@ -318,6 +325,11 @@
 <img class="screenshot" src="/img/help/next-four-weeks.png?v=<%= assetVersion %>" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
 <p class="screenshot-caption">Team A and Team B for each date, plus who's bringing the balls that week.</p>
 
+<h2 id="weather">Weather forecast</h2>
+<p>If your admin has turned it on for a session, you'll see a small forecast — temperature, conditions, and chance of rain — right next to each upcoming date on the Season Schedule and Next 4 Weeks pages above, and it's included in your confirmation reminder email too (or the "you're in" email for a pickup game — see the mocks earlier on this page). It's pulled fresh roughly once an hour, starting once your first email for that week goes out and continuing until an hour after match time, so what you see the morning of is close to real rather than a stale multi-day-old guess. Not every session has this turned on — if you don't see it next to a date, your admin hasn't enabled it (or hasn't entered a location) for that one.</p>
+<img class="screenshot" src="/img/help/full-schedule-weather.png?v=<%= assetVersion %>" alt="Season Schedule page with a small weather forecast line under one of the dates, plus a red double-booked badge on another row.">
+<p class="screenshot-caption">The forecast sits right under the date it's for — no need to click anywhere to see it.</p>
+
 <h2 id="calendar">Calendar</h2>
 <p>Go to <a href="/calendar">Calendar</a> to add your matches to your phone or computer, two ways: a one-time download for the current season, or <strong>Subscribe</strong>, which stays up to date automatically as your schedule changes — the better choice if you don't want to think about it again.</p>
 <img class="screenshot" src="/img/help/calendar.png?v=<%= assetVersion %>" alt="Personal Calendar page with two sections: a one-time .ics download and a Subscribe option with a webcal link.">
@@ -325,6 +337,11 @@
 
 <h2 id="pdf">Print Schedule</h2>
 <p><a href="/pdf">Print Schedule</a> gives you a single printable page with the whole season's schedule on it — handy to print and stick on the fridge or pass around at a gathering. If more than one session is currently active, there's also a "Download All Active Sessions" option that combines every session into one PDF sorted by date instead of session-by-session — a couple of pages instead of one, but easier to check "what's happening this week" across everything at once.</p>
+
+<h2 id="stats">Player Stats</h2>
+<p>Go to <a href="/stats">Stats</a> for a quick "how's my season going" check, across every active session at once: for each session, a simple table of every player's target games for the season, games actually played so far, any bonus games picked up by subbing in for someone else, and how many weeks they've been on ball duty. Every player's name links straight to their own <a href="/me">My Page</a>.</p>
+<img class="screenshot" src="/img/help/player-stats.png?v=<%= assetVersion %>" alt="Player Stats page showing a table of every player's target games, games played, sub bonus games, and ball duty count for one session.">
+<p class="screenshot-caption">Same numbers you'd get counting by hand from the schedule — just already totaled up.</p>
 
 <h2 id="adhoc">Pickup games (ad-hoc sessions)</h2>
 <p>Some sessions are pickup games instead of a fixed season schedule — filled week to week, first come first served. None of the sections above apply here: no season roster, no target games, no blackout dates, no confirm/need-a-sub flow. Signing up <em>is</em> your confirmation.</p>
@@ -362,11 +379,15 @@
     <p>Hi Dan Ostrow,</p>
     <p>You're set for <strong>Thursday, Sep 4</strong> at 6:00 PM, Court 4.</p>
     <p><strong>Playing with:</strong> Alice Chen, Marcus Lee, Priya Nair</p>
+    <p style="margin:12px 0;display:flex;align-items:center;gap:8px;">
+      <img src="https://openweathermap.org/img/wn/02d@2x.png" width="40" height="40" alt="few clouds" style="display:inline-block;">
+      <span><strong>Forecast for match time:</strong> 74&deg;F, few clouds (10% chance of rain)</span>
+    </p>
     <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Tennis Club &mdash; Court 4</p>
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<p class="muted">— or, if your group never reached 4, a short note that this one didn't come together. Either way, there's nothing more to do; you'll be invited again for the next pickup game.</p>
+<p class="muted">— or, if your group never reached 4, a short note that this one didn't come together. Either way, there's nothing more to do; you'll be invited again for the next pickup game. (The forecast line above only shows up if your admin has turned on weather for this session — see <a href="#weather">Weather forecast</a>.)</p>
 
 <p>Here's the whole thing as one picture:</p>
 <div class="flowchart">

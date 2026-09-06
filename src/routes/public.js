@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const weather = require('../services/weather');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const { buildPlayerICS, buildPlayerFeedICS } = require('../services/ics');
@@ -65,7 +66,13 @@ function weekRowsForSession(sessionId, { limit } = {}) {
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
-    return { week: w, assignments, ballDutyName: ballDuty ? ballDuty.name : null };
+    // Always attached (cheap indexed PK lookup), whether or not the session
+    // currently has weather turned on — the views gate display on
+    // session.weather_enabled themselves, same "compute here, decide in the
+    // view" split as ballDutyName/doubleBooked above. A disabled session
+    // just means the cache was never populated in the first place, so this
+    // is null either way.
+    return { week: w, assignments, ballDutyName: ballDuty ? ballDuty.name : null, weather: weather.getCachedWeather(w.id) };
   });
 }
 
@@ -153,7 +160,7 @@ router.get('/lookahead', (req, res) => {
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
-    return { week: w, assignments, ballDutyName: ballDuty ? ballDuty.name : null };
+    return { week: w, assignments, ballDutyName: ballDuty ? ballDuty.name : null, weather: weather.getCachedWeather(w.id) };
   });
   res.render('lookahead', { title: 'Next 4 Weeks', session, sessions, rows, multiCourt: session.players_per_week > 4 });
 });

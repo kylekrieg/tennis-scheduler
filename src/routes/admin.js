@@ -21,7 +21,7 @@ const cron = require('../services/cron');
 const backup = require('../services/backup');
 const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, weekEmailRecipients, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
@@ -29,6 +29,7 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
 const testEmail = require('../services/testEmail');
 const { rateLimiter } = require('../middleware/rateLimiter');
+const weather = require('../services/weather');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
 // abuse protection at all — bcrypt slows an individual guess but does
@@ -805,6 +806,35 @@ function invalidFollowUpLeadHours(b) {
   return null;
 }
 
+// Weather forecast (Kyle, 2026-09-05) — a per-session opt-in checkbox plus
+// lat/lon, shared by both regular and ad-hoc sessions (unlike the admin
+// report/ad-hoc-timing fields above, which are scoped to one session type
+// each — weather applies to both, since ad-hoc sessions get a forecast in
+// their "you're in" email same as regular sessions get one in their
+// confirmation reminder). Coordinates are only required when the checkbox
+// is actually on — leaving weather off doesn't require filling in a
+// location that won't be used for anything.
+function invalidWeatherFields(b) {
+  if (!b.weather_enabled) return null;
+  const latRaw = (b.weather_lat || '').trim();
+  const lonRaw = (b.weather_lon || '').trim();
+  if (latRaw === '' || lonRaw === '') return 'Latitude and longitude are required to turn on the weather forecast.';
+  const lat = Number(latRaw);
+  const lon = Number(lonRaw);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) return 'Latitude must be a number between -90 and 90.';
+  if (!Number.isFinite(lon) || lon < -180 || lon > 180) return 'Longitude must be a number between -180 and 180.';
+  return null;
+}
+
+// Number(b.weather_lat) would turn a blank string into 0 (a real, valid-
+// looking latitude on the equator) rather than "not set" — same footgun
+// documented on invalidPlayersPerWeek's neighbors elsewhere in this file.
+// Used by both the create and update routes below.
+function parseOptionalFloat(raw) {
+  const trimmed = (raw || '').trim();
+  return trimmed === '' ? null : Number(trimmed);
+}
+
 function invalidAdhocLeadHours(b) {
   const invite = Number(b.adhoc_invite_lead_hours);
   const reminder = Number(b.adhoc_reminder_lead_hours);
@@ -879,13 +909,18 @@ router.post('/sessions', (req, res) => {
     flash(req, followUpError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const weatherError = invalidWeatherFields(b);
+  if (weatherError) {
+    flash(req, weatherError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const info = db
     .prepare(
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
-        admin_report_emails, admin_report_lead_hours, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_report_emails, admin_report_lead_hours, weather_enabled, weather_lat, weather_lon, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -909,6 +944,9 @@ router.post('/sessions', (req, res) => {
       Number(b.adhoc_final_lead_hours || 24),
       (b.admin_report_emails || '').trim() || null,
       Number(b.admin_report_lead_hours || 8),
+      b.weather_enabled ? 1 : 0,
+      parseOptionalFloat(b.weather_lat),
+      parseOptionalFloat(b.weather_lon),
       // Ad-hoc has no "Schedule these players" step to promote it out of
       // draft — it's ready to start inviting the moment it's saved, so it
       // skips straight to 'active'. Regular sessions keep starting 'draft'.
@@ -1082,11 +1120,16 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, followUpError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const weatherError = invalidWeatherFields(b);
+  if (weatherError) {
+    flash(req, weatherError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   db.prepare(
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
-     admin_report_emails=?, admin_report_lead_hours=? WHERE id=?`
+     admin_report_emails=?, admin_report_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -1108,6 +1151,9 @@ router.post('/sessions/:id', (req, res) => {
     Number(b.adhoc_final_lead_hours || 24),
     (b.admin_report_emails || '').trim() || null,
     Number(b.admin_report_lead_hours || 8),
+    b.weather_enabled ? 1 : 0,
+    parseOptionalFloat(b.weather_lat),
+    parseOptionalFloat(b.weather_lon),
     req.params.id
   );
   if (sessionType === 'adhoc') {
@@ -1260,7 +1306,7 @@ router.get('/sessions/:id', (req, res) => {
       } catch (e) {
         matchAt = null;
       }
-      return { week: w, ...groups, finalized, finalizedAssignments, matchAt };
+      return { week: w, ...groups, finalized, finalizedAssignments, matchAt, weather: weather.getCachedWeather(w.id) };
     });
     return res.render('admin/adhoc_session_detail', {
       title: session.name,
@@ -1405,6 +1451,7 @@ router.get('/sessions/:id', (req, res) => {
       openSubRequest,
       openSwapRequest,
       blackedOutNames: blackedOutByDate.get(w.match_date) || [],
+      weather: weather.getCachedWeather(w.id),
     };
   });
 
@@ -1948,6 +1995,96 @@ router.post('/sessions/:id/weeks/:weekId/send-admin-report', asyncHandler(async 
     flash(req, `Error: ${err.message}`, 'error');
   }
   res.redirect(`/admin/sessions/${req.params.id}`);
+}));
+
+// "Send email to players" (Kyle, 2026-09-05): a one-off message to whoever's
+// actually playing one specific week — e.g. "practice moved to the next
+// court over this week." Distinct from the admin Send Email page's "This
+// week's players" mode in one way: that mode always resolves "this week" as
+// the session's *earliest unlocked* week (there's no other week to pick from
+// a bare session dropdown); here, the button lives right on a specific
+// week's own card next to "Send reminders now"/"Send status report now", so
+// the week is already unambiguous — no need to re-derive it. Both paths
+// funnel through the same weekEmailRecipients() (sessionHelper.js) and
+// email.sendCustomEmail() so the two entry points can't drift apart on who
+// "this week's players" means or how the email itself is built.
+router.get('/sessions/:id/weeks/:weekId/send-email', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ? AND session_id = ?').get(req.params.weekId, req.params.id);
+  if (!session || !week) return res.status(404).send('Session or week not found');
+  const recipients = weekEmailRecipients(week, session);
+  res.render('admin/send_week_email', {
+    title: 'Send Email to Players',
+    session,
+    week,
+    recipients,
+    flashMsg: popFlash(req),
+  });
+});
+
+router.post('/sessions/:id/weeks/:weekId/send-email', asyncHandler(async (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ? AND session_id = ?').get(req.params.weekId, req.params.id);
+  if (!session || !week) return res.status(404).send('Session or week not found');
+
+  const recipients = weekEmailRecipients(week, session).filter((p) => !p.email.endsWith('@no-email.invalid'));
+  if (recipients.length === 0) {
+    flash(req, `Nobody with a real email on file is currently playing ${week.match_date} — nothing sent.`, 'error');
+    return res.redirect(`/admin/sessions/${session.id}`);
+  }
+  const toList = recipients.map((p) => p.email).join(', ');
+  await email.sendCustomEmail({ to: toList, subject: req.body.subject, body: req.body.body, session, week });
+  logActivity(req, {
+    action: 'week.send_email',
+    description: `Emailed ${recipients.length} player(s) for ${email.sessionFullTitle(session)}'s ${week.match_date} match: "${req.body.subject}"`,
+    sessionId: session.id,
+  });
+  flash(req, `Email sent to ${recipients.length} player(s) (all in one To: field).`);
+  res.redirect(`/admin/sessions/${session.id}`);
+}));
+
+// Manual "Update weather now" button (Kyle, 2026-09-05), next to "Send
+// email to players" on each week's card. weather.refreshDueWeeks() (the
+// automatic hourly cron pass) only fetches inside a display window and only
+// when the cache is stale — this bypasses both, calling
+// weather.fetchForecastForWeek() directly, since an admin clicking this
+// button has already decided "fetch it right now" and shouldn't have to
+// wait out the hourly cadence or the window-not-open-yet gate. Both the
+// success and failure outcome get logged (unlike "Send reminders now"/"Send
+// status report now", which are flash-only) — this is an explicit action
+// against a third-party API that can fail, so a record of what happened is
+// worth more here than for a plain internal email send.
+router.post('/sessions/:id/weeks/:weekId/update-weather', asyncHandler(async (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ? AND session_id = ?').get(req.params.weekId, req.params.id);
+  if (!session || !week) return res.status(404).send('Session or week not found');
+
+  if (!session.weather_enabled || session.weather_lat == null || session.weather_lon == null) {
+    flash(req, 'Weather forecast is not turned on (or has no location set) for this session — nothing to update.', 'error');
+    return res.redirect(`/admin/sessions/${session.id}`);
+  }
+
+  try {
+    const row = await weather.fetchForecastForWeek(week, session);
+    if (!row) {
+      flash(req, 'OpenWeatherMap did not return a usable forecast for this date/location — nothing was updated.', 'error');
+    } else {
+      logActivity(req, {
+        action: 'weather.manual_refresh',
+        description: `Manually refreshed weather for ${email.sessionFullTitle(session)}'s ${week.match_date} match: ${weather.weatherSummaryText(row)}`,
+        sessionId: session.id,
+      });
+      flash(req, `Weather updated: ${weather.weatherSummaryText(row)}`);
+    }
+  } catch (err) {
+    logActivity(req, {
+      action: 'weather.manual_refresh_failed',
+      description: `Manual weather refresh failed for ${email.sessionFullTitle(session)}'s ${week.match_date} match: ${err.message}`,
+      sessionId: session.id,
+    });
+    flash(req, `Error updating weather: ${err.message}`, 'error');
+  }
+  res.redirect(`/admin/sessions/${session.id}`);
 }));
 
 router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, res) => {
@@ -2753,12 +2890,7 @@ router.post('/email', asyncHandler(async (req, res) => {
       flash(req, `No upcoming (unlocked) week found for "${session.name}" — nothing sent.`, 'error');
       return res.redirect('/admin/email');
     }
-    const roster = db
-      .prepare(
-        `SELECT p.* FROM week_assignments wa JOIN players p ON p.id = wa.player_id
-         WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed') ORDER BY p.name`
-      )
-      .all(week.id);
+    const roster = weekEmailRecipients(week, session);
     if (roster.length === 0) {
       flash(req, `Nobody is currently scheduled or confirmed for "${session.name}"'s ${week.match_date} match — nothing sent.`, 'error');
       return res.redirect('/admin/email');

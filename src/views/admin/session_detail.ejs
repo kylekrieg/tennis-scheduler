@@ -97,6 +97,12 @@
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;justify-content:space-between;">
       <div>
         <strong><%= r.week.match_date %></strong>
+        <% if (session.weather_enabled && r.weather) { %>
+          <span class="muted" style="font-size:12px;">
+            <% if (weatherIconUrl(r.weather.icon)) { %><img src="<%= weatherIconUrl(r.weather.icon) %>" width="20" height="20" alt="" style="vertical-align:middle;margin:0 -2px;"><% } %>
+            <%= weatherSummaryText(r.weather) %>
+          </span>
+        <% } %>
         <% if (r.week.locked) { %><span class="muted">locked</span><% } %>
         <% if (r.week.needs_attention) { %><span class="muted">⚠ <%= r.week.notes %></span><% } %>
         <% if (r.openSubRequest) { %>
@@ -143,6 +149,12 @@
           <% if (session.admin_report_emails) { %>
             <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-admin-report">
               <button class="btn small neutral" type="submit">Send status report now</button>
+            </form>
+          <% } %>
+          <a class="btn small neutral" href="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-email">Send email to players</a>
+          <% if (session.weather_enabled) { %>
+            <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/update-weather">
+              <button class="btn small neutral" type="submit">Update weather now</button>
             </form>
           <% } %>
         <% } else { %>

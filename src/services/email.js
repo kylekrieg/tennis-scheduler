@@ -3,6 +3,7 @@ const nodemailer = require('nodemailer');
 const db = require('../db');
 const { getTimezone } = require('./settings');
 const { utcToZonedParts } = require('./tz');
+const weather = require('./weather');
 
 let transport = null;
 function getTransport() {
@@ -347,6 +348,31 @@ function ballDutyNotice(player, week) {
   return `<p class="flag" style="border:1px solid #ffd77a;background:#fff8e6;border-radius:8px;padding:10px 14px;margin:12px 0;"><strong>You're on ball duty this week</strong> — please bring the balls.</p>`;
 }
 
+/**
+ * A small forecast line for the confirmation reminder (regular sessions) and
+ * the ad-hoc final-roster "you're in" email — Kyle, 2026-09-05: "If turned
+ * on for the session the weather forecast should be included in the email
+ * confirmation email or the 'who's in' email for ad-hoc sessions." Reads
+ * whatever's currently cached for this week (see weather.js's doc comment —
+ * that cache is refreshed hourly by cron, this function never calls the
+ * OpenWeatherMap API itself) and renders nothing at all if the session
+ * hasn't turned weather on, or if nothing's been fetched yet (the display
+ * window hasn't opened, no API key configured, or coordinates aren't set) —
+ * same graceful-degradation approach as ballDutyNotice() above, never an
+ * error, just an absent block.
+ */
+function weatherBlockHtml(session, week) {
+  if (!session || !session.weather_enabled || !week) return '';
+  const row = weather.getCachedWeather(week.id);
+  const summary = weather.weatherSummaryText(row);
+  if (!summary) return '';
+  const iconUrl = weather.weatherIconUrl(row.icon);
+  return `<p style="margin:12px 0;display:flex;align-items:center;gap:8px;">
+    ${iconUrl ? `<img src="${iconUrl}" width="40" height="40" alt="${row.condition || 'forecast'}" style="display:inline-block;">` : ''}
+    <span><strong>Forecast for match time:</strong> ${summary}</span>
+  </p>`;
+}
+
 /** Who's actually playing this specific week (current roster) plus who has
  * ball duty, formatted for sub-related emails so a potential sub — or the
  * group once a sub is confirmed — has some context on who else will be
@@ -397,6 +423,7 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
       <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
     </p>
     ${ballDutyNotice(player, week)}
+    ${weatherBlockHtml(session, week)}
     ${nextWeeksPreviewHtml(upcomingWeeks)}
     ${footer(session, player)}
   `;
@@ -802,6 +829,7 @@ async function sendAdhocFinalRoster({ recipient, week, session, teammates, court
     <p>Hi ${recipient.name},</p>
     <p>You're set for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}${court ? `, Court ${court}` : ''}.</p>
     <p><strong>Playing with:</strong> ${names}</p>
+    ${weatherBlockHtml(session, week)}
     ${footer(session)}
   `;
   return sendMail({ to: recipient.email, subject, html, category: 'adhoc_final', relatedWeekId: week.id, session, test });
