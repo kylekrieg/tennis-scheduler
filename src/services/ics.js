@@ -2,7 +2,7 @@
 const { createEvents } = require('ics');
 const db = require('../db');
 const { sessionPublicLabel } = require('./email');
-const { doubleBookingMapForSession } = require('./sessionHelper');
+const { doubleBookingMapForSession, sessionsForPlayer } = require('./sessionHelper');
 
 const DEFAULT_DURATION_MINUTES = 90; // not specified in the spec; adjust here if match length differs
 
@@ -81,18 +81,15 @@ function buildPlayerFeedICS(playerId) {
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(playerId);
   if (!player) return { error: 'Player not found' };
 
-  // Mirrors sessionHelper.js's getViewableSessions() scope: archived
-  // sessions are meant to go fully quiet (nothing new to show), and a draft
-  // session has no schedule yet — only scoped to sessions this player is
-  // actually enrolled in, via session_players.
-  const sessions = db
-    .prepare(
-      `SELECT s.* FROM sessions s
-       JOIN session_players sp ON sp.session_id = s.id
-       WHERE sp.player_id = ? AND s.status IN ('scheduled', 'active') AND s.archived_at IS NULL
-       ORDER BY s.start_date`
-    )
-    .all(playerId);
+  // sessionHelper.js's sessionsForPlayer() — covers both roster enrollment
+  // *and* any session where this player currently holds a real upcoming
+  // assignment without ever being on that session's own roster (a sub —
+  // see that function's doc comment). Without this, a confirmed sub's own
+  // match never showed up on their calendar subscription, same bug as My
+  // Page (Kyle, 2026-09-07). Archived sessions are still meant to go fully
+  // quiet and a draft session still has no schedule yet — sessionsForPlayer()
+  // applies those same filters.
+  const sessions = sessionsForPlayer(playerId);
 
   const events = [];
   for (const session of sessions) {

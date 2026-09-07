@@ -240,11 +240,16 @@ function relativeDayPhrase(matchDateStr) {
  * of sync with each other.
  *
  * This is intentionally NOT used everywhere sessionPublicLabel() is (match
- * emails, the PDF, calendar/.ics event titles, the "also in X" double-
- * booking mentions, My Page) — Kyle's own call: those surfaces already show
- * date/time/court nearby in their own layout, so repeating it in the name
- * itself would just be redundant there. sessionPublicLabel() stays exactly
- * as it was for all of those.
+ * emails, the PDF, calendar/.ics event titles, My Page) — Kyle's own call:
+ * those surfaces already show date/time/court nearby in their own layout,
+ * so repeating it in the name itself would just be redundant there.
+ * sessionPublicLabel() stays exactly as it was for all of those.
+ *
+ * Exception: the "also in X" double-booking mention on My Page (see
+ * me.ejs) DOES use this one, not sessionPublicLabel() — Kyle, 2026-09-07:
+ * when two sessions collide on the same date, the player needs enough
+ * detail (day/time/court) to tell them apart at a glance, since that
+ * detail isn't shown anywhere else nearby for the *other* session.
  */
 function sessionFullTitle(session) {
   if (!session) return '';

@@ -5,6 +5,9 @@
 <form method="post" action="/admin/sub-list" class="card">
   <label for="name">Name</label>
   <input type="text" name="name" id="name" required>
+  <label for="public_name">Public name (optional)</label>
+  <input type="text" name="public_name" id="public_name" placeholder="auto-shortened from name if left blank, e.g. &quot;Ed B&quot;">
+  <p class="muted" style="font-size:12px;margin-top:2px;">Shown on public pages (schedule, lookahead, My Page, PDF, calendar) the moment this person actually fills a spot — same short "First L" form every roster player uses. Leave blank to auto-generate one from the name above; review/edit it here before anyone claims a spot if the auto-shortened version looks off.</p>
   <label for="email">Email</label>
   <input type="email" name="email" id="email" required>
   <label for="slug">URL slug (optional)</label>
@@ -14,7 +17,7 @@
 </form>
 
 <table class="wide">
-  <thead><tr><th>Name</th><th>Email</th><th>URL slug</th><th>Assigned to</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Assigned to</th><th>Actions</th></tr></thead>
   <tbody>
     <% list.forEach(function(l) { %>
       <% var forSessions = sessionsByListId.get(l.id) || []; %>
@@ -26,6 +29,9 @@
           <% if (l.added_by_name) { %>
             <div class="muted" style="font-size:11px;margin-top:2px;">self-arranged — added by <%= l.added_by_name %><%= l.created_at ? ' on ' + fmtDate(l.created_at.slice(0, 10)) : '' %></div>
           <% } %>
+        </td>
+        <td>
+          <input type="text" name="public_name" value="<%= l.public_name || '' %>" form="edit-<%= l.id %>" style="width:110px;" placeholder="(auto)">
         </td>
         <td><input type="email" name="email" value="<%= l.email %>" form="edit-<%= l.id %>" style="width:200px;"></td>
         <td>
@@ -45,8 +51,8 @@
         </td>
       </tr>
     <% }) %>
-    <% if (list.length === 0) { %><tr><td colspan="5" class="muted">Empty.</td></tr><% } %>
+    <% if (list.length === 0) { %><tr><td colspan="6" class="muted">Empty.</td></tr><% } %>
   </tbody>
 </table>
-<p class="muted">The URL slug is reserved the moment someone's added to this list, and reused as-is the first time they claim a sub (rather than generating a fresh one then) — so if two people would otherwise land on the same slug (e.g. two "John S"s), you can resolve it here before either one ever claims anything. Editing it later never changes an existing "My Page" link someone's already been sent — only edit it directly here to fix a real collision.</p>
+<p class="muted">The URL slug is reserved the moment someone's added to this list, and reused as-is the first time they claim a sub (rather than generating a fresh one then) — so if two people would otherwise land on the same slug (e.g. two "John S"s), you can resolve it here before either one ever claims anything. Editing it later never changes an existing "My Page" link someone's already been sent — only edit it directly here to fix a real collision. "Public name" works the same way for the short name shown once someone actually fills a spot — leaving it blank on Save re-derives it from Name.</p>
 <%- include('../partials/footer') %>

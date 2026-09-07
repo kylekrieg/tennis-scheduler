@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, sessionsForPlayer, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const weather = require('../services/weather');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
@@ -981,19 +981,12 @@ router.get('/me/:idOrSlug', (req, res) => {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Mirrors buildPlayerFeedICS's scope in ics.js: every scheduled/active,
-  // non-archived session this player is currently enrolled in. Shares
-  // SESSION_DISPLAY_ORDER (day/time/court) with every other session listing
-  // in the app rather than a locally hand-written ORDER BY, so this page
-  // can't quietly drift out of sync with the rest.
-  const sessions = db
-    .prepare(
-      `SELECT s.* FROM sessions s
-       JOIN session_players sp ON sp.session_id = s.id
-       WHERE sp.player_id = ? AND s.status IN ('scheduled', 'active') AND s.archived_at IS NULL
-       ${SESSION_DISPLAY_ORDER}`
-    )
-    .all(playerId);
+  // sessionsForPlayer() (sessionHelper.js) covers both roster enrollment
+  // *and* any session a sub currently has a real upcoming assignment in
+  // without ever being on that session's own roster — see its doc comment
+  // (Kyle, 2026-09-07: Ed's confirmed sub slot was invisible here before
+  // this fix, since he was never added to session_players).
+  const sessions = sessionsForPlayer(playerId, todayIso);
 
   // Every real blackout_dates row on record for this player, regardless of
   // which session's page it was originally entered from — blackout dates are
@@ -1021,6 +1014,23 @@ router.get('/me/:idOrSlug', (req, res) => {
     upcoming.forEach((a) => {
       const other = dbMap.get(`${a.player_id}|${a.match_date}`);
       if (other) a.doubleBooked = other;
+
+      // Kyle, 2026-09-07: "is there a way to display who else is playing
+      // that week and their status so when looking at 'my page', you can
+      // see the other players and their current status?" Public name only
+      // (this is an unauthenticated page) and excludes subbed_out rows —
+      // that slot's real occupant is whoever replaced them, already its own
+      // row in this same query. Nothing new here privacy-wise: /schedule
+      // and /lookahead already show every player's name and status for
+      // every week publicly; this is the same information, just surfaced
+      // on the page a player actually has bookmarked.
+      a.others = db
+        .prepare(
+          `SELECT p.name, wa.status, wa.is_sub FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+           WHERE wa.week_id = ? AND wa.player_id != ? AND wa.status != 'subbed_out'
+           ORDER BY p.name`
+        )
+        .all(a.week_id, playerId);
     });
 
     const ballDutyWeeks = db

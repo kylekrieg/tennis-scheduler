@@ -21,7 +21,7 @@ const cron = require('../services/cron');
 const backup = require('../services/backup');
 const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
-const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, weekEmailRecipients, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, weekEmailRecipients, orderAssignmentsWithSubGroups, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
@@ -1469,9 +1469,16 @@ router.get('/sessions/:id', (req, res) => {
          WHERE wa.week_id = ? AND sw.status = 'pending' LIMIT 1`
       )
       .get(w.id);
+    // Reorders (and indents) so a sub's row sits directly under the slot
+    // they replaced, instead of a flat court/team list an admin has to
+    // cross-reference by eye — see orderAssignmentsWithSubGroups()'s doc
+    // comment. Every property already set on `assignments` above
+    // (doubleBooked, reminded, followedUp) survives, since this reorders in
+    // place rather than cloning.
+    const orderedAssignments = orderAssignmentsWithSubGroups(assignments);
     return {
       week: w,
-      assignments,
+      assignments: orderedAssignments,
       ballDutyName: ballDuty ? fullName(ballDuty) : null,
       ballDutyMismatch,
       openSubRequest,
@@ -1693,9 +1700,9 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
     db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
     tokenStore.invalidateTokensForAssignment(assignment.id);
     db.prepare(
-      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at)
-       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'))`
-    ).run(assignment.week_id, oneTimePlayerId, assignment.team, assignment.court);
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at, replaces_assignment_id)
+       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
+    ).run(assignment.week_id, oneTimePlayerId, assignment.team, assignment.court, assignment.id);
 
     const subWasResolvedOneTime = subFlow.closeActiveSubRequestForAssignment(assignment.id);
     const swapWasCancelledOneTime = swapFlow.adminCancelSwap(assignment.id);
@@ -1774,9 +1781,12 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
       let existing = db.prepare('SELECT id, name, email, full_name FROM players WHERE email = ?').get(bl.email);
       if (!existing) {
         // bl.name IS the full name (broader_sub_list has no separate
-        // full_name column of its own — see playerName.js's doc comment) —
-        // derive the short public form from it, same as claimSub().
-        const shortName = deriveShortName(bl.name);
+        // full_name column of its own — see playerName.js's doc comment).
+        // Use the admin-reviewed short public form already stored on the
+        // sub-list row (bl.public_name — Kyle, 2026-09-07), same as
+        // claimSub() — falling back to a fresh derivation only covers a
+        // pre-migration row that's somehow still NULL.
+        const shortName = bl.public_name || deriveShortName(bl.name);
         const slug = bl.slug || generateUniqueSlug(db, shortName, null);
         const info = db
           .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
@@ -1801,9 +1811,9 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
     db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
     tokenStore.invalidateTokensForAssignment(assignment.id);
     const newSubAssignment = db.prepare(
-      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status)
-       VALUES (?, ?, ?, ?, 1, 'scheduled')`
-    ).run(assignment.week_id, subPlayer.id, assignment.team, assignment.court);
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, replaces_assignment_id)
+       VALUES (?, ?, ?, ?, 1, 'scheduled', ?)`
+    ).run(assignment.week_id, subPlayer.id, assignment.team, assignment.court, assignment.id);
 
     const subWasResolvedSub = subFlow.closeActiveSubRequestForAssignment(assignment.id);
     const swapWasCancelledSub = swapFlow.adminCancelSwap(assignment.id);
@@ -2921,12 +2931,18 @@ router.post('/sub-list', (req, res) => {
     const name = req.body.name.trim();
     const submittedSlug = (req.body.slug || '').trim();
     const slug = submittedSlug || generateUniqueBroaderSubSlug(db, name, null);
-    db.prepare('INSERT INTO broader_sub_list (name, email, slug) VALUES (?, ?, ?)').run(
+    // Blank public_name auto-derives from the full name (Kyle, 2026-09-07) —
+    // same "optional, pre-filled if left blank" shape as slug just above.
+    // See playerName.js's doc comment on broader_sub_list.public_name.
+    const submittedPublicName = (req.body.public_name || '').trim();
+    const publicName = submittedPublicName || deriveShortName(name);
+    db.prepare('INSERT INTO broader_sub_list (name, email, slug, public_name) VALUES (?, ?, ?, ?)').run(
       name,
       req.body.email.trim(),
-      slug
+      slug,
+      publicName
     );
-    logActivity(req, { action: 'sublist.add', description: `Added ${name} (${req.body.email.trim()}) to the broader sub list` });
+    logActivity(req, { action: 'sublist.add', description: `Added ${name} (${req.body.email.trim()}) to the broader sub list — public name "${publicName}"` });
     flash(req, 'Added to sub list.');
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -2944,7 +2960,7 @@ router.post('/sub-list/:id/edit', (req, res) => {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/sub-list');
   }
-  const before = db.prepare('SELECT name, email, slug FROM broader_sub_list WHERE id = ?').get(req.params.id);
+  const before = db.prepare('SELECT name, email, slug, public_name FROM broader_sub_list WHERE id = ?').get(req.params.id);
   if (!before) {
     flash(req, 'That sub-list entry no longer exists.', 'error');
     return res.redirect('/admin/sub-list');
@@ -2961,10 +2977,22 @@ router.post('/sub-list/:id/edit', (req, res) => {
     }
     newSlug = submittedSlug;
   }
-  db.prepare('UPDATE broader_sub_list SET name = ?, email = ?, slug = ? WHERE id = ?').run(newName, newEmail, newSlug, req.params.id);
+  // Unlike slug, a blank public_name here means "auto-generate it for me"
+  // rather than "leave it alone" — there's no uniqueness collision to worry
+  // about (see playerName.js's doc comment), so it's always safe to recompute
+  // a fresh, real value from whatever name is being saved.
+  const submittedPublicName = (req.body.public_name || '').trim();
+  const newPublicName = submittedPublicName || deriveShortName(newName);
+  db.prepare('UPDATE broader_sub_list SET name = ?, email = ?, slug = ?, public_name = ? WHERE id = ?').run(
+    newName,
+    newEmail,
+    newSlug,
+    newPublicName,
+    req.params.id
+  );
   logActivity(req, {
     action: 'sublist.edit',
-    description: `Edited sub-list entry: ${before.name} (${before.email}) → ${newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}`,
+    description: `Edited sub-list entry: ${before.name} (${before.email}) → ${newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}${before.public_name !== newPublicName ? `, public name "${before.public_name}" → "${newPublicName}"` : ''}`,
   });
   flash(req, 'Sub-list entry updated.');
   res.redirect('/admin/sub-list');

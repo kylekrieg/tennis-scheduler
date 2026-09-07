@@ -39,7 +39,7 @@
       <p class="muted">No upcoming matches scheduled for you in this session.</p>
     <% } else { %>
       <table class="wide">
-        <thead><tr><th style="white-space:nowrap;">Date</th><th>Status</th><th>Ball duty</th><th></th></tr></thead>
+        <thead><tr><th style="white-space:nowrap;">Date</th><th>Status</th><th>Ball duty</th><th>Also playing this week</th><th></th></tr></thead>
         <tbody>
           <% card.upcoming.forEach(function(a) { %>
             <tr>
@@ -49,12 +49,21 @@
               <td>
                 <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                   <span class="badge double_booked">double booked</span>
-                  <div class="muted" style="font-size:12px;margin-top:4px;">Also scheduled in <%= sessionPublicLabel(a.doubleBooked) %> this same date — sort this out ahead of time, not the week of.</div>
+                  <div class="muted" style="font-size:12px;margin-top:4px;">Also in <%= sessionFullTitle(a.doubleBooked) %> this date — resolve ahead of time.</div>
                 <% } else { %>
                   <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= a.is_sub ? ' (sub)' : '' %></span>
                 <% } %>
               </td>
               <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
+              <td>
+                <% if (a.others && a.others.length) { %>
+                  <% a.others.forEach(function(o, i) { %>
+                    <div style="margin-bottom:2px;"><%= o.name %><%= o.is_sub ? ' (sub)' : '' %> <span class="badge <%= o.status %>" style="font-size:10px;padding:1px 5px;"><%= o.status.replace('_', ' ') %></span></div>
+                  <% }) %>
+                <% } else { %>
+                  <span class="muted">—</span>
+                <% } %>
+              </td>
               <td>
                 <% if (card.session.session_type !== 'adhoc' && !a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                   <div class="row-actions">

@@ -45,6 +45,15 @@ ensureColumn('week_assignments', 'court', 'INTEGER NOT NULL DEFAULT 1');
 // file), so this one's safe as a single ensureColumn call with no separate
 // backfill needed.
 ensureColumn('week_assignments', 'manually_placed', 'INTEGER NOT NULL DEFAULT 0');
+
+// replaces_assignment_id (Kyle, 2026-09-07): points a sub's own row at the
+// original, now-subbed_out row it replaced — see schema.sql's comment. Bare
+// nullable column, no default needed (every existing row is simply unset,
+// which is exactly what an ordinary non-sub row should be). Never backfilled
+// for pre-existing sub pairs — sessionHelper.js's orderAssignmentsWithSubGroups()
+// falls back to a same-team/court guess for those instead of risking a wrong
+// guess baked permanently into the database.
+ensureColumn('week_assignments', 'replaces_assignment_id', 'INTEGER REFERENCES week_assignments(id)');
 // Archiving a session (hides it from the dashboard/session picker without
 // deleting anything) — every existing row predates this, so NULL (not
 // archived) is exactly the right default for them.
@@ -314,6 +323,32 @@ ensureColumn('broader_sub_list', 'slug', 'TEXT');
 ensureColumn('broader_sub_list', 'created_at', 'TEXT');
 raw.exec(`UPDATE broader_sub_list SET created_at = datetime('now') WHERE created_at IS NULL`);
 ensureColumn('broader_sub_list', 'added_by_player_id', 'INTEGER REFERENCES players(id)');
+
+// broader_sub_list.public_name (Kyle, 2026-09-07): "we have a name field but
+// we don't have the shorted public name. This makes when someone checks the
+// public page, if a broader sub list filled a spot, their full name
+// appears." Before this, the short public form was only ever derived on the
+// fly at the moment it was actually needed (claimSub(), the sub-list
+// reassign branch, and the /found-sub/:token picker all called
+// deriveShortName(bl.name) inline) — correct in principle, but gave Kyle no
+// way to review or fix an awkward auto-shortened name (a hyphenated last
+// name, a nickname, etc.) before anyone ever actually claimed a spot. This
+// column makes it a real, stored, admin-editable value instead — same
+// "auto-derived but always editable" shape as broader_sub_list.slug just
+// above. Every existing row predates this column, so backfill every NULL
+// value once via deriveShortName(name), same "id ASC, unconditional
+// WHERE-guarded" pattern as every other backfill in this file.
+ensureColumn('broader_sub_list', 'public_name', 'TEXT');
+{
+  const { deriveShortName } = require('../services/playerName');
+  const unnamed = raw.prepare('SELECT id, name FROM broader_sub_list WHERE public_name IS NULL ORDER BY id ASC').all();
+  if (unnamed.length > 0) {
+    const setPublicName = raw.prepare('UPDATE broader_sub_list SET public_name = ? WHERE id = ?');
+    for (const bl of unnamed) {
+      setPublicName.run(deriveShortName(bl.name), bl.id);
+    }
+  }
+}
 
 // Admin usernames (Kyle, 2026-08-29): every admin row created before this
 // column existed has no username — backfill each one from their name, same

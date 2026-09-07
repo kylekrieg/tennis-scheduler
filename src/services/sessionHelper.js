@@ -1,5 +1,6 @@
 'use strict';
 const db = require('../db');
+const { fullName } = require('./playerName');
 
 // Kyle, 2026-08-26: "The order of the sessions are ordered by creation. Is
 // there a way to order them by the day of the week? That would be anywhere
@@ -402,6 +403,127 @@ function weekEmailRecipients(week, session) {
     .all(week.id);
 }
 
+/**
+ * Every session a player should see as "theirs" on My Page and their
+ * calendar subscription feed: their own roster enrollment (session_players)
+ * *and* any session where they currently hold a real, still-relevant
+ * week_assignments row for an upcoming date, even without ever being
+ * enrolled on that session's own roster at all.
+ *
+ * A sub never gets a session_players row for the session they subbed
+ * into — a broader-sub-list pick who became a real players row (claimSub(),
+ * arrangeSelfSub(), the admin's "sub list" Reassign branch) or a real
+ * player from a *different* session's own roster subbing in via
+ * session_sub_players both only ever get a week_assignments row, never a
+ * session_players one (see "Session sub list" and "One-time sub" in
+ * CLAUDE.md). Without this, a confirmed sub's own upcoming match was
+ * completely invisible on both their My Page and their calendar feed — Ed
+ * Bourneuf's real, confirmed slot for 2026-09-09 (Kyle, 2026-09-07: "When I
+ * click on Ed's my page it shows a blank page except for his calendar
+ * link... I thought when a player subs... their week would show up") is
+ * the case that surfaced this.
+ *
+ * Scoped to upcoming dates only (>= todayIso) so a one-time sub from months
+ * ago doesn't resurrect a long-finished session onto their page forever.
+ */
+function sessionsForPlayer(playerId, todayIso = new Date().toISOString().slice(0, 10)) {
+  return db
+    .prepare(
+      `SELECT * FROM sessions s
+       WHERE s.status IN ('scheduled', 'active') AND s.archived_at IS NULL
+       AND (
+         EXISTS (SELECT 1 FROM session_players sp WHERE sp.session_id = s.id AND sp.player_id = ?)
+         OR EXISTS (
+           SELECT 1 FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+           WHERE w.session_id = s.id AND wa.player_id = ? AND wa.status != 'subbed_out' AND w.match_date >= ?
+         )
+       )
+       ${SESSION_DISPLAY_ORDER}`
+    )
+    .all(playerId, playerId, todayIso);
+}
+
+/**
+ * Reorders a week's assignment rows so a sub's row lands immediately after
+ * (and indented beneath, via the `subDepth` this attaches) the slot they
+ * replaced, instead of wherever it happened to fall in the plain
+ * court/team ordering — Kyle, 2026-09-07: "place Ed's name under Jon D and
+ * indent Ed's line so an admin knows that Ed is the one subbing for Jon...
+ * This might be a bit more clear if we have two players asking for subs."
+ *
+ * Prefers the real `week_assignments.replaces_assignment_id` link (set at
+ * creation time by claimSub() and the admin Reassign route's "one-time sub"
+ * and "sub list" branches — see schema.sql) whenever it's present and
+ * points at a row actually in this same list. For a pair that predates that
+ * column, falls back to a same-team/same-court guess: an unmatched
+ * `subbed_out` row paired with the one unmatched `is_sub` row sharing its
+ * team+court — but only when the pairing is unambiguous (exactly one
+ * candidate). Two players on the same team both needing subs in the same
+ * week is deliberately left flat/ungrouped rather than risk pairing the
+ * wrong two people; a real link going forward never has this ambiguity.
+ *
+ * Mutates each row in place (adds `subDepth` and, on a child row,
+ * `replacesPlayerName`) rather than cloning, so every property already
+ * attached elsewhere by the caller (doubleBooked, reminded, followedUp, ...)
+ * survives untouched. Supports an arbitrary chain depth (a sub who
+ * themselves later gets subbed) even though that's rare in practice.
+ */
+function orderAssignmentsWithSubGroups(assignments) {
+  const byId = new Map(assignments.map((a) => [a.id, a]));
+  const childrenByParent = new Map(); // parentId -> [child assignment, ...]
+  const parentIdOfChild = new Map(); // childId -> parentId
+  const matchedChildIds = new Set();
+
+  const link = (parentId, child) => {
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(child);
+    parentIdOfChild.set(child.id, parentId);
+    matchedChildIds.add(child.id);
+  };
+
+  // Real link first — always correct, no ambiguity possible.
+  assignments.forEach((a) => {
+    if (a.replaces_assignment_id && byId.has(a.replaces_assignment_id)) {
+      link(a.replaces_assignment_id, a);
+    }
+  });
+
+  // Heuristic fallback, only for rows the real link didn't already account for.
+  const unmatchedSubbedOut = assignments.filter((a) => a.status === 'subbed_out' && !childrenByParent.has(a.id));
+  const unmatchedSubRows = assignments.filter(
+    (a) => a.is_sub && !a.replaces_assignment_id && !matchedChildIds.has(a.id)
+  );
+  unmatchedSubbedOut.forEach((parent) => {
+    const candidates = unmatchedSubRows.filter(
+      (c) => c.team === parent.team && c.court === parent.court && !matchedChildIds.has(c.id)
+    );
+    if (candidates.length === 1) link(parent.id, candidates[0]);
+  });
+
+  const ordered = [];
+  const visited = new Set();
+  const visit = (a, depth) => {
+    if (visited.has(a.id)) return; // defensive: never re-visit, so a malformed chain can't loop forever
+    visited.add(a.id);
+    a.subDepth = depth;
+    const parentId = parentIdOfChild.get(a.id);
+    a.replacesPlayerName = parentId != null && byId.has(parentId) ? fullName(byId.get(parentId)) : null;
+    ordered.push(a);
+    (childrenByParent.get(a.id) || []).forEach((child) => visit(child, depth + 1));
+  };
+
+  assignments.forEach((a) => {
+    if (!matchedChildIds.has(a.id)) visit(a, 0);
+  });
+  // Defensive fallback — shouldn't normally trigger, but guarantees every
+  // row still renders even if some edge case left it unvisited above.
+  assignments.forEach((a) => {
+    if (!visited.has(a.id)) visit(a, 0);
+  });
+
+  return ordered;
+}
+
 module.exports = {
   getViewableSessions,
   getBlackoutViewableSessions,
@@ -412,5 +534,7 @@ module.exports = {
   carriedOverBlackoutsForSession,
   sessionRosterStats,
   weekEmailRecipients,
+  sessionsForPlayer,
+  orderAssignmentsWithSubGroups,
   SESSION_DISPLAY_ORDER,
 };

@@ -186,11 +186,12 @@ function eligibleSelfArrangedCandidates(weekId) {
         id: c.id,
         // This is the one public consumer of a broader_sub_list name
         // (/found-sub/:token — Kyle, 2026-09-07: "short public names" here
-        // too, same rule as every other public page). broader_sub_list has
-        // no stored public name at all (it's admin-managed, full names only
-        // — see playerName.js), so a short form is derived on the fly for
-        // display, never written back to the row.
-        name: deriveShortName(c.name),
+        // too, same rule as every other public page). Reads the real,
+        // admin-reviewed public_name stored on the row (see playerName.js's
+        // doc comment) rather than re-deriving one on the fly, so an admin
+        // fix on the Sub List page is reflected here immediately — the
+        // derive-on-the-fly fallback only covers a pre-migration NULL.
+        name: c.public_name || deriveShortName(c.name),
         fullName: c.fullName,
         email: c.email,
         blackedOut: false,
@@ -512,11 +513,12 @@ async function claimSub(rawToken) {
       const slug = bl.slug || generateUniqueSlug(db, bl.name, null);
       // bl.name is a real full name (broader_sub_list only ever stores full
       // names — see playerName.js's doc comment). The new players row needs
-      // both: full_name = the real value, name = an auto-derived public
-      // short form ("First LastInitial") so this person doesn't show up on
-      // the public schedule under their full last name the very next time
-      // they play (Kyle, 2026-09-07).
-      const shortName = deriveShortName(bl.name);
+      // both: full_name = the real value, name = the admin-reviewed short
+      // public form already stored on the sub-list row itself
+      // (bl.public_name — Kyle, 2026-09-07), falling back to a fresh
+      // "First LastInitial" derivation only for the narrow edge case of a
+      // pre-migration row that's somehow still NULL.
+      const shortName = bl.public_name || deriveShortName(bl.name);
       const info = db
         .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
         .run(shortName, bl.email, slug, bl.name);
@@ -539,9 +541,9 @@ async function claimSub(rawToken) {
     // able to act on this assignment (which now belongs to someone else).
     tokenStore.invalidateTokensForAssignment(originalAssignment.id);
     db.prepare(
-      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at)
-       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'))`
-    ).run(originalAssignment.week_id, subPlayer.id, originalAssignment.team, originalAssignment.court);
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at, replaces_assignment_id)
+       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
+    ).run(originalAssignment.week_id, subPlayer.id, originalAssignment.team, originalAssignment.court, originalAssignment.id);
   })();
 
   // Notify that week's full group of 4 (other 3 originals + the new sub)
@@ -642,27 +644,30 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
       candidate = {
         candidateType: 'broader',
         id: existingBroader.id,
-        name: deriveShortName(existingBroader.name),
+        name: existingBroader.public_name || deriveShortName(existingBroader.name),
         email: existingBroader.email,
         fullName: existingBroader.name,
       };
     } else {
-      // Genuinely new — nobody on file has this email. Reserve a slug now
-      // (same reasoning as every other broader_sub_list entry, see
-      // playerSlug.js) and record who added them, so the admin Sub List
-      // page can flag this row as worth a name/slug cleanup pass (Kyle's
-      // point 9) and the Activity Log/Status page can say who it was.
+      // Genuinely new — nobody on file has this email. Reserve a slug and a
+      // public_name now (same reasoning as every other broader_sub_list
+      // entry, see playerSlug.js and playerName.js) and record who added
+      // them, so the admin Sub List page can flag this row as worth a
+      // name/slug/public-name cleanup pass (Kyle's point 9) and the Activity
+      // Log/Status page can say who it was.
       const slug = generateUniqueBroaderSubSlug(db, name, null);
-      const info = db
-        .prepare('INSERT INTO broader_sub_list (name, email, slug, added_by_player_id) VALUES (?, ?, ?, ?)')
-        .run(name, emailLower, slug, player.id);
-      const newId = info.lastInsertRowid;
-      db.prepare('INSERT INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(session.id, newId);
       // `name` here is whatever the requesting player typed into the "First
       // and last name" field on /found-sub — treated as the real full name
       // (broader_sub_list only ever stores full names), with a short public
-      // form derived for consistency with every other candidate shape.
-      candidate = { candidateType: 'broader', id: newId, name: deriveShortName(name), email: emailLower, fullName: name };
+      // form derived and stored now so it's reviewable on the Sub List page
+      // rather than only ever re-derived on the fly.
+      const publicName = deriveShortName(name);
+      const info = db
+        .prepare('INSERT INTO broader_sub_list (name, email, slug, public_name, added_by_player_id) VALUES (?, ?, ?, ?, ?)')
+        .run(name, emailLower, slug, publicName, player.id);
+      const newId = info.lastInsertRowid;
+      db.prepare('INSERT INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(session.id, newId);
+      candidate = { candidateType: 'broader', id: newId, name: publicName, email: emailLower, fullName: name };
       isNewPerson = true;
     }
   } else if (selection.candidateKey) {

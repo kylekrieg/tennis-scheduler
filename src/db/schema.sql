@@ -108,9 +108,10 @@ CREATE TABLE IF NOT EXISTS blackout_pending (
 
 CREATE TABLE IF NOT EXISTS broader_sub_list (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  name                TEXT NOT NULL,
+  name                TEXT NOT NULL,  -- always the person's real, full name (Kyle, 2026-09-07 — see public_name below)
   email               TEXT NOT NULL UNIQUE,
   slug                TEXT,  -- admin-editable "My Page" slug reserved ahead of time (Kyle, 2026-09-01) — used directly by claimSub() the moment this person claims a sub and becomes a real players row. See playerSlug.js's broaderSubSlugTaken()/generateUniqueBroaderSubSlug().
+  public_name         TEXT,  -- admin-editable short public name (Kyle, 2026-09-07): pre-filled from deriveShortName(name) at creation/backfill, but always the real stored value used the moment this person actually fills a spot — never re-derived on the fly after that, so an admin edit here always sticks. See playerName.js's deriveShortName().
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
   added_by_player_id  INTEGER REFERENCES players(id)  -- NULL when an admin added this row directly (Admin -> Sub List); set when a player added them via "I found a sub" (see subFlow.js's arrangeSelfSub()) — lets the admin Sub List page flag a self-arranged entry worth reviewing (name/slug cleanup, see CLAUDE.md's "Found your own sub" section).
 );
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS week_assignments (
   token_used_at   TEXT, -- last time ANY token for this assignment was used (any row in week_assignment_tokens)
   confirmed_at    TEXT,
   manually_placed INTEGER NOT NULL DEFAULT 0, -- set by the plain Reassign-to-roster-player action (Kyle, 2026-09-07) — an admin manually picked this player for this slot, as opposed to the scheduler generating it. Suppresses the Need-a-sub button / "I found a sub" line on this assignment's reminder+follow-up emails (see email.js) since an admin-arranged placement shouldn't invite a player to self-service out of it the same way a normal scheduled slot does.
+  replaces_assignment_id INTEGER REFERENCES week_assignments(id), -- set on a sub's own new row at the moment they take over a slot (claimSub(), and the admin Reassign route's "one-time sub" and "sub list" branches) — points at the original, now-subbed_out row they replaced. Nullable/unset for every ordinary (non-sub) row. Lets the admin session-detail page show a sub indented directly under who they replaced instead of a flat, ambiguous list (Kyle, 2026-09-07) — see sessionHelper.js's orderAssignmentsWithSubGroups(). Never set retroactively for rows that predate this column; that display falls back to a same-team/court guess instead (see that function's doc comment).
   UNIQUE(week_id, player_id)
 );
 

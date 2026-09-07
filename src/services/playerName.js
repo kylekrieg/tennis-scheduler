@@ -28,6 +28,16 @@
  * works correctly on a broader_sub_list row for exactly this reason: with
  * no `full_name` property at all, it falls straight through to `.name`,
  * which is already the real full name.
+ *
+ * `broader_sub_list.public_name` (Kyle, 2026-09-07 — a follow-up once he
+ * noticed a sub's real full name leaking onto a public page after they
+ * filled a spot) is that table's mirror-image counterpart: a real, stored,
+ * admin-editable short form, pre-filled at creation/backfill time via
+ * `deriveShortName(name)` below but never silently re-derived after that —
+ * an admin edit always sticks. Every place that turns a broader_sub_list row
+ * into a real `players.name` (claimSub, the Reassign dropdown's "Sub list"
+ * branch) or shows one on a public page (`/found-sub/:token`'s picker) reads
+ * `public_name` directly rather than calling `deriveShortName()` itself.
  */
 function fullName(player) {
   if (!player) return '';

@@ -309,7 +309,7 @@ input[type="checkbox"]:disabled {
    kicked in on a narrower screen. A small flex gap gives them breathing
    room without needing the wider .actions class's margin-top, which isn't
    appropriate inside a table row. */
-.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row-actions { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; white-space: nowrap; }
 table.compact th, table.compact td { padding: 6px 10px; font-size: calc(13px * var(--text-scale, 1)); }
 table.compact td { vertical-align: middle; }
 .player-row {
