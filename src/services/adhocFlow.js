@@ -38,9 +38,14 @@ function ensureInvitesForWeek(weekId) {
   const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(weekId);
   if (!week) throw new Error('Week not found');
 
+  // full_name included (Kyle, 2026-09-07) — the invite email should greet
+  // players by full name (a trusted-system email, not a public page); the
+  // public sign-up confirmation page these players land on after clicking
+  // reads its own player row separately via findSignupByToken(), which
+  // deliberately stays public-name-only.
   const roster = db
     .prepare(
-      `SELECT p.id, p.name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
+      `SELECT p.id, p.name, p.email, p.full_name FROM session_players sp JOIN players p ON p.id = sp.player_id
        WHERE sp.session_id = ? AND p.active = 1 ORDER BY p.name`
     )
     .all(week.session_id);
@@ -69,9 +74,16 @@ function ensureInvitesForWeek(weekId) {
  * is everyone on the roster who's been invited but hasn't clicked yet.
  */
 function courtGroupsForWeek(weekId) {
+  // full_name included on both queries (Kyle, 2026-09-07) — this one shared
+  // function feeds three different contexts: the public sign-up
+  // confirmation page (public.js, reads .name — unchanged), the admin
+  // session-detail page (admin.js, should read fullName()), and cron.js's
+  // final-roster/not-enough/reminder emails (should read fullName()). Adding
+  // full_name alongside the existing .name lets each caller pick the right
+  // one without a second query.
   const signedUp = db
     .prepare(
-      `SELECT ads.*, p.name, p.email FROM adhoc_signups ads JOIN players p ON p.id = ads.player_id
+      `SELECT ads.*, p.name, p.email, p.full_name FROM adhoc_signups ads JOIN players p ON p.id = ads.player_id
        WHERE ads.week_id = ? AND ads.signed_up_at IS NOT NULL ORDER BY ads.signed_up_at ASC, ads.id ASC`
     )
     .all(weekId);
@@ -85,7 +97,7 @@ function courtGroupsForWeek(weekId) {
 
   const notSignedUp = db
     .prepare(
-      `SELECT ads.*, p.name, p.email FROM adhoc_signups ads JOIN players p ON p.id = ads.player_id
+      `SELECT ads.*, p.name, p.email, p.full_name FROM adhoc_signups ads JOIN players p ON p.id = ads.player_id
        WHERE ads.week_id = ? AND ads.signed_up_at IS NULL ORDER BY p.name`
     )
     .all(weekId);

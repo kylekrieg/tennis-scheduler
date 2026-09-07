@@ -30,7 +30,7 @@
       <p class="muted">Finalized &mdash; courts below are the real, materialized schedule.</p>
       <% var byCourt = {}; wr.finalizedAssignments.forEach(function (a) { (byCourt[a.court] = byCourt[a.court] || []).push(a); }); %>
       <% Object.keys(byCourt).forEach(function (courtNum) { %>
-        <p><strong>Court <%= courtNum %>:</strong> <%= byCourt[courtNum].map(function (a) { return a.name; }).join(', ') %></p>
+        <p><strong>Court <%= courtNum %>:</strong> <%= byCourt[courtNum].map(function (a) { return fullName(a); }).join(', ') %></p>
       <% }) %>
       <div class="actions" style="margin-top:8px;">
         <a class="btn small neutral" href="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/send-email">Send email to players</a>
@@ -45,13 +45,13 @@
         <p class="muted">Invite hasn't gone out yet &mdash; goes out automatically <%= session.adhoc_invite_lead_hours %> hours before match time.</p>
       <% } else { %>
         <% wr.courts.forEach(function (group, idx) { %>
-          <p><strong>Court <%= idx + 1 %> (filled):</strong> <%= group.map(function (r) { return r.name; }).join(', ') %></p>
+          <p><strong>Court <%= idx + 1 %> (filled):</strong> <%= group.map(function (r) { return fullName(r); }).join(', ') %></p>
         <% }) %>
         <% if (wr.waiting.length > 0) { %>
-          <p><strong>Waiting for a full court (<%= wr.waiting.length %> of 4):</strong> <%= wr.waiting.map(function (r) { return r.name; }).join(', ') %></p>
+          <p><strong>Waiting for a full court (<%= wr.waiting.length %> of 4):</strong> <%= wr.waiting.map(function (r) { return fullName(r); }).join(', ') %></p>
         <% } %>
         <% if (wr.notSignedUp.length > 0) { %>
-          <p class="muted">Invited, not yet signed up: <%= wr.notSignedUp.map(function (r) { return r.name; }).join(', ') %></p>
+          <p class="muted">Invited, not yet signed up: <%= wr.notSignedUp.map(function (r) { return fullName(r); }).join(', ') %></p>
         <% } %>
       <% } %>
 
@@ -59,14 +59,14 @@
         <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/adhoc/signup" style="display:inline-flex;gap:6px;align-items:center;">
           <select name="player_id" style="width:auto;">
             <option value="">Sign up a player…</option>
-            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= fullName(p) %></option><% }) %>
           </select>
           <button class="btn small green" type="submit">Sign up</button>
         </form>
         <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/adhoc/withdraw" style="display:inline-flex;gap:6px;align-items:center;">
           <select name="player_id" style="width:auto;">
             <option value="">Withdraw a player…</option>
-            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+            <% roster.forEach(function (p) { %><option value="<%= p.id %>"><%= fullName(p) %></option><% }) %>
           </select>
           <button class="btn small red" type="submit">Withdraw</button>
         </form>

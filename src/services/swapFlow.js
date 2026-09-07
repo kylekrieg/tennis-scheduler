@@ -6,6 +6,7 @@ const { logPlayerActivity } = require('./activityLog');
 const email = require('./email');
 const { zonedTimeToUtc } = require('./tz');
 const { getTimezone } = require('./settings');
+const { fullName } = require('./playerName');
 
 /**
  * Direct player-to-player swaps: a two-way trade of two specific players' own
@@ -164,9 +165,9 @@ async function proposeSwap(initiatorAssignmentId, targetAssignmentId) {
     .run(initiatorAssignmentId, targetAssignmentId, initiatorCtx.player.id, targetCtx.player.id, hashToken(raw));
 
   logPlayerActivity({
-    playerName: initiatorCtx.player.name,
+    playerName: fullName(initiatorCtx.player),
     action: 'swap.propose',
-    description: `${initiatorCtx.player.name} proposed swapping their ${email.fmtDate(initiatorCtx.week.match_date)} slot for ${targetCtx.player.name}'s ${email.fmtDate(targetCtx.week.match_date)} slot`,
+    description: `${fullName(initiatorCtx.player)} proposed swapping their ${email.fmtDate(initiatorCtx.week.match_date)} slot for ${fullName(targetCtx.player)}'s ${email.fmtDate(targetCtx.week.match_date)} slot`,
     sessionId: initiatorCtx.session.id,
   });
 
@@ -275,9 +276,9 @@ async function respondToSwap(rawToken, accept) {
       swapRequest.id
     );
     logPlayerActivity({
-      playerName: targetCtx.player.name,
+      playerName: fullName(targetCtx.player),
       action: 'swap.decline',
-      description: `${targetCtx.player.name} declined a swap proposed by ${initiatorCtx.player.name} (${email.fmtDate(initiatorCtx.week.match_date)} for ${email.fmtDate(targetCtx.week.match_date)})`,
+      description: `${fullName(targetCtx.player)} declined a swap proposed by ${fullName(initiatorCtx.player)} (${email.fmtDate(initiatorCtx.week.match_date)} for ${email.fmtDate(targetCtx.week.match_date)})`,
       sessionId: initiatorCtx.session.id,
     });
     await email.sendSwapDeclinedNotice({
@@ -328,9 +329,9 @@ async function respondToSwap(rawToken, accept) {
   })();
 
   logPlayerActivity({
-    playerName: targetCtx.player.name,
+    playerName: fullName(targetCtx.player),
     action: 'swap.accept',
-    description: `${targetCtx.player.name} accepted a swap with ${initiatorCtx.player.name}: ${initiatorCtx.player.name} now plays ${email.fmtDate(targetCtx.week.match_date)}, ${targetCtx.player.name} now plays ${email.fmtDate(initiatorCtx.week.match_date)}`,
+    description: `${fullName(targetCtx.player)} accepted a swap with ${fullName(initiatorCtx.player)}: ${fullName(initiatorCtx.player)} now plays ${email.fmtDate(targetCtx.week.match_date)}, ${fullName(targetCtx.player)} now plays ${email.fmtDate(initiatorCtx.week.match_date)}`,
     sessionId: initiatorCtx.session.id,
   });
 
@@ -351,7 +352,7 @@ async function respondToSwap(rawToken, accept) {
   ]) {
     const groupRows = db
       .prepare(
-        `SELECT p.id, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+        `SELECT p.id, p.name, p.email, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? AND wa.status != 'subbed_out' AND p.id NOT IN (?, ?)`
       )
       .all(weekId, initiatorCtx.player.id, targetCtx.player.id);

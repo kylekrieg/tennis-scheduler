@@ -4,6 +4,7 @@ const db = require('../db');
 const email = require('./email');
 const subFlow = require('./subFlow');
 const adminReport = require('./adminReport');
+const { fullName } = require('./playerName');
 
 /**
  * Lets an admin fire any of the app's real email templates at a real roster
@@ -210,7 +211,7 @@ const TEMPLATES = {
       recipient: ctx.player,
       week: ctx.week,
       session: ctx.session,
-      subName: (ctx.others[0] && ctx.others[0].name) || 'Test Sub',
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
       test: true,
     }),
   },
@@ -227,7 +228,7 @@ const TEMPLATES = {
       week: ctx.week,
       session: ctx.session,
       claimToken: fakeToken(),
-      requestingPlayerName: (ctx.others[0] && ctx.others[0].name) || 'Test Player',
+      requestingPlayerName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Player',
       test: true,
     }),
   },
@@ -243,7 +244,7 @@ const TEMPLATES = {
       recipient: ctx.player,
       week: ctx.week,
       session: ctx.session,
-      subName: (ctx.others[0] && ctx.others[0].name) || 'Test Sub',
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
       test: true,
     }),
   },
@@ -319,7 +320,11 @@ const TEMPLATES = {
       // addresses in one call, and a "test" must never reach a third party
       // who wasn't the one chosen on the Send Email page.
       initiatorPlayer: ctx.player,
-      targetPlayer: { ...ctx.player, name: 'Test Partner' },
+      // full_name overridden too (Kyle, 2026-09-07) — email.js's templates
+      // now read fullName(player), which prefers full_name over name; without
+      // this, the synthetic "Test Partner" label would be silently
+      // overridden right back to the real player's actual full name.
+      targetPlayer: { ...ctx.player, name: 'Test Partner', full_name: 'Test Partner' },
       initiatorWeek: ctx.week,
       targetWeek: ctx.week2,
       session: ctx.session,

@@ -9,6 +9,7 @@ const adminRoutes = require('./routes/admin');
 const { fmtDate, fmtTime, sessionPublicLabel, sessionFullTitle, sessionColor } = require('./services/email');
 const { getSiteTitle } = require('./services/settings');
 const { weatherIconUrl, weatherSummaryText } = require('./services/weather');
+const { fullName } = require('./services/playerName');
 
 const app = express();
 
@@ -47,6 +48,11 @@ app.locals.sessionColor = sessionColor;
 // read this cache, never call the OpenWeatherMap API themselves.
 app.locals.weatherIconUrl = weatherIconUrl;
 app.locals.weatherSummaryText = weatherSummaryText;
+// Public name vs. full name (Kyle, 2026-09-07) — see playerName.js's doc
+// comment for the full rule. Every admin-facing EJS view calls
+// fullName(player) instead of reading player.name directly; every public
+// view keeps reading player.name unchanged (no helper needed on that side).
+app.locals.fullName = fullName;
 // A cache-busting query param appended to every static CSS/JS <link>/<script>
 // tag (see header.ejs, admin_header.ejs, admin/login.ejs, preferences.ejs).
 // Set once per process, so it changes on every `pm2 restart` after a deploy —

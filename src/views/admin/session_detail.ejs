@@ -48,7 +48,7 @@
           <% var otherPriority = c.sessionA.id === session.id ? c.priorityB : c.priorityA; %>
           <% var thisWins = (c.resolution === 'a_wins' && c.sessionA.id === session.id) || (c.resolution === 'b_wins' && c.sessionB.id === session.id); %>
           <tr>
-            <td><%= c.player.name %></td>
+            <td><%= fullName(c.player) %></td>
             <td><a href="/admin/sessions/<%= other.id %>"><%= sessionFullTitle(other) %></a> <span class="muted">(<%= other.start_date %> – <%= other.end_date %>)</span></td>
             <td class="muted">
               here: <%= thisPriority != null ? thisPriority : 'not set' %>, there: <%= otherPriority != null ? otherPriority : 'not set' %> —
@@ -136,7 +136,7 @@
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/ball-duty" style="display:flex;align-items:center;gap:4px;">
               <select name="player_id" style="width:auto;min-width:110px;padding:4px 6px;font-size:12px;">
                 <% if (r.ballDutyMismatch) { %><option value="" selected disabled>— pick someone —</option><% } %>
-                <% r.assignments.forEach(function(a) { %><option value="<%= a.player_id %>" <%= (!r.ballDutyMismatch && a.player_id === r.week.ball_duty_player_id) ? 'selected' : '' %>><%= a.name %></option><% }) %>
+                <% r.assignments.forEach(function(a) { %><option value="<%= a.player_id %>" <%= (!r.ballDutyMismatch && a.player_id === r.week.ball_duty_player_id) ? 'selected' : '' %>><%= fullName(a) %></option><% }) %>
               </select>
               <button class="btn small neutral" type="submit">Set</button>
             </form>
@@ -173,7 +173,7 @@
       <% } %>
       <% r.assignments.forEach(function(a) { %>
         <div class="player-row">
-          <span class="pname"><strong><%= a.name %></strong> <span class="muted">(<% if (multiCourt) { %>Court <%= a.court %> · <% } %>Team <%= a.team %>)</span><% if (a.is_sub) { %> <span class="muted">sub</span><% } %></span>
+          <span class="pname"><strong><%= fullName(a) %></strong> <span class="muted">(<% if (multiCourt) { %>Court <%= a.court %> · <% } %>Team <%= a.team %>)</span><% if (a.is_sub) { %> <span class="muted">sub</span><% } %></span>
           <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
             <span class="badge double_booked">double booked</span>
             <span class="muted" style="font-size:11px;">also in <a href="/admin/sessions/<%= a.doubleBooked.id %>"><%= sessionFullTitle(a.doubleBooked) %></a></span>
@@ -186,7 +186,14 @@
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/reassign">
               <input type="hidden" name="assignment_id" value="<%= a.id %>">
               <select name="new_player_id" onchange="this.nextElementSibling.style.display = this.value === 'one_time_sub' ? 'inline-block' : 'none';">
-                <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= p.name %></option><% }) %>
+                <optgroup label="Roster">
+                  <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= fullName(p) %></option><% }) %>
+                </optgroup>
+                <% if (subListCandidates.length > 0) { %>
+                  <optgroup label="Sub list">
+                    <% subListCandidates.forEach(function(c) { %><option value="<%= c.candidateType %>:<%= c.id %>"><%= c.fullName %><%= c.candidateType === 'broader' ? ' (sub list)' : '' %></option><% }) %>
+                  </optgroup>
+                <% } %>
                 <option value="needs_sub">— Needs a sub —</option>
                 <option value="one_time_sub">— One-time sub (not on roster) —</option>
               </select>
@@ -212,7 +219,7 @@
             <select name="player_id">
               <option value="">Add a player…</option>
               <% addable.forEach(function (p) { %>
-                <option value="<%= p.id %>"><%= p.name %><%= r.blackedOutNames.indexOf(p.name) !== -1 ? ' (blackout)' : '' %></option>
+                <option value="<%= p.id %>"><%= fullName(p) %><%= r.blackedOutNames.indexOf(fullName(p)) !== -1 ? ' (blackout)' : '' %></option>
               <% }) %>
             </select>
             <button class="btn small neutral" type="submit">Add to this week</button>

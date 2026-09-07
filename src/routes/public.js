@@ -454,7 +454,7 @@ router.post('/request-sub/start', requestSubStartLimiter, asyncHandler(async (re
   const assignmentId = Number(req.body.assignment_id);
   const assignment = db
     .prepare(
-      `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa
+      `SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        WHERE wa.id = ? AND w.locked = 0 AND wa.status IN ('scheduled', 'confirmed')`
@@ -465,8 +465,11 @@ router.post('/request-sub/start', requestSubStartLimiter, asyncHandler(async (re
   const week = subFlow.getWeekWithSession(assignment.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const raw = tokenStore.issueToken(assignment.id);
+  // full_name included (Kyle, 2026-09-07) — this verification email is a
+  // trusted-system email, so email.js's sendSubRequestVerification() greets
+  // by full name, not the public short form.
   await email.sendSubRequestVerification({
-    player: { name: assignment.name, email: assignment.email },
+    player: { name: assignment.name, full_name: assignment.full_name, email: assignment.email },
     week,
     session,
     needSubToken: raw,
@@ -504,7 +507,7 @@ router.post('/found-sub/start', foundSubStartLimiter, asyncHandler(async (req, r
   const assignmentId = Number(req.body.assignment_id);
   const assignment = db
     .prepare(
-      `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa
+      `SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        WHERE wa.id = ? AND w.locked = 0 AND wa.status IN ('scheduled', 'confirmed')`
@@ -515,8 +518,10 @@ router.post('/found-sub/start', foundSubStartLimiter, asyncHandler(async (req, r
   const week = subFlow.getWeekWithSession(assignment.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const raw = tokenStore.issueToken(assignment.id);
+  // full_name included (Kyle, 2026-09-07) — same reasoning as the sub-request
+  // verification email above: a trusted-system email, so greet by full name.
   await email.sendFoundSubVerification({
-    player: { name: assignment.name, email: assignment.email },
+    player: { name: assignment.name, full_name: assignment.full_name, email: assignment.email },
     week,
     session,
     foundSubToken: raw,

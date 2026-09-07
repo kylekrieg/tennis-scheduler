@@ -71,7 +71,7 @@ function loadSessionContext(sessionId) {
   for (const w of weeks) {
     const rows = db
       .prepare(
-        `SELECT wa.id, wa.player_id as playerId, wa.team, wa.court, p.name as playerName
+        `SELECT wa.id, wa.player_id as playerId, wa.team, wa.court, p.name as playerName, p.full_name as playerFullName
          FROM week_assignments wa JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? AND wa.status != 'subbed_out'
          ORDER BY wa.court, wa.team`
@@ -109,12 +109,15 @@ function swapAcrossWeeks(ctx, week1Id, week2Id, player1Id, player2Id) {
   const b = findAssignment(ctx, week2Id, player2Id);
   if (!a || !b) return null;
   const aName = a.playerName;
+  const aFullName = a.playerFullName;
   const aId = a.id;
   const bId = b.id;
   a.playerId = player2Id;
   a.playerName = b.playerName;
+  a.playerFullName = b.playerFullName;
   b.playerId = player1Id;
   b.playerName = aName;
+  b.playerFullName = aFullName;
   return { assignmentIdLeave: aId, assignmentIdPartner: bId };
 }
 
@@ -148,7 +151,7 @@ function findSwapCandidate(moveCtx, otherCtx, playerId, leaveDate) {
       const otherWeekLeaveDate = weekByDate(otherCtx, leaveDate);
       if (otherWeekLeaveDate && findAssignment(otherCtx, otherWeekLeaveDate.id, q.playerId)) continue;
 
-      return { week2: w2, partner: { id: q.playerId, name: q.playerName } };
+      return { week2: w2, partner: { id: q.playerId, name: q.playerName, fullName: q.playerFullName } };
     }
   }
   return null;
@@ -160,8 +163,10 @@ function diffSession(ctx, changedWeekIds) {
   const changes = [];
   for (const weekId of changedWeekIds) {
     const week = ctx.weeks.find((w) => w.id === weekId);
-    const before = (ctx.originalByWeek.get(weekId) || []).map((r) => r.playerName).sort();
-    const after = (ctx.assignmentsByWeek.get(weekId) || []).map((r) => r.playerName).sort();
+    // Full names (Kyle, 2026-09-07) — this before/after diff only ever
+    // renders on the admin-facing resolve_conflicts.ejs page.
+    const before = (ctx.originalByWeek.get(weekId) || []).map((r) => r.playerFullName || r.playerName).sort();
+    const after = (ctx.assignmentsByWeek.get(weekId) || []).map((r) => r.playerFullName || r.playerName).sort();
     changes.push({ weekId, date: week ? week.match_date : null, before, after });
   }
   changes.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -218,7 +223,9 @@ function resolveConflicts(sessionAId, sessionBId) {
 
     const resolution = {
       playerId,
-      playerName: v.player.name,
+      // Full name (Kyle, 2026-09-07) — this only ever renders on the
+      // admin-facing resolve_conflicts.ejs page.
+      playerName: v.player.full_name || v.player.name,
       date,
       priorityA,
       priorityB,
@@ -255,7 +262,7 @@ function resolveConflicts(sessionAId, sessionBId) {
           movedFromDate: date,
           movedToDate: found.week2.match_date,
           swappedWithPlayerId: found.partner.id,
-          swappedWithPlayerName: found.partner.name,
+          swappedWithPlayerName: found.partner.fullName || found.partner.name,
           // Real week_assignments row ids for the two halves of this swap —
           // assignmentIdLeave currently holds `playerId` and should end up
           // holding `swappedWithPlayerId`; assignmentIdPartner is the

@@ -25,6 +25,7 @@ const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBooki
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
+const { fullName, deriveShortName } = require('../services/playerName');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
 const testEmail = require('../services/testEmail');
@@ -64,7 +65,8 @@ function overlapWarningText(sessionId) {
     if (r.resolution === 'unresolved') status = 'no priority set';
     else if (r.resolution === 'tied') status = 'priority tied';
     else status = thisWins ? 'this session set as higher priority' : `${other.name} set as higher priority`;
-    if (!byPlayer.has(r.player.id)) byPlayer.set(r.player.id, { name: r.player.name, others: [] });
+    // Admin-facing flash message — full name (Kyle, 2026-09-07).
+    if (!byPlayer.has(r.player.id)) byPlayer.set(r.player.id, { name: fullName(r.player), others: [] });
     byPlayer.get(r.player.id).others.push(`${other.name}, ${status}`);
   }
   const parts = [...byPlayer.values()].map((p) => `${p.name} (also in ${[...new Set(p.others)].join('; ')})`);
@@ -1296,7 +1298,7 @@ router.get('/sessions/:id', (req, res) => {
       const finalizedAssignments = finalized
         ? db
             .prepare(
-              `SELECT wa.*, p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
+              `SELECT wa.*, p.name, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
             )
             .all(w.id)
         : [];
@@ -1324,6 +1326,25 @@ router.get('/sessions/:id', (req, res) => {
     )
     .all(session.id);
 
+  // Reassign dropdown, second group (Kyle, 2026-09-07): "the drop down for
+  // each player to reassign a player, that just includes the current
+  // roster, not anybody in the broader sub list correct?" — correct, and a
+  // real gap once a session actually has subs assigned to it (see "Per-session
+  // sub list" in CLAUDE.md). subFlow.sessionSubList() is the exact same pool
+  // escalation and "I found a sub" already draw from — a mix of broader_sub_
+  // list entries and real players explicitly assigned as this session's own
+  // subs, tagged candidateType so the reassign route below knows which table
+  // to resolve. Filtered against this session's own roster (by id, only
+  // meaningful for candidateType 'player') purely as a display no-op guard —
+  // sessionSubList() shouldn't normally contain a roster member in the first
+  // place (the Manage Subs page's own "players" checklist already excludes
+  // anyone on the roster), but showing the same name in both groups would be
+  // confusing if the roster and sub list ever drifted out of sync by hand.
+  const rosterIds = new Set(roster.map((p) => p.id));
+  const subListCandidates = subFlow
+    .sessionSubList(session.id)
+    .filter((c) => !(c.candidateType === 'player' && rosterIds.has(c.id)));
+
   // Every blackout date for the session, grouped by date, so each week's
   // card can show who's unavailable — handy context before manually
   // reassigning someone (the reassign dropdown itself doesn't filter these
@@ -1331,13 +1352,14 @@ router.get('/sessions/:id', (req, res) => {
   // session rather than one per week.
   const blackoutRows = db
     .prepare(
-      `SELECT bd.date, p.name FROM blackout_dates bd JOIN players p ON p.id = bd.player_id WHERE bd.session_id = ? ORDER BY p.name`
+      `SELECT bd.date, p.name, p.full_name FROM blackout_dates bd JOIN players p ON p.id = bd.player_id WHERE bd.session_id = ? ORDER BY p.name`
     )
     .all(session.id);
   const blackedOutByDate = new Map();
   for (const row of blackoutRows) {
     if (!blackedOutByDate.has(row.date)) blackedOutByDate.set(row.date, []);
-    blackedOutByDate.get(row.date).push(row.name);
+    // Admin-facing week-card display — full name (Kyle, 2026-09-07).
+    blackedOutByDate.get(row.date).push(fullName(row));
   }
 
   // Also fold in carried-over blackouts from another session (see
@@ -1356,9 +1378,9 @@ router.get('/sessions/:id', (req, res) => {
     const player = roster.find((p) => p.id === Number(playerIdStr));
     if (!player) continue;
     const existing = blackedOutByDate.get(date) || [];
-    if (existing.includes(player.name)) continue;
+    if (existing.includes(fullName(player))) continue;
     if (!blackedOutByDate.has(date)) blackedOutByDate.set(date, []);
-    blackedOutByDate.get(date).push(`${player.name} (carried over from ${srcSession.name})`);
+    blackedOutByDate.get(date).push(`${fullName(player)} (carried over from ${srcSession.name})`);
   }
 
   // Per-assignment double-booking lookup, from this session's point of view —
@@ -1374,7 +1396,7 @@ router.get('/sessions/:id', (req, res) => {
   const weekRows = weeks.map((w) => {
     const assignments = db
       .prepare(
-        `SELECT wa.*, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
+        `SELECT wa.*, p.name, p.email, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
       )
       .all(w.id);
     assignments.forEach((a) => {
@@ -1403,7 +1425,7 @@ router.get('/sessions/:id', (req, res) => {
     });
 
     const ballDuty = w.ball_duty_player_id
-      ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
+      ? db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
     // `weeks.ball_duty_player_id` can end up pointing at someone no longer
     // actually playing this week (e.g. a manual Reassign, or — the real bug
@@ -1425,12 +1447,16 @@ router.get('/sessions/:id', (req, res) => {
     // scanning every row's own status badge separately (Kyle, 2026-08-13).
     const openSubRequest = db
       .prepare(
-        `SELECT sr.*, p.name as playerName FROM sub_requests sr
+        `SELECT sr.*, p.name, p.full_name FROM sub_requests sr
          JOIN week_assignments wa ON wa.id = sr.week_assignment_id
          JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? AND sr.status IN ('open','escalated','unfilled') LIMIT 1`
       )
       .get(w.id);
+    // Admin-facing week-card badge — full name (Kyle, 2026-09-07). Resolved
+    // here (not in the view) so session_detail.ejs/adhoc_session_detail.ejs
+    // can keep reading a plain `.playerName` string as before.
+    if (openSubRequest) openSubRequest.playerName = fullName(openSubRequest);
     // Same idea, for a pending direct swap touching either side of this
     // week (either this week's player gave up their slot, or someone from
     // another week is trying to take one of this week's slots) — see
@@ -1446,7 +1472,7 @@ router.get('/sessions/:id', (req, res) => {
     return {
       week: w,
       assignments,
-      ballDutyName: ballDuty ? ballDuty.name : null,
+      ballDutyName: ballDuty ? fullName(ballDuty) : null,
       ballDutyMismatch,
       openSubRequest,
       openSwapRequest,
@@ -1475,7 +1501,8 @@ router.get('/sessions/:id', (req, res) => {
       const key = `${d.player.id}|${other.id}`;
       let entry = byKey.get(key);
       if (!entry) {
-        entry = { playerName: d.player.name, other, dates: [] };
+        // Admin-facing table — full name (Kyle, 2026-09-07).
+        entry = { playerName: fullName(d.player), other, dates: [] };
         byKey.set(key, entry);
         doubleBookingRows.push(entry);
       }
@@ -1509,6 +1536,7 @@ router.get('/sessions/:id', (req, res) => {
     session,
     weekRows,
     roster,
+    subListCandidates,
     conflicts,
     overlapConflicts,
     doubleBookingRows,
@@ -1576,11 +1604,14 @@ router.post('/sessions/:id/resolve-conflicts/apply', (req, res) => {
   res.redirect(`/admin/sessions/${sessionAId}/resolve-conflicts?with=${sessionBId}`);
 });
 
-router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
+router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res) => {
   const { assignment_id, new_player_id } = req.body;
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(assignment_id);
   const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(req.params.weekId);
   if (!assignment || !week) return res.status(404).send('Not found');
+  // Only the "sub list" branch below actually needs a full session row (to
+  // send a real confirmation email) — cheap enough to just always load it.
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
 
   // "Needs a sub" in the dropdown, instead of picking a specific replacement
   // — a completely different action from the rest of this route, so it's
@@ -1632,7 +1663,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
       flash(req, 'Enter a name for the one-time sub.', 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
-    const oldPlayerForOneTime = db.prepare('SELECT name FROM players WHERE id = ?').get(assignment.player_id);
+    const oldPlayerForOneTime = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(assignment.player_id);
 
     // players.email is NOT NULL UNIQUE — a placeholder @no-email.invalid
     // address satisfies that without requiring a real one from the admin
@@ -1640,10 +1671,17 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
     // this domain and skips ever actually trying to send there, so this
     // player just never gets a reminder for this match, as expected.
     const placeholderEmail = `onetime-${crypto.randomBytes(6).toString('hex')}@${email.NO_EMAIL_DOMAIN}`;
-    const oneTimeSlug = generateUniqueSlug(db, oneTimeName, null);
+    // Public name vs. full name (Kyle, 2026-09-07): whatever the admin types
+    // here is treated as the sub's real, full name (that's what an admin
+    // typing a name into a form naturally produces) — the short "First L"
+    // public form is auto-derived from it, same as claimSub()'s broader-list
+    // conversion, so this one-time sub's slug/schedule/PDF/calendar rows all
+    // show the same short-name convention as every other player.
+    const oneTimeShortName = deriveShortName(oneTimeName);
+    const oneTimeSlug = generateUniqueSlug(db, oneTimeShortName, null);
     const oneTimePlayer = db
-      .prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)')
-      .run(oneTimeName, placeholderEmail, oneTimeSlug);
+      .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
+      .run(oneTimeShortName, placeholderEmail, oneTimeSlug, oneTimeName);
     const oneTimePlayerId = oneTimePlayer.lastInsertRowid;
 
     // Same semantics as a real claimed sub (subFlow.js's claimSub()), not a
@@ -1664,7 +1702,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
 
     logActivity(req, {
       action: 'week.one_time_sub',
-      description: `Added one-time sub "${oneTimeName}" (no email on file) for ${email.fmtDate(week.match_date)} — covering ${oldPlayerForOneTime ? oldPlayerForOneTime.name : `player #${assignment.player_id}`}'s slot`,
+      description: `Added one-time sub "${oneTimeName}" (no email on file) for ${email.fmtDate(week.match_date)} — covering ${oldPlayerForOneTime ? fullName(oldPlayerForOneTime) : `player #${assignment.player_id}`}'s slot`,
       sessionId: Number(req.params.id),
     });
 
@@ -1675,6 +1713,148 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
 
+  // "Sub list" optgroup (Kyle, 2026-09-07): "the drop down... that just
+  // includes the current roster, not anybody in the broader sub list
+  // correct?" — it did. This branch handles picking someone from this
+  // session's own sessionSubList() (a mix of broader_sub_list entries and
+  // real players explicitly assigned as subs — see "Per-session sub list"
+  // in CLAUDE.md), encoded by the dropdown as `player:<id>` or
+  // `broader:<id>` (subFlow's own namespaced-key convention, reused here for
+  // consistency — see eligibleSelfArrangedCandidates()'s doc comment).
+  //
+  // Deliberately uses the same sub-semantics as "One-time sub" above, not
+  // the plain in-place reassign below: someone from the sub list isn't on
+  // this session's own roster, so they have no target_games here for the
+  // assignment to count against — preserving the original row as
+  // subbed_out and inserting a fresh is_sub=1 row is what makes Stats,
+  // badges, and the Sub History table treat this identically to a sub who
+  // came in through the normal claim-a-sub email flow.
+  //
+  // Unlike "One-time sub" (a placeholder @no-email.invalid address with no
+  // real inbox to confirm through), a sub-list pick always has a real email
+  // — either an existing players row or a broader_sub_list entry with a
+  // real address — so this branch does NOT auto-confirm. Kyle, 2026-09-07,
+  // after a real incident: he picked Ed Bourneuf from this dropdown, and Ed
+  // showed up on the admin page as already "confirmed" despite never having
+  // clicked anything, even though a real confirmation email had gone out to
+  // him (via the next automatic/manual reminder pass, which legitimately
+  // treats a 'confirmed' row the same as a 'scheduled' one for re-send
+  // eligibility). The new assignment now starts as a normal 'scheduled' row
+  // and this branch sends the real confirmation email itself, right away,
+  // so the sub hears about it immediately rather than waiting for the next
+  // automatic reminder tick (which could be days off depending on this
+  // session's reminder_days_before) — same fields/pattern as the "Resend
+  // link" route just below in this file.
+  if (typeof new_player_id === 'string' && (new_player_id.startsWith('player:') || new_player_id.startsWith('broader:'))) {
+    if (week.locked) {
+      flash(req, "Can't reassign — this week is already locked (already played).", 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    const [kind, rawId] = new_player_id.split(':');
+    const candidateId = Number(rawId);
+
+    let subPlayer;
+    if (kind === 'player') {
+      subPlayer = db.prepare('SELECT id, name, email, full_name FROM players WHERE id = ? AND active = 1').get(candidateId);
+      if (!subPlayer) {
+        flash(req, 'That player is no longer available — pick someone else.', 'error');
+        return res.redirect(`/admin/sessions/${req.params.id}`);
+      }
+    } else {
+      const bl = db.prepare('SELECT * FROM broader_sub_list WHERE id = ?').get(candidateId);
+      if (!bl) {
+        flash(req, 'That sub-list entry no longer exists — pick someone else.', 'error');
+        return res.redirect(`/admin/sessions/${req.params.id}`);
+      }
+      // Same "reuse an existing players row by email, don't duplicate"
+      // pattern as claimSub() and arrangeSelfSub() — a broader-list entry
+      // must exist as a real players row so it can be scheduled/emailed
+      // like anyone else, and if this same person has already subbed in
+      // somewhere before, there's already a row for them to reuse.
+      let existing = db.prepare('SELECT id, name, email, full_name FROM players WHERE email = ?').get(bl.email);
+      if (!existing) {
+        // bl.name IS the full name (broader_sub_list has no separate
+        // full_name column of its own — see playerName.js's doc comment) —
+        // derive the short public form from it, same as claimSub().
+        const shortName = deriveShortName(bl.name);
+        const slug = bl.slug || generateUniqueSlug(db, shortName, null);
+        const info = db
+          .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
+          .run(shortName, bl.email, slug, bl.name);
+        existing = { id: info.lastInsertRowid, name: shortName, email: bl.email, full_name: bl.name };
+      }
+      subPlayer = existing;
+    }
+
+    // Same UNIQUE(week_id, player_id) guard as the plain reassign path below
+    // — this person could already be playing this week on another court/team.
+    const alreadyInWeekSub = db
+      .prepare('SELECT 1 FROM week_assignments WHERE week_id = ? AND player_id = ? AND id != ?')
+      .get(week.id, subPlayer.id, assignment.id);
+    if (alreadyInWeekSub) {
+      flash(req, "Can't reassign — that player is already scheduled for this week on another spot.", 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+
+    const oldPlayerForSub = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(assignment.player_id);
+
+    db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
+    tokenStore.invalidateTokensForAssignment(assignment.id);
+    const newSubAssignment = db.prepare(
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status)
+       VALUES (?, ?, ?, ?, 1, 'scheduled')`
+    ).run(assignment.week_id, subPlayer.id, assignment.team, assignment.court);
+
+    const subWasResolvedSub = subFlow.closeActiveSubRequestForAssignment(assignment.id);
+    const swapWasCancelledSub = swapFlow.adminCancelSwap(assignment.id);
+
+    logActivity(req, {
+      action: 'week.reassign_from_sub_list',
+      description: `Reassigned ${email.fmtDate(week.match_date)} slot from ${oldPlayerForSub ? fullName(oldPlayerForSub) : `player #${assignment.player_id}`} to ${fullName(subPlayer)} (from this session's sub list) — sent a confirmation email, pending their click-through`,
+      sessionId: Number(req.params.id),
+    });
+
+    // Send the real confirmation email right now rather than waiting for the
+    // next automatic/manual reminder pass — same fields as the "Resend link"
+    // route below. Wrapped in try/catch: the reassign itself has already
+    // fully succeeded in the DB by this point, so an email hiccup (bad SMTP
+    // config, etc.) shouldn't turn into a 500 and roll the admin back to an
+    // error page after the data change already landed.
+    let emailSendFailed = false;
+    try {
+      const newAssignmentRow = db
+        .prepare(
+          'SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?'
+        )
+        .get(newSubAssignment.lastInsertRowid);
+      const raw = tokenStore.issueToken(newAssignmentRow.id);
+      const upcoming = subFlow.upcomingWeeksPreview(session.id, week.match_date, 3);
+      await email.sendConfirmationReminder({
+        player: newAssignmentRow,
+        week,
+        session,
+        confirmToken: raw,
+        needSubToken: raw,
+        foundSubToken: raw,
+        upcomingWeeks: upcoming,
+        manuallyPlaced: false,
+      });
+    } catch (err) {
+      emailSendFailed = true;
+    }
+
+    const suffixSub =
+      (subWasResolvedSub ? ' Its open sub request was closed out too — those invite links are now dead.' : '') +
+      (swapWasCancelledSub ? ' A pending swap request on that slot was cancelled — it would no longer have gone through.' : '');
+    flash(
+      req,
+      emailSendFailed
+        ? `Reassigned to ${fullName(subPlayer)} from the sub list, but the confirmation email failed to send — check Email Log and use "Resend link" on their row.${suffixSub}`
+        : `Reassigned to ${fullName(subPlayer)} from the sub list — sent them a confirmation email; they'll show as "email sent - unconfirmed" until they click through.${suffixSub}`
+    );
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
   const newPlayerId = Number(new_player_id);
 
   // Same landmine as the ball-duty route: a blank dropdown submits '', which
@@ -1682,12 +1862,12 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
   // player id that would otherwise sail past the checks below and only fail
   // once it hits the FK constraint on week_assignments.player_id, as a raw
   // 500 instead of a flash message.
-  const newPlayer = newPlayerId ? db.prepare('SELECT id, name FROM players WHERE id = ?').get(newPlayerId) : null;
+  const newPlayer = newPlayerId ? db.prepare('SELECT id, name, full_name FROM players WHERE id = ?').get(newPlayerId) : null;
   if (!newPlayer) {
     flash(req, 'Pick a player to reassign to.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
-  const oldPlayer = db.prepare('SELECT name FROM players WHERE id = ?').get(assignment.player_id);
+  const oldPlayer = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(assignment.player_id);
 
   // week_assignments has a UNIQUE(week_id, player_id) constraint — without
   // this check, reassigning onto someone already playing that week (on
@@ -1705,7 +1885,16 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
     .prepare('SELECT 1 FROM blackout_dates WHERE session_id = ? AND player_id = ? AND date = ?')
     .get(week.session_id, newPlayerId, week.match_date);
 
-  db.prepare('UPDATE week_assignments SET player_id = ?, status = ? WHERE id = ?').run(
+  // manually_placed = 1 (Kyle, 2026-09-07): "that email should not have the
+  // 'Need a sub' button or the 'already found your own sub'" for a player an
+  // admin picked directly, as opposed to one the scheduler placed here. Only
+  // this plain roster-reassign branch sets it — the sub-list branch above
+  // sends its own confirmation email directly (with the normal full button
+  // set) rather than relying on the next reminder pass, and "One-time sub"
+  // has no real email to ever send this to at all. See email.js's
+  // sendConfirmationReminder()/sendFollowUpReminder() for where this is
+  // actually read.
+  db.prepare('UPDATE week_assignments SET player_id = ?, status = ?, manually_placed = 1 WHERE id = ?').run(
     newPlayerId,
     'scheduled',
     assignment_id
@@ -1732,7 +1921,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
 
   logActivity(req, {
     action: 'week.reassign',
-    description: `Reassigned ${email.fmtDate(week.match_date)} slot from ${oldPlayer ? oldPlayer.name : `player #${assignment.player_id}`} to ${newPlayer.name}${blackout ? ' (blackout override)' : ''}`,
+    description: `Reassigned ${email.fmtDate(week.match_date)} slot from ${oldPlayer ? fullName(oldPlayer) : `player #${assignment.player_id}`} to ${fullName(newPlayer)}${blackout ? ' (blackout override)' : ''}`,
     sessionId: Number(req.params.id),
   });
 
@@ -1745,7 +1934,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', (req, res) => {
     flash(req, `Player reassigned.${suffix}`);
   }
   res.redirect(`/admin/sessions/${req.params.id}`);
-});
+}));
 
 router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   // Reassign and Mark confirmed both close out an active sub request as a
@@ -1769,7 +1958,7 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   // original player.
   const active = db
     .prepare(
-      `SELECT sr.id, sr.week_assignment_id, w.match_date, p.name as player_name
+      `SELECT sr.id, sr.week_assignment_id, w.match_date, p.name, p.full_name
        FROM sub_requests sr
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
@@ -1781,6 +1970,7 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
     flash(req, 'No open sub request found for this week.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
+  const activePlayerName = fullName(active);
   subFlow.closeActiveSubRequestForAssignment(active.week_assignment_id);
   // Only resets if still 'needs_sub' — defensive in case this somehow fires
   // after the slot already moved on some other way, so it can never clobber
@@ -1790,10 +1980,10 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   );
   logActivity(req, {
     action: 'week.clear_sub_request',
-    description: `Cleared sub request for ${active.player_name}'s ${email.fmtDate(active.match_date)} slot — status reset to scheduled`,
+    description: `Cleared sub request for ${activePlayerName}'s ${email.fmtDate(active.match_date)} slot — status reset to scheduled`,
     sessionId: Number(req.params.id),
   });
-  flash(req, `Sub request cleared — ${active.player_name} is back to "scheduled" for that week. If someone else is actually playing instead, use Reassign below.`);
+  flash(req, `Sub request cleared — ${activePlayerName} is back to "scheduled" for that week. If someone else is actually playing instead, use Reassign below.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
@@ -1820,7 +2010,7 @@ router.post('/sessions/:id/weeks/:weekId/cancel-swap', (req, res) => {
   swapFlow.adminCancelSwap(active.initiator_assignment_id);
   logActivity(req, {
     action: 'week.cancel_swap',
-    description: `Cancelled a pending swap between ${initiator ? initiator.player.name : 'a player'} and ${target ? target.player.name : 'a player'}`,
+    description: `Cancelled a pending swap between ${initiator ? fullName(initiator.player) : 'a player'} and ${target ? fullName(target.player) : 'a player'}`,
     sessionId: Number(req.params.id),
   });
   flash(req, 'Swap request cancelled — its link is now dead.');
@@ -1842,7 +2032,7 @@ router.post('/sessions/:id/weeks/:weekId/add-player', (req, res) => {
   }
 
   const playerId = Number(req.body.player_id);
-  const player = playerId ? db.prepare('SELECT id, name FROM players WHERE id = ?').get(playerId) : null;
+  const player = playerId ? db.prepare('SELECT id, name, full_name FROM players WHERE id = ?').get(playerId) : null;
   if (!player) {
     flash(req, 'Pick a player to add.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);
@@ -1901,7 +2091,7 @@ router.post('/sessions/:id/weeks/:weekId/add-player', (req, res) => {
 
   logActivity(req, {
     action: 'week.add_player',
-    description: `Added ${player.name} to the ${email.fmtDate(week.match_date)} slot${blackout ? ' (blackout override)' : ''}`,
+    description: `Added ${fullName(player)} to the ${email.fmtDate(week.match_date)} slot${blackout ? ' (blackout override)' : ''}`,
     sessionId: Number(req.params.id),
   });
 
@@ -1921,7 +2111,7 @@ router.post('/sessions/:id/weeks/:weekId/ball-duty', (req, res) => {
   // and throws a raw "FOREIGN KEY constraint failed" 500 instead of a normal
   // flash message. Checking the player actually exists catches both a blank
   // selection and any other bogus id before it reaches the DB.
-  const player = playerId ? db.prepare('SELECT id, name FROM players WHERE id = ?').get(playerId) : null;
+  const player = playerId ? db.prepare('SELECT id, name, full_name FROM players WHERE id = ?').get(playerId) : null;
   if (!player) {
     flash(req, 'Pick a player for ball duty.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);
@@ -1933,7 +2123,7 @@ router.post('/sessions/:id/weeks/:weekId/ball-duty', (req, res) => {
   );
   logActivity(req, {
     action: 'week.ball_duty',
-    description: `Set ball duty for ${week ? email.fmtDate(week.match_date) : `week #${req.params.weekId}`} to ${player.name}`,
+    description: `Set ball duty for ${week ? email.fmtDate(week.match_date) : `week #${req.params.weekId}`} to ${fullName(player)}`,
     sessionId: Number(req.params.id),
   });
   flash(req, 'Ball duty updated.');
@@ -1941,7 +2131,7 @@ router.post('/sessions/:id/weeks/:weekId/ball-duty', (req, res) => {
 });
 
 router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(async (req, res) => {
-  const assignment = db.prepare('SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?').get(req.params.assignmentId);
+  const assignment = db.prepare('SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?').get(req.params.assignmentId);
   const week = subFlow.getWeekWithSession(req.params.weekId);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   if (!assignment) return res.status(404).send('Not found');
@@ -1951,9 +2141,18 @@ router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(asy
   // killed by this resend. See tokenStore.js.
   const raw = tokenStore.issueToken(assignment.id);
   const upcoming = subFlow.upcomingWeeksPreview(session.id, week.match_date, 3);
-  await email.sendConfirmationReminder({ player: assignment, week, session, confirmToken: raw, needSubToken: raw, foundSubToken: raw, upcomingWeeks: upcoming });
+  await email.sendConfirmationReminder({
+    player: assignment,
+    week,
+    session,
+    confirmToken: raw,
+    needSubToken: raw,
+    foundSubToken: raw,
+    upcomingWeeks: upcoming,
+    manuallyPlaced: !!assignment.manually_placed,
+  });
 
-  flash(req, `Confirmation link resent to ${assignment.name}.`);
+  flash(req, `Confirmation link resent to ${fullName(assignment)}.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 }));
 
@@ -2090,7 +2289,7 @@ router.post('/sessions/:id/weeks/:weekId/update-weather', asyncHandler(async (re
 router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, res) => {
   const assignment = db
     .prepare(
-      `SELECT wa.id, p.name as player_name, w.match_date FROM week_assignments wa
+      `SELECT wa.id, p.name, p.full_name, w.match_date FROM week_assignments wa
        JOIN players p ON p.id = wa.player_id JOIN weeks w ON w.id = wa.week_id
        WHERE wa.id = ?`
     )
@@ -2104,7 +2303,7 @@ router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, re
   logActivity(req, {
     action: 'week.mark_confirmed',
     description: assignment
-      ? `Manually confirmed ${assignment.player_name} for ${email.fmtDate(assignment.match_date)}`
+      ? `Manually confirmed ${fullName(assignment)} for ${email.fmtDate(assignment.match_date)}`
       : `Manually confirmed assignment #${req.params.assignmentId}`,
     sessionId: Number(req.params.id),
   });
@@ -2163,7 +2362,7 @@ router.get('/blackouts', (req, res) => {
     const placeholders = sessions.map(() => '?').join(',');
     const rosterRows = db
       .prepare(
-        `SELECT sp.session_id, p.id as player_id, p.name FROM session_players sp
+        `SELECT sp.session_id, p.id as player_id, p.name, p.full_name FROM session_players sp
          JOIN players p ON p.id = sp.player_id
          WHERE sp.session_id IN (${placeholders}) AND p.active = 1
          ORDER BY p.name`
@@ -2173,7 +2372,8 @@ router.get('/blackouts', (req, res) => {
     for (const row of rosterRows) {
       let entry = playerSessions.get(row.player_id);
       if (!entry) {
-        entry = { name: row.name, sessions: [] };
+        // Admin-facing page — full name (Kyle, 2026-09-07).
+        entry = { name: fullName(row), sessions: [] };
         playerSessions.set(row.player_id, entry);
       }
       entry.sessions.push(sessionById.get(row.session_id));
@@ -2307,7 +2507,7 @@ router.get('/sessions/:id/blackouts', (req, res) => {
   // unavailable for, regardless of which session the real row lives under.
   const allBlackouts = db
     .prepare(
-      `SELECT p.id as player_id, p.name, bd.date FROM blackout_dates bd
+      `SELECT p.id as player_id, p.name, p.full_name, bd.date FROM blackout_dates bd
        JOIN players p ON p.id = bd.player_id
        WHERE bd.session_id = ? ORDER BY p.name, bd.date`
     )
@@ -2317,13 +2517,14 @@ router.get('/sessions/:id/blackouts', (req, res) => {
   for (const row of allBlackouts) {
     let entry = byPlayerId.get(row.player_id);
     if (!entry) {
-      entry = { name: row.name, dates: [] };
+      // Admin-facing summary table — full name (Kyle, 2026-09-07).
+      entry = { name: fullName(row), dates: [] };
       byPlayerId.set(row.player_id, entry);
       blackoutsByPlayer.push(entry);
     }
     entry.dates.push(row.date);
   }
-  const nameById = new Map(roster.map((p) => [p.id, p.name]));
+  const nameById = new Map(roster.map((p) => [p.id, fullName(p)]));
   for (const key of carriedOverMap.keys()) {
     const [playerIdStr, date] = key.split('|');
     const playerId = Number(playerIdStr);
@@ -2403,10 +2604,10 @@ router.post('/sessions/:id/blackouts', (req, res) => {
     }
   })();
 
-  const blackoutPlayer = db.prepare('SELECT name FROM players WHERE id = ?').get(playerId);
+  const blackoutPlayer = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(playerId);
   logActivity(req, {
     action: 'blackout.admin_edit',
-    description: `Updated blackout dates for ${blackoutPlayer ? blackoutPlayer.name : `player #${playerId}`} (+${added}, -${removed})`,
+    description: `Updated blackout dates for ${blackoutPlayer ? fullName(blackoutPlayer) : `player #${playerId}`} (+${added}, -${removed})`,
     sessionId,
   });
   flash(req, 'Blackout dates updated.');
@@ -2445,10 +2646,10 @@ router.post('/sessions/:id/weeks/:weekId/adhoc/signup', (req, res) => {
   }
   logActivity(req, {
     action: 'adhoc.manual_signup',
-    description: `Manually signed up ${player.name} for ${week.match_date}`,
+    description: `Manually signed up ${fullName(player)} for ${week.match_date}`,
     sessionId: Number(req.params.id),
   });
-  flash(req, `${player.name} is signed up for ${week.match_date}.`);
+  flash(req, `${fullName(player)} is signed up for ${week.match_date}.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
@@ -2468,10 +2669,10 @@ router.post('/sessions/:id/weeks/:weekId/adhoc/withdraw', (req, res) => {
   db.prepare('UPDATE adhoc_signups SET signed_up_at = NULL WHERE week_id = ? AND player_id = ?').run(week.id, player.id);
   logActivity(req, {
     action: 'adhoc.manual_withdraw',
-    description: `Withdrew ${player.name} from ${week.match_date}`,
+    description: `Withdrew ${fullName(player)} from ${week.match_date}`,
     sessionId: Number(req.params.id),
   });
-  flash(req, `${player.name} withdrawn from ${week.match_date}.`);
+  flash(req, `${fullName(player)} withdrawn from ${week.match_date}.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
@@ -2522,13 +2723,15 @@ router.get('/sessions/:id/stats', (req, res) => {
   // snapshot (shouldn't happen post-backfill, but defensive regardless).
   const rawSubHistory = db
     .prepare(
-      `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date, p.name as original_player
+      `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date, p.name, p.full_name
        FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = COALESCE(sr.requesting_player_id, wa.player_id)
        WHERE w.session_id = ? ORDER BY w.match_date DESC`
     )
-    .all(session.id);
+    .all(session.id)
+    // Admin-facing Stats page — full name (Kyle, 2026-09-07).
+    .map((r) => ({ ...r, original_player: fullName(r) }));
   // created_at/escalated_at are plain SQLite datetime('now') -- UTC, same
   // shape as email_log.sent_at/admin_activity_log.created_at -- converted
   // the same way per Kyle's "no UTC anywhere" rule. escalated_at is
@@ -2573,14 +2776,19 @@ router.post('/players', (req, res) => {
   }
   try {
     const name = req.body.name.trim();
+    // full_name (Kyle, 2026-09-07) is optional here — blank is fine, since
+    // playerName.js's fullName() falls back to the public name until an
+    // admin fills this in.
+    const fullNameInput = (req.body.full_name || '').trim() || null;
     const submittedSlug = (req.body.slug || '').trim();
     const slug = submittedSlug || generateUniqueSlug(db, name, null);
-    db.prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)').run(
+    db.prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)').run(
       name,
       req.body.email.trim(),
-      slug
+      slug,
+      fullNameInput
     );
-    logActivity(req, { action: 'player.create', description: `Added player ${name} (${req.body.email.trim()})` });
+    logActivity(req, { action: 'player.create', description: `Added player ${fullNameInput || name} (${req.body.email.trim()})` });
     flash(req, 'Player added.');
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -2601,9 +2809,10 @@ router.post('/players/:id/edit', (req, res) => {
     flash(req, fieldError, 'error');
     return res.redirect('/admin/players');
   }
-  const before = db.prepare('SELECT name, email, slug FROM players WHERE id = ?').get(req.params.id);
+  const before = db.prepare('SELECT name, email, slug, full_name FROM players WHERE id = ?').get(req.params.id);
   const newName = req.body.name.trim();
   const newEmail = req.body.email.trim();
+  const newFullName = (req.body.full_name || '').trim() || null;
   const submittedSlug = (req.body.slug || '').trim();
   let newSlug = before ? before.slug : null;
   if (before && submittedSlug && submittedSlug !== before.slug) {
@@ -2614,16 +2823,17 @@ router.post('/players/:id/edit', (req, res) => {
     }
     newSlug = submittedSlug;
   }
-  db.prepare('UPDATE players SET name = ?, email = ?, slug = ? WHERE id = ?').run(
+  db.prepare('UPDATE players SET name = ?, email = ?, slug = ?, full_name = ? WHERE id = ?').run(
     newName,
     newEmail,
     newSlug,
+    newFullName,
     req.params.id
   );
-  if (before && (before.name !== newName || before.email !== newEmail || before.slug !== newSlug)) {
+  if (before && (before.name !== newName || before.email !== newEmail || before.slug !== newSlug || before.full_name !== newFullName)) {
     logActivity(req, {
       action: 'player.edit',
-      description: `Updated player ${before.name} (${before.email}) → ${newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}`,
+      description: `Updated player ${fullName(before)} (${before.email}) → ${newFullName || newName} (${newEmail})${before.slug !== newSlug ? `, URL slug "${before.slug}" → "${newSlug}"` : ''}${before.full_name !== newFullName ? `, full name "${before.full_name || '(none)'}" → "${newFullName || '(none)'}"` : ''}`,
     });
   }
   flash(req, 'Player identity updated — all existing assignments carried over as-is.');
@@ -2631,17 +2841,17 @@ router.post('/players/:id/edit', (req, res) => {
 });
 
 router.post('/players/:id/deactivate', (req, res) => {
-  const player = db.prepare('SELECT name FROM players WHERE id = ?').get(req.params.id);
+  const player = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE players SET active = 0 WHERE id = ?').run(req.params.id);
-  logActivity(req, { action: 'player.deactivate', description: `Deactivated player ${player ? player.name : `#${req.params.id}`}` });
+  logActivity(req, { action: 'player.deactivate', description: `Deactivated player ${player ? fullName(player) : `#${req.params.id}`}` });
   flash(req, 'Player deactivated.');
   res.redirect('/admin/players');
 });
 
 router.post('/players/:id/activate', (req, res) => {
-  const player = db.prepare('SELECT name FROM players WHERE id = ?').get(req.params.id);
+  const player = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE players SET active = 1 WHERE id = ?').run(req.params.id);
-  logActivity(req, { action: 'player.activate', description: `Reactivated player ${player ? player.name : `#${req.params.id}`}` });
+  logActivity(req, { action: 'player.activate', description: `Reactivated player ${player ? fullName(player) : `#${req.params.id}`}` });
   flash(req, 'Player reactivated.');
   res.redirect('/admin/players');
 });
@@ -2657,11 +2867,21 @@ router.get('/sub-list', (req, res) => {
   // an admin added directly here, which is the existing, unflagged case.
   const list = db
     .prepare(
-      `SELECT bl.*, p.name as added_by_name FROM broader_sub_list bl
+      `SELECT bl.*, p.name AS added_by_short_name, p.full_name AS added_by_full_name FROM broader_sub_list bl
        LEFT JOIN players p ON p.id = bl.added_by_player_id
        ORDER BY bl.name`
     )
-    .all();
+    .all()
+    // Admin-facing "added by" note — full name (Kyle, 2026-09-07). Aliased
+    // both joined columns above (rather than a bare `p.name`) since `bl.*`
+    // already claims `name` for the sub-list entry's own name — an unaliased
+    // `p.name` would silently overwrite it in the result row.
+    .map((row) => ({
+      ...row,
+      added_by_name: row.added_by_player_id
+        ? fullName({ name: row.added_by_short_name, full_name: row.added_by_full_name })
+        : null,
+    }));
   // Which sessions each master-list person is currently assigned to, purely
   // for visibility on this page — one query rather than one per row. Actual
   // assignment happens on each session's own /subs page, not here. Selects
@@ -2865,8 +3085,8 @@ router.post('/email', asyncHandler(async (req, res) => {
       return res.redirect('/admin/email');
     }
     const tpl = testEmail.TEMPLATES[req.body.template_key];
-    const player = db.prepare('SELECT name FROM players WHERE id = ?').get(Number(req.body.test_player_id) || 0);
-    flash(req, `Test email ("${tpl ? tpl.label : req.body.template_key}") sent to ${player ? player.name : 'player'}. Links in it are inert — clicking them won't confirm, claim, or change anything real.`);
+    const player = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(Number(req.body.test_player_id) || 0);
+    flash(req, `Test email ("${tpl ? tpl.label : req.body.template_key}") sent to ${player ? fullName(player) : 'player'}. Links in it are inert — clicking them won't confirm, claim, or change anything real.`);
     return res.redirect('/admin/email');
   }
 
@@ -2952,7 +3172,7 @@ router.post('/email', asyncHandler(async (req, res) => {
     return res.redirect('/admin/email');
   }
   await email.sendCustomEmail({ to: player.email, subject, body });
-  flash(req, `Email sent to ${player.name}.`);
+  flash(req, `Email sent to ${fullName(player)}.`);
   res.redirect('/admin/email');
 }));
 

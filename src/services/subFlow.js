@@ -8,6 +8,7 @@ const { getTimezone } = require('./settings');
 const { carriedOverBlackoutsForSession } = require('./sessionHelper');
 const { generateUniqueSlug, generateUniqueBroaderSubSlug } = require('./playerSlug');
 const { logPlayerActivity } = require('./activityLog');
+const { deriveShortName, fullName } = require('./playerName');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -28,6 +29,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * point at the correct FK column) can — everything else (email templates,
  * the self-notice's "here's your sub list" summary) only ever reads
  * `.name`/`.email`, which both row shapes have, so they work unmodified.
+ *
+ * Every row also gets a `.fullName` (Kyle, 2026-09-07 — see playerName.js):
+ * for a broader_sub_list row that's already the real full name (that table
+ * only ever stores full names); for a real players row it's full_name if
+ * an admin has filled it in, otherwise the same public name as `.name`.
+ * Only consumer of this function today is admin.js (the Reassign dropdown's
+ * "Sub list" optgroup, the Manage Subs picker's duplicate-exclusion check)
+ * and escalateOverdueRequests() below — no public page reads this list, so
+ * every current admin-facing display should read `.fullName`, not `.name`.
  */
 function sessionSubList(sessionId) {
   const fromBroaderList = db
@@ -44,7 +54,8 @@ function sessionSubList(sessionId) {
        WHERE ssp.session_id = ? AND p.active = 1`
     )
     .all(sessionId);
-  return [...fromBroaderList, ...fromPlayers].sort((a, b) => a.name.localeCompare(b.name));
+  const merged = [...fromBroaderList, ...fromPlayers].map((c) => ({ ...c, fullName: fullName(c) }));
+  return merged.sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
 function getWeekWithSession(weekId) {
@@ -56,6 +67,11 @@ function getWeekWithSession(weekId) {
     .get(weekId);
 }
 
+// Feeds the "Next few weeks:" list in the confirmation reminder email
+// (email.js's nextWeeksPreviewHtml()) — an email, so every name here should
+// be a full name (Kyle, 2026-09-07). Selecting full_name alongside name and
+// computing fullName() here (rather than in email.js) keeps this the one
+// place that knows how to build a "week -> who's playing" summary.
 function upcomingWeeksPreview(sessionId, fromDate, count = 3) {
   const weeks = db
     .prepare(
@@ -65,14 +81,15 @@ function upcomingWeeksPreview(sessionId, fromDate, count = 3) {
   return weeks.map((w) => {
     const players = db
       .prepare(
-        `SELECT p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+        `SELECT p.name, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? AND wa.status != 'subbed_out'`
       )
-      .all(w.id);
+      .all(w.id)
+      .map((p) => ({ ...p, name: fullName(p) }));
     const ballDuty = w.ball_duty_player_id
-      ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
+      ? db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(w.ball_duty_player_id)
       : null;
-    return { ...w, players, ballDutyName: ballDuty ? ballDuty.name : null };
+    return { ...w, players, ballDutyName: ballDuty ? fullName(ballDuty) : null };
   });
 }
 
@@ -129,7 +146,7 @@ function eligibleSelfArrangedCandidates(weekId) {
 
   const roster = db
     .prepare(
-      `SELECT p.id, p.name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
+      `SELECT p.id, p.name, p.full_name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
        WHERE sp.session_id = ? AND p.active = 1`
     )
     .all(week.session_id);
@@ -140,6 +157,7 @@ function eligibleSelfArrangedCandidates(weekId) {
       candidateType: 'player',
       id: p.id,
       name: p.name,
+      fullName: fullName(p),
       email: p.email,
       blackedOut: blackoutSet.has(`${p.id}|${week.match_date}`),
     });
@@ -155,6 +173,7 @@ function eligibleSelfArrangedCandidates(weekId) {
         candidateType: 'player',
         id: c.id,
         name: c.name,
+        fullName: c.fullName,
         email: c.email,
         blackedOut: blackoutSet.has(`${c.id}|${week.match_date}`),
       });
@@ -165,7 +184,14 @@ function eligibleSelfArrangedCandidates(weekId) {
         key,
         candidateType: 'broader',
         id: c.id,
-        name: c.name,
+        // This is the one public consumer of a broader_sub_list name
+        // (/found-sub/:token — Kyle, 2026-09-07: "short public names" here
+        // too, same rule as every other public page). broader_sub_list has
+        // no stored public name at all (it's admin-managed, full names only
+        // — see playerName.js), so a short form is derived on the fly for
+        // display, never written back to the row.
+        name: deriveShortName(c.name),
+        fullName: c.fullName,
         email: c.email,
         blackedOut: false,
       });
@@ -236,7 +262,7 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
 
   const allCandidates = db
     .prepare(
-      `SELECT p.id, p.name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
+      `SELECT p.id, p.name, p.full_name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
        WHERE sp.session_id = ? AND p.active = 1 AND p.id NOT IN (${alreadyPlaying.map(() => '?').join(',') || '0'})`
     )
     .all(week.session_id, ...alreadyPlaying);
@@ -336,13 +362,13 @@ async function createSubRequest(weekAssignmentId) {
     if (wasBallDuty) {
       db.prepare(
         "UPDATE weeks SET ball_duty_player_id = NULL, needs_attention = 1, notes = ? WHERE id = ?"
-      ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
+      ).run(`Ball duty needs reassignment (was ${fullName(player)}, now needs a sub)`, week.id);
     }
 
     return subRequestId;
   })();
 
-  const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, player.name);
+  const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, fullName(player));
 
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
@@ -400,13 +426,15 @@ function adminFlagNeedsSub(weekAssignmentId) {
     if (wasBallDuty) {
       db.prepare(
         "UPDATE weeks SET ball_duty_player_id = NULL, needs_attention = 1, notes = ? WHERE id = ?"
-      ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
+      ).run(`Ball duty needs reassignment (was ${fullName(player)}, now needs a sub)`, week.id);
     }
 
     return subRequestId;
   })();
 
-  return { blocked: false, subRequestId, playerName: player.name };
+  // Admin-facing (flash message + activity log at the admin.js call site) —
+  // full name (Kyle, 2026-09-07).
+  return { blocked: false, subRequestId, playerName: fullName(player) };
 }
 
 /**
@@ -422,7 +450,7 @@ function adminFlagNeedsSub(weekAssignmentId) {
 async function fanOutPendingAdminFlagsForWeek(weekId) {
   const pending = db
     .prepare(
-      `SELECT sr.id as subRequestId, p.name as playerName
+      `SELECT sr.id as subRequestId, p.name, p.full_name
        FROM sub_requests sr
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN players p ON p.id = wa.player_id
@@ -430,8 +458,8 @@ async function fanOutPendingAdminFlagsForWeek(weekId) {
     )
     .all(weekId);
 
-  for (const { subRequestId, playerName } of pending) {
-    await fanOutSubRequest(subRequestId, playerName);
+  for (const row of pending) {
+    await fanOutSubRequest(row.subRequestId, fullName(row));
   }
 
   return pending.length;
@@ -482,8 +510,17 @@ async function claimSub(rawToken) {
       // somehow still blank (shouldn't happen post-backfill, but avoids a
       // literal "/me/" link if it ever does).
       const slug = bl.slug || generateUniqueSlug(db, bl.name, null);
-      const info = db.prepare('INSERT INTO players (name, email, slug) VALUES (?, ?, ?)').run(bl.name, bl.email, slug);
-      existing = { id: info.lastInsertRowid, name: bl.name, email: bl.email, slug };
+      // bl.name is a real full name (broader_sub_list only ever stores full
+      // names — see playerName.js's doc comment). The new players row needs
+      // both: full_name = the real value, name = an auto-derived public
+      // short form ("First LastInitial") so this person doesn't show up on
+      // the public schedule under their full last name the very next time
+      // they play (Kyle, 2026-09-07).
+      const shortName = deriveShortName(bl.name);
+      const info = db
+        .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
+        .run(shortName, bl.email, slug, bl.name);
+      existing = { id: info.lastInsertRowid, name: shortName, email: bl.email, slug, full_name: bl.name };
     }
     subPlayer = existing;
   }
@@ -510,13 +547,13 @@ async function claimSub(rawToken) {
   // Notify that week's full group of 4 (other 3 originals + the new sub)
   const groupRows = db
     .prepare(
-      `SELECT p.id, p.name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+      `SELECT p.id, p.name, p.full_name, p.email FROM week_assignments wa JOIN players p ON p.id = wa.player_id
        WHERE wa.week_id = ? AND wa.status != 'subbed_out'`
     )
     .all(originalAssignment.week_id);
 
   for (const recipient of groupRows) {
-    await email.sendSubFilledNotice({ recipient, week, session, subName: subPlayer.name });
+    await email.sendSubFilledNotice({ recipient, week, session, subName: fullName(subPlayer) });
   }
 
   // Kyle, 2026-08-27: the original requester's own row just flipped to
@@ -528,7 +565,7 @@ async function claimSub(rawToken) {
   // teammate.
   const originalPlayer = db.prepare('SELECT * FROM players WHERE id = ?').get(originalAssignment.player_id);
   if (originalPlayer) {
-    await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: subPlayer.name });
+    await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: fullName(subPlayer) });
   }
 
   return { ok: true, week, subPlayer };
@@ -573,7 +610,9 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     return { ok: false, reason: 'concurrent' };
   }
 
-  let candidate; // { candidateType: 'player'|'broader', id, name, email }
+  // { candidateType: 'player'|'broader', id, name (public/short), email,
+  // fullName (real full name — Kyle, 2026-09-07) }
+  let candidate;
   let isNewPerson = false;
 
   if (selection.newPerson) {
@@ -588,13 +627,25 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     const existingBroader = db.prepare('SELECT * FROM broader_sub_list WHERE email = ?').get(emailLower);
 
     if (existingPlayer) {
-      candidate = { candidateType: 'player', id: existingPlayer.id, name: existingPlayer.name, email: existingPlayer.email };
+      candidate = {
+        candidateType: 'player',
+        id: existingPlayer.id,
+        name: existingPlayer.name,
+        email: existingPlayer.email,
+        fullName: fullName(existingPlayer),
+      };
     } else if (existingBroader) {
       db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(
         session.id,
         existingBroader.id
       );
-      candidate = { candidateType: 'broader', id: existingBroader.id, name: existingBroader.name, email: existingBroader.email };
+      candidate = {
+        candidateType: 'broader',
+        id: existingBroader.id,
+        name: deriveShortName(existingBroader.name),
+        email: existingBroader.email,
+        fullName: existingBroader.name,
+      };
     } else {
       // Genuinely new — nobody on file has this email. Reserve a slug now
       // (same reasoning as every other broader_sub_list entry, see
@@ -607,13 +658,17 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
         .run(name, emailLower, slug, player.id);
       const newId = info.lastInsertRowid;
       db.prepare('INSERT INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(session.id, newId);
-      candidate = { candidateType: 'broader', id: newId, name, email: emailLower };
+      // `name` here is whatever the requesting player typed into the "First
+      // and last name" field on /found-sub — treated as the real full name
+      // (broader_sub_list only ever stores full names), with a short public
+      // form derived for consistency with every other candidate shape.
+      candidate = { candidateType: 'broader', id: newId, name: deriveShortName(name), email: emailLower, fullName: name };
       isNewPerson = true;
     }
   } else if (selection.candidateKey) {
     const match = eligibleSelfArrangedCandidates(week.id).find((c) => c.key === selection.candidateKey);
     if (!match) return { ok: false, reason: 'invalid_candidate' };
-    candidate = { candidateType: match.candidateType, id: match.id, name: match.name, email: match.email };
+    candidate = { candidateType: match.candidateType, id: match.id, name: match.name, email: match.email, fullName: match.fullName };
   } else {
     return { ok: false, reason: 'no_selection' };
   }
@@ -639,7 +694,7 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     if (wasBallDuty) {
       db.prepare(
         "UPDATE weeks SET ball_duty_player_id = NULL, needs_attention = 1, notes = ? WHERE id = ?"
-      ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
+      ).run(`Ball duty needs reassignment (was ${fullName(player)}, now needs a sub)`, week.id);
     }
 
     const raw = generateRawToken();
@@ -661,15 +716,16 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     week,
     session,
     claimToken: rawToken,
-    requestingPlayerName: player.name,
+    requestingPlayerName: fullName(player),
   });
 
-  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.name });
+  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName });
 
   if (isNewPerson) {
-    const description = `${player.name} added ${candidate.name} (${candidate.email}) to the sub list after arranging them as a sub for ${week.match_date}`;
+    // Activity log — admin-facing, full names (Kyle, 2026-09-07).
+    const description = `${fullName(player)} added ${candidate.fullName} (${candidate.email}) to the sub list after arranging them as a sub for ${week.match_date}`;
     logPlayerActivity({
-      playerName: player.name,
+      playerName: fullName(player),
       action: 'sub.self_arranged_new_person',
       description,
       sessionId: session.id,
@@ -678,9 +734,9 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
       await email.sendNewSubListEntryAlert({
         session,
         week,
-        newPersonName: candidate.name,
+        newPersonName: candidate.fullName,
         newPersonEmail: candidate.email,
-        addedByPlayerName: player.name,
+        addedByPlayerName: fullName(player),
       });
     }
   }

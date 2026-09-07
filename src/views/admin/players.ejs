@@ -3,35 +3,44 @@
 
 <h2>Add a player</h2>
 <form method="post" action="/admin/players" class="card">
-  <label for="name">Name</label>
+  <label for="name">Public name</label>
   <input type="text" name="name" id="name" required>
+  <p class="muted" style="font-size:12px;margin-top:2px;">Shown on every public page (schedule, lookahead, My Page, PDF, calendar) — e.g. "Kyle K", first name + last initial. Last names aren't shown publicly.</p>
+  <label for="full_name">Full name (optional)</label>
+  <input type="text" name="full_name" id="full_name" placeholder="e.g. Kyle Krieg">
+  <p class="muted" style="font-size:12px;margin-top:2px;">Shown only on admin pages and in emails (confirmations, subs, swaps, etc.) — a trusted-system context, not public. Leave blank and the public name above is used until you fill this in.</p>
   <label for="email">Email</label>
   <input type="email" name="email" id="email" required>
   <label for="slug">URL slug (optional)</label>
-  <input type="text" name="slug" id="slug" placeholder="auto-generated from name if left blank">
-  <p class="muted" style="font-size:12px;margin-top:2px;">Used for this player's My Page link (<code>/me/&lt;slug&gt;</code>). Lowercase letters, numbers, and hyphens only — leave blank to generate one from the name automatically.</p>
+  <input type="text" name="slug" id="slug" placeholder="auto-generated from public name if left blank">
+  <p class="muted" style="font-size:12px;margin-top:2px;">Used for this player's My Page link (<code>/me/&lt;slug&gt;</code>). Lowercase letters, numbers, and hyphens only — leave blank to generate one from the public name automatically.</p>
   <div class="actions"><button class="btn green" type="submit">Add player</button></div>
 </form>
 
 <h2>All players</h2>
 <table class="wide">
-  <thead><tr><th>Name / Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Full name (admin/emails)</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>
     <% players.forEach(function(p) { %>
       <tr>
         <td>
           <form method="post" action="/admin/players/<%= p.id %>/edit" id="edit-<%= p.id %>">
-            <input type="text" name="name" value="<%= p.name %>" style="width:140px;display:inline-block;">
-            <input type="email" name="email" value="<%= p.email %>" style="width:200px;display:inline-block;">
+            <input type="text" name="full_name" value="<%= p.full_name || '' %>" placeholder="(same as public name)" style="width:150px;display:inline-block;">
           </form>
         </td>
         <td>
-          <input type="text" name="slug" value="<%= p.slug %>" form="edit-<%= p.id %>" style="width:120px;">
+          <input type="text" name="name" value="<%= p.name %>" form="edit-<%= p.id %>" style="width:120px;display:inline-block;">
+        </td>
+        <td>
+          <input type="email" name="email" value="<%= p.email %>" form="edit-<%= p.id %>" style="width:190px;display:inline-block;">
+        </td>
+        <td>
+          <input type="text" name="slug" value="<%= p.slug %>" form="edit-<%= p.id %>" style="width:110px;">
           <div class="muted" style="font-size:11px;">/me/<%= p.slug %></div>
         </td>
         <td><%= p.active ? 'active' : 'inactive' %></td>
         <td>
-          <button class="btn small neutral" type="submit" form="edit-<%= p.id %>">Save (identity swap)</button>
+          <button class="btn small neutral" type="submit" form="edit-<%= p.id %>">Save</button>
           <% if (p.active) { %>
             <form class="inline" method="post" action="/admin/players/<%= p.id %>/deactivate"><button class="btn small neutral" type="submit">Deactivate</button></form>
           <% } else { %>
@@ -42,5 +51,5 @@
     <% }) %>
   </tbody>
 </table>
-<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page. The URL slug (used for My Page links) is generated automatically when a player is added and never changes on its own when you edit their name — only edit it directly here if you need to resolve two players landing on the same slug (e.g. two "Brian B"s).</p>
+<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page. "Public name" is what players see on every public page (schedule, lookahead, My Page, PDF, calendar); "Full name" is shown only here on the admin side and in emails — leave it blank for a player and the public name is used instead until you fill it in. The URL slug (used for My Page links) is generated from the public name automatically when a player is added and never changes on its own when you edit either name — only edit it directly here if you need to resolve two players landing on the same slug (e.g. two "Brian B"s).</p>
 <%- include('../partials/footer') %>

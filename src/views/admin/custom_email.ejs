@@ -22,7 +22,7 @@
   <div id="player-picker">
     <label for="player_id">Player</label>
     <select name="player_id" id="player_id">
-      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
+      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= fullName(p) %> (<%= p.email %>)</option><% }) %>
     </select>
   </div>
 
@@ -49,7 +49,7 @@
     </select>
     <label for="test_player_id">Send test to</label>
     <select name="test_player_id" id="test_player_id">
-      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.email %>)</option><% }) %>
+      <% players.forEach(function(p) { %><option value="<%= p.id %>"><%= fullName(p) %> (<%= p.email %>)</option><% }) %>
     </select>
     <p class="muted" style="margin-top:4px;">Sends the real template, built from this player's own current schedule where relevant, so you can confirm it renders and delivers correctly. Subject line gets a "[TEST]" prefix and it's logged under its own category — a real automatic reminder/follow-up/escalation for this player can never be skipped because of it. Any Confirm/Need-a-sub/Claim/Accept link in the email is inert (clicking it does nothing) — this is for checking the email itself, not testing the click-through flow.</p>
   </div>

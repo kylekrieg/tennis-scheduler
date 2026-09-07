@@ -4,6 +4,7 @@ const db = require('../db');
 const { getTimezone } = require('./settings');
 const { utcToZonedParts } = require('./tz');
 const weather = require('./weather');
+const { fullName } = require('./playerName');
 
 let transport = null;
 function getTransport() {
@@ -384,22 +385,24 @@ function weatherBlockHtml(session, week) {
  * scheduled/confirmed only, so it naturally excludes whoever currently
  * needs a sub (status 'needs_sub') and, for the sub-filled notice sent
  * right after claimSub() commits, correctly shows the new sub in and the
- * original player out. */
+ * original player out. Full names throughout (Kyle, 2026-09-07: emails are
+ * "a trusted system and not a public" page, unlike the public schedule this
+ * data also feeds via a separate query). */
 function currentWeekRosterHtml(week) {
   const players = db
     .prepare(
-      `SELECT p.name, wa.is_sub FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+      `SELECT p.name, p.full_name, wa.is_sub FROM week_assignments wa JOIN players p ON p.id = wa.player_id
        WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed') ORDER BY p.name`
     )
     .all(week.id);
   if (!players.length) return '';
-  const names = players.map((p) => p.name + (p.is_sub ? ' (sub)' : '')).join(', ');
+  const names = players.map((p) => fullName(p) + (p.is_sub ? ' (sub)' : '')).join(', ');
   const freshWeek = db.prepare('SELECT ball_duty_player_id FROM weeks WHERE id = ?').get(week.id);
   const ballDuty =
     freshWeek && freshWeek.ball_duty_player_id
-      ? db.prepare('SELECT name FROM players WHERE id = ?').get(freshWeek.ball_duty_player_id)
+      ? db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(freshWeek.ball_duty_player_id)
       : null;
-  return `<p style="margin:12px 0;"><strong>Playing that week:</strong> ${names}${ballDuty ? `<br><strong>Bringing balls:</strong> ${ballDuty.name}` : ''}</p>`;
+  return `<p style="margin:12px 0;"><strong>Playing that week:</strong> ${names}${ballDuty ? `<br><strong>Bringing balls:</strong> ${fullName(ballDuty)}` : ''}</p>`;
 }
 
 function nextWeeksPreviewHtml(weeks) {
@@ -429,19 +432,48 @@ function foundSubLine(foundSubToken) {
   return `<p style="margin:4px 0 12px;"><a href="${url}" style="color:#444;text-decoration:underline;">Already found your own sub for this week?</a></p>`;
 }
 
-async function sendConfirmationReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, upcomingWeeks, test = false }) {
+/**
+ * The Confirm/Need-a-sub button row (plus the found-a-sub line under it),
+ * shared by sendConfirmationReminder and sendFollowUpReminder. Kyle,
+ * 2026-09-07: "Let's change the email that goes out when a new player is
+ * manually picked by an admin for a player during a week... that email
+ * should not have the 'Need a sub' button or the 'already found your own
+ * sub'." That's the plain Reassign-to-roster-player action specifically
+ * (see admin.js's manually_placed flag) — an admin who just personally
+ * picked this player for the slot has, by definition, already arranged it
+ * directly with them, so offering a self-service way to bail out of a
+ * placement the admin just made in person reads as confusing at best.
+ * Dropping both options entirely would leave the player with no way to back
+ * out at all, so a plain "contact your admin" line takes their place —
+ * matching the wording already used elsewhere in this file (see the sub-
+ * request/swap templates' own "please contact your admin" fallbacks) rather
+ * than inventing new phrasing.
+ */
+function actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPlaced }) {
+  if (manuallyPlaced) {
+    return `
+    <p>
+      <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm you're playing</a>
+    </p>
+    <p style="margin:4px 0 12px;">If you can't make it, please contact your admin directly so they can arrange coverage.</p>`;
+  }
+  return `
+    <p>
+      <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
+      <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
+    </p>
+    ${foundSubLine(foundSubToken)}`;
+}
+
+async function sendConfirmationReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, upcomingWeeks, manuallyPlaced = false, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
   const subject = `Tennis ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — please confirm`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>You're scheduled to play doubles on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
-    <p>
-      <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
-      <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
-    </p>
-    ${foundSubLine(foundSubToken)}
+    ${actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPlaced })}
     ${ballDutyNotice(player, week)}
     ${weatherBlockHtml(session, week)}
     ${nextWeeksPreviewHtml(upcomingWeeks)}
@@ -450,20 +482,16 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
   return sendMail({ to: player.email, subject, html, category: 'reminder', relatedWeekId: week.id, session, test });
 }
 
-async function sendFollowUpReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, test = false }) {
+async function sendFollowUpReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, manuallyPlaced = false, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
   const dayPhrase = relativeDayPhrase(week.match_date);
   const subject = `Playing ${dayPhrase.subject}? ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles — please confirm`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>Quick nudge — you haven't confirmed for ${dayPhrase.possessive} doubles match at ${fmtTime(session.match_time)}, and it's coming up. Please let us know either way:</p>
-    <p>
-      <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
-      <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
-    </p>
-    ${foundSubLine(foundSubToken)}
+    ${actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPlaced })}
     ${ballDutyNotice(player, week)}
     ${footer(session, player)}
   `;
@@ -493,7 +521,7 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
   const subject = `Confirm your sub request — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>Someone just clicked "Need a sub for this week" for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} on the Request a Sub page. To keep this from happening by mistake (or automatically), nothing has been sent to anyone else yet — click below to confirm it's really you and finish requesting a sub:</p>
     <p><a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I need a sub</a></p>
     <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
@@ -526,11 +554,16 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
  */
 async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, test = false }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
-  const candidateNames = candidates && candidates.length ? candidates.map((c) => c.name).join(', ') : null;
-  const subListNames = sessionSubs && sessionSubs.length ? sessionSubs.map((s) => s.name).join(', ') : null;
+  // Full names throughout (Kyle, 2026-09-07). `candidates` are raw players
+  // rows (fanOutSubRequest()'s allCandidates); `sessionSubs` mixes
+  // broader_sub_list rows (whose .name IS the full name) and player rows —
+  // both already carry a resolved `.fullName`/`.full_name` for fullName() to
+  // find (see subFlow.js's sessionSubList()).
+  const candidateNames = candidates && candidates.length ? candidates.map((c) => fullName(c)).join(', ') : null;
+  const subListNames = sessionSubs && sessionSubs.length ? sessionSubs.map((s) => fullName(s)).join(', ') : null;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Here's exactly what happens from here:</p>
     <ul>
       <li><strong>Right now:</strong> ${candidateNames ? `an email just went out to ${candidateNames} — first to confirm takes the spot.` : `no one else on the roster was free to ask for this date — see the next step below.`}</li>
@@ -560,7 +593,7 @@ async function sendSubFilledOriginalNotice({ recipient, week, session, subName, 
   const subject = `Your sub is confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>Good news — <strong>${subName}</strong> will be covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. You're all set, no further action needed.</p>
     ${footer(session)}
   `;
@@ -594,7 +627,7 @@ async function sendBlackoutNotice({ recipient, session, test = false }) {
   const subject = `Enter your blackout dates — ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p><strong>${session.name}</strong> is being scheduled. If there are any dates you already know you can't play, let us know before the schedule is generated:</p>
     <p><a href="${blackoutUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Enter your blackout dates</a></p>
     <p>That link will already have your name selected — just check off any dates you can't make. Nothing else to do if you don't have any — you'll be assumed available every week.</p>
@@ -609,7 +642,7 @@ async function sendSubRequestFanout({ recipient, week, session, claimToken, requ
   const subject = `Sub needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>${requestingPlayerName} needs a sub for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. First to confirm gets the spot.</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'll play</a></p>
     ${currentWeekRosterHtml(week)}
@@ -623,7 +656,7 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, test 
   const subject = `[Sub still needed] ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>A doubles slot for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} still needs a sub — the regular group hasn't filled it yet.</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'll play</a></p>
     ${currentWeekRosterHtml(week)}
@@ -636,7 +669,7 @@ async function sendSubFilledNotice({ recipient, week, session, subName, test = f
   const subject = `Sub confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>${subName} will be subbing in for ${fmtDate(week.match_date)}. See you on the court!</p>
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
@@ -663,7 +696,7 @@ async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken,
   const subject = `${requestingPlayerName} asked you to sub in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>${requestingPlayerName} said you agreed to cover their spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Click below to confirm you're in:</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I'm playing</a></p>
     ${currentWeekRosterHtml(week)}
@@ -687,7 +720,7 @@ async function sendSelfArrangedSubConfirmation({ player, week, session, subName,
   const subject = `Sub request sent to ${subName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>Got it — we've emailed <strong>${subName}</strong> asking them to confirm they're covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
     <ul>
       <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
@@ -748,7 +781,7 @@ async function sendFoundSubVerification({ player, week, session, foundSubToken, 
   const subject = `Confirm — I found a sub — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${player.name},</p>
+    <p>Hi ${fullName(player)},</p>
     <p>Someone just clicked "I found a sub for this week" for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} on My Page. To keep this from happening by mistake (or automatically), nothing has been sent to anyone else yet — click below to confirm it's really you and pick who's covering for you:</p>
     <p><a href="${url}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I found a sub</a></p>
     <p class="muted" style="color:#888;">Didn't do this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
@@ -776,10 +809,10 @@ async function sendSwapProposalVerification({ player, targetPlayer, initiatorWee
   const subject = `Confirm your swap proposal — ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${player.name},</p>
-    <p>Someone just proposed swapping weeks with ${targetPlayer.name} on the Swap a Week page: you'd give up <strong>${fmtDate(initiatorWeek.match_date)}</strong> and take over their <strong>${fmtDate(targetWeek.match_date)}</strong>. To keep this from happening by mistake (or automatically), nothing has been sent to ${targetPlayer.name} yet — click below to confirm it's really you and send the proposal:</p>
+    <p>Hi ${fullName(player)},</p>
+    <p>Someone just proposed swapping weeks with ${fullName(targetPlayer)} on the Swap a Week page: you'd give up <strong>${fmtDate(initiatorWeek.match_date)}</strong> and take over their <strong>${fmtDate(targetWeek.match_date)}</strong>. To keep this from happening by mistake (or automatically), nothing has been sent to ${fullName(targetPlayer)} yet — click below to confirm it's really you and send the proposal:</p>
     <p><a href="${verifyUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm and send proposal</a></p>
-    <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and ${targetPlayer.name} is never notified unless you click the button above.</p>
+    <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and ${fullName(targetPlayer)} is never notified unless you click the button above.</p>
     ${footer(session)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'swap_proposal_verification', relatedWeekId: initiatorWeek.id, session, test });
@@ -793,14 +826,14 @@ async function sendSwapRequestEmail({ recipient, initiatorPlayer, initiatorWeek,
   // prefix + session name, which could be similar or generic across
   // sessions. match_time/court_info are session-level, not per-week, so this
   // is valid regardless of which of the two traded dates the player looks at.
-  const subject = `${initiatorPlayer.name} wants to swap weeks with you — ${session.name}, ${timeAndPlace(session)}`;
+  const subject = `${fullName(initiatorPlayer)} wants to swap weeks with you — ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${recipient.name},</p>
-    <p>${initiatorPlayer.name} would like to swap with you in <strong>${session.name}</strong>:</p>
+    <p>Hi ${fullName(recipient)},</p>
+    <p>${fullName(initiatorPlayer)} would like to swap with you in <strong>${session.name}</strong>:</p>
     <ul>
       <li>You'd give up <strong>${fmtDate(targetWeek.match_date)}</strong></li>
-      <li>You'd take over <strong>${fmtDate(initiatorWeek.match_date)}</strong> (currently ${initiatorPlayer.name}'s)</li>
+      <li>You'd take over <strong>${fmtDate(initiatorWeek.match_date)}</strong> (currently ${fullName(initiatorPlayer)}'s)</li>
     </ul>
     <p>You're still playing the same number of games either way — just trading which week.</p>
     <p><a href="${respondUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Review and respond</a></p>
@@ -816,14 +849,14 @@ async function sendSwapRequestEmail({ recipient, initiatorPlayer, initiatorWeek,
  * replacement) token and more urgent framing. */
 async function sendSwapNudge({ recipient, initiatorPlayer, initiatorWeek, targetWeek, session, claimToken, test = false }) {
   const respondUrl = `${siteUrl()}/swap/respond/${claimToken}`;
-  const subject = `Still waiting on you — ${initiatorPlayer.name}'s swap request, ${session.name}, ${timeAndPlace(session)}`;
+  const subject = `Still waiting on you — ${fullName(initiatorPlayer)}'s swap request, ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${recipient.name},</p>
-    <p>Just a nudge — ${initiatorPlayer.name} proposed a swap with you in <strong>${session.name}</strong> a little while ago and it's still waiting on your answer:</p>
+    <p>Hi ${fullName(recipient)},</p>
+    <p>Just a nudge — ${fullName(initiatorPlayer)} proposed a swap with you in <strong>${session.name}</strong> a little while ago and it's still waiting on your answer:</p>
     <ul>
       <li>You'd give up <strong>${fmtDate(targetWeek.match_date)}</strong></li>
-      <li>You'd take over <strong>${fmtDate(initiatorWeek.match_date)}</strong> (currently ${initiatorPlayer.name}'s)</li>
+      <li>You'd take over <strong>${fmtDate(initiatorWeek.match_date)}</strong> (currently ${fullName(initiatorPlayer)}'s)</li>
     </ul>
     <p>One of these dates is coming up soon, so it'd help to decide either way.</p>
     <p><a href="${respondUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Review and respond</a></p>
@@ -836,11 +869,11 @@ async function sendSwapNudge({ recipient, initiatorPlayer, initiatorWeek, target
  * sendSubRequestOwnConfirmation — the initiator finds out immediately if
  * this wasn't what they meant to send. */
 async function sendSwapProposedConfirmation({ player, targetPlayer, initiatorWeek, targetWeek, session, test = false }) {
-  const subject = `Swap request sent to ${targetPlayer.name} — ${session.name}, ${timeAndPlace(session)}`;
+  const subject = `Swap request sent to ${fullName(targetPlayer)} — ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${player.name},</p>
-    <p>This confirms you proposed a swap with ${targetPlayer.name} in <strong>${session.name}</strong>: you'd give up ${fmtDate(initiatorWeek.match_date)} and take over their ${fmtDate(targetWeek.match_date)}. Nothing changes yet — waiting on ${targetPlayer.name} to accept.</p>
+    <p>Hi ${fullName(player)},</p>
+    <p>This confirms you proposed a swap with ${fullName(targetPlayer)} in <strong>${session.name}</strong>: you'd give up ${fmtDate(initiatorWeek.match_date)} and take over their ${fmtDate(targetWeek.match_date)}. Nothing changes yet — waiting on ${fullName(targetPlayer)} to accept.</p>
     <p><strong>Didn't request this yourself?</strong> Reach out right away so it can be sorted out before it's accepted.</p>
     ${footer(session)}
   `;
@@ -848,11 +881,11 @@ async function sendSwapProposedConfirmation({ player, targetPlayer, initiatorWee
 }
 
 async function sendSwapDeclinedNotice({ player, targetPlayer, initiatorWeek, session, test = false }) {
-  const subject = `${targetPlayer.name} declined your swap request — ${session.name}, ${timeAndPlace(session)}`;
+  const subject = `${fullName(targetPlayer)} declined your swap request — ${session.name}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, null)}
-    <p>Hi ${player.name},</p>
-    <p>${targetPlayer.name} declined your swap proposal for <strong>${fmtDate(initiatorWeek.match_date)}</strong>. You're still scheduled for that date as before — nothing changed.</p>
+    <p>Hi ${fullName(player)},</p>
+    <p>${fullName(targetPlayer)} declined your swap proposal for <strong>${fmtDate(initiatorWeek.match_date)}</strong>. You're still scheduled for that date as before — nothing changed.</p>
     ${footer(session)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'swap_declined', relatedWeekId: initiatorWeek.id, session, test });
@@ -865,8 +898,8 @@ async function sendSwapAcceptedNotice({ initiatorPlayer, targetPlayer, initiator
   const subjectFor = (newDate) => `Swap confirmed — you're now playing ${fmtDate(newDate)}, ${timeAndPlace(session)} (${session.name})`;
   const bodyFor = (recipient, other, gaveUpDate, tookOverDate) => `
     ${matchBanner(session, null)}
-    <p>Hi ${recipient.name},</p>
-    <p>Your swap with ${other.name} is confirmed. You gave up <strong>${fmtDate(gaveUpDate)}</strong> and are now playing <strong>${fmtDate(tookOverDate)}</strong> instead.</p>
+    <p>Hi ${fullName(recipient)},</p>
+    <p>Your swap with ${fullName(other)} is confirmed. You gave up <strong>${fmtDate(gaveUpDate)}</strong> and are now playing <strong>${fmtDate(tookOverDate)}</strong> instead.</p>
     ${footer(session)}
   `;
   const r1 = await sendMail({
@@ -897,7 +930,7 @@ async function sendSwapGroupNotice({ recipient, week, session, test = false }) {
   const subject = `Roster update — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>Two players swapped weeks, so your ${fmtDate(week.match_date)} match now has a different lineup:</p>
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
@@ -918,7 +951,7 @@ async function sendAdhocInvite({ recipient, week, session, signupToken, test = f
   const subject = `Pickup game ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — want in?`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>Looking for players for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. First come, first served — the first 4 to sign up get the first court, the next 4 get a second court, and so on.</p>
     <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'm in</a></p>
     <p>If you're not free this time, no need to do anything — you'll get invited again for the next one.</p>
@@ -940,7 +973,7 @@ async function sendAdhocReminder({ recipient, week, session, signupToken, stillN
   const subject = `Still need players — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>We're ${stillNeeded} player${stillNeeded === 1 ? '' : 's'} short of a full court for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Still want in?</p>
     <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'm in</a></p>
     ${footer(session)}
@@ -957,10 +990,10 @@ async function sendAdhocReminder({ recipient, week, session, signupToken, stillN
  */
 async function sendAdhocFinalRoster({ recipient, week, session, teammates, court, test = false }) {
   const subject = `You're in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
-  const names = teammates.map((p) => p.name).join(', ');
+  const names = teammates.map((p) => fullName(p)).join(', ');
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>You're set for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}${court ? `, Court ${court}` : ''}.</p>
     <p><strong>Playing with:</strong> ${names}</p>
     ${weatherBlockHtml(session, week)}
@@ -979,7 +1012,7 @@ async function sendAdhocNotEnough({ recipient, week, session, test = false }) {
   const subject = `Not enough signed up — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
   const html = `
     ${matchBanner(session, week)}
-    <p>Hi ${recipient.name},</p>
+    <p>Hi ${fullName(recipient)},</p>
     <p>Thanks for signing up for <strong>${fmtDate(week.match_date)}</strong> — we didn't get enough players to fill a full court this time, so this one's not happening. Hope to see you at the next one.</p>
     ${footer(session)}
   `;

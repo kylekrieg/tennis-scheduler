@@ -36,6 +36,15 @@ ensureColumn('email_log', 'status', "TEXT NOT NULL DEFAULT 'sent'");
 // Multi-court support: every existing row predates courts, so they're all
 // implicitly court 1 — exactly what the default backfills.
 ensureColumn('week_assignments', 'court', 'INTEGER NOT NULL DEFAULT 1');
+// "Manually picked by an admin" flag (Kyle, 2026-09-07) — set only by the
+// plain Reassign-to-roster-player action, so the resulting reminder/follow-up
+// email can skip the Need-a-sub button / found-a-sub line (see email.js).
+// A plain literal integer default IS legal in ALTER TABLE ADD COLUMN (unlike
+// a function-call default like datetime('now'), which crashed production
+// once already — see the broader_sub_list.created_at fix elsewhere in this
+// file), so this one's safe as a single ensureColumn call with no separate
+// backfill needed.
+ensureColumn('week_assignments', 'manually_placed', 'INTEGER NOT NULL DEFAULT 0');
 // Archiving a session (hides it from the dashboard/session picker without
 // deleting anything) — every existing row predates this, so NULL (not
 // archived) is exactly the right default for them.
@@ -344,6 +353,38 @@ ensureColumn('app_settings', 'site_title', "TEXT NOT NULL DEFAULT '🎾 Doubles 
 ensureColumn('sessions', 'weather_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sessions', 'weather_lat', 'REAL');
 ensureColumn('sessions', 'weather_lon', 'REAL');
+
+// Public name vs. full name (Kyle, 2026-09-07): "In the player roster... I
+// used Kyle K, or John G. This is what shows up on the public screen. This is
+// fine as last names are not shown, but for the broader sub list, I have full
+// names called out... everywhere we have a public facing page, we should use
+// the public name field. Any where we have an admin looking at it, it should
+// be a full name... in emails for confirms, subs, swaps, etc... we should use
+// full names." `players.name` keeps its existing meaning and values (the
+// short public form) — this only adds a new, initially-blank `full_name`
+// column. See src/services/playerName.js's fullName() for the read side
+// (falls back to `name` when full_name hasn't been filled in yet) and
+// deriveShortName() for the write side (auto-generates a public name for a
+// brand-new player created from a full name only — a sub-list conversion, a
+// one-time sub — see subFlow.js/admin.js).
+//
+// Bare/nullable, no default needed (unlike created_at above, there's no
+// sensible default to backfill blindly — see the broader_sub_list match
+// below for the one case where we DO know a real full name to fill in).
+ensureColumn('players', 'full_name', 'TEXT');
+// Kyle explicitly asked for this: "pre-fill from a matching email" so
+// existing players who've already been on the broader sub list at some point
+// (which has always stored full names) don't need their full name re-typed
+// by hand. WHERE full_name IS NULL makes this safe to re-run on every boot —
+// it only ever fills a blank, never overwrites a value an admin later edited
+// on the Players page. Anyone with no broader_sub_list match at all is left
+// NULL, same as a brand-new install with no data to pre-fill from.
+raw.exec(`
+  UPDATE players
+  SET full_name = (SELECT bsl.name FROM broader_sub_list bsl WHERE bsl.email = players.email)
+  WHERE full_name IS NULL
+    AND EXISTS (SELECT 1 FROM broader_sub_list bsl WHERE bsl.email = players.email)
+`);
 
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of

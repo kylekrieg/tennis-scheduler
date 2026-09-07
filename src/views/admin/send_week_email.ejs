@@ -6,7 +6,7 @@
   <p class="flag error">Nobody is currently playing this week (nothing scheduled/confirmed<%= session.session_type === 'adhoc' ? '/signed up' : '' %> yet) — there's no one to send this to.</p>
 <% } else { %>
   <p class="muted">Goes to everyone below, in one email with all addresses in the To: field — not one email per person.</p>
-  <p class="muted"><strong>To (<%= recipients.length %>):</strong> <%= recipients.map(function(p) { return p.name; }).join(', ') %></p>
+  <p class="muted"><strong>To (<%= recipients.length %>):</strong> <%= recipients.map(function(p) { return fullName(p); }).join(', ') %></p>
 <% } %>
 
 <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= week.id %>/send-email" class="card">

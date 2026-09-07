@@ -118,7 +118,7 @@ function runScheduler(sessionId) {
 
   const roster = db
     .prepare(
-      `SELECT sp.player_id as id, sp.target_games as target, p.name as name, p.email as email
+      `SELECT sp.player_id as id, sp.target_games as target, p.name as name, p.full_name as full_name, p.email as email
        FROM session_players sp JOIN players p ON p.id = sp.player_id
        WHERE sp.session_id = ? AND p.active = 1`
     )
@@ -167,7 +167,9 @@ function runScheduler(sessionId) {
       // verbatim). This is the one place with both the raw conflicts and the
       // roster's names in scope together, so it's enriched here before
       // storing, not left to every downstream view to resolve separately.
-      const nameById = new Map(roster.map((p) => [p.id, p.name]));
+      // Full names (Kyle, 2026-09-07) — schedule_conflicts is only ever
+      // rendered on admin pages (session detail, Status page).
+      const nameById = new Map(roster.map((p) => [p.id, p.full_name || p.name]));
       const enrichedConflicts = result.conflicts.map((c) => {
         if (c.type === 'player_target_unreachable' && c.playerId != null) {
           const name = nameById.get(c.playerId) || `player #${c.playerId}`;
@@ -240,8 +242,9 @@ function runScheduler(sessionId) {
 
     // Human-readable shortfall summary for the admin flash message — built
     // here (not in the route) since this is the one place with both the
-    // player-shortfall numbers and the player names in scope together.
-    const nameById = new Map(roster.map((p) => [p.id, p.name]));
+    // player-shortfall numbers and the player names in scope together. Full
+    // names (Kyle, 2026-09-07) — this flash message is admin-only.
+    const nameById = new Map(roster.map((p) => [p.id, p.full_name || p.name]));
     const shortfallSummary = result.playerShortfalls.map(
       (s) => `${nameById.get(s.playerId) || `player #${s.playerId}`} (${s.achieved} of ${s.target})`
     );

@@ -49,9 +49,13 @@ function getAttentionItems() {
   // also fired. Capped to the last 30 days so this doesn't grow into a
   // permanently-larger list once entries have long since been reviewed —
   // there's no "reviewed" flag to otherwise clear a row from here.
+  // Full names (Kyle, 2026-09-07) — every row here is admin-facing only.
+  // bl.name is broader_sub_list's own field, which already IS the full name
+  // (that table has no separate full_name column — see playerName.js's doc
+  // comment), so only the "added by" player needs the COALESCE.
   const selfArrangedSubs = db
     .prepare(
-      `SELECT bl.id, bl.name, bl.email, bl.created_at, p.name as added_by_name
+      `SELECT bl.id, bl.name, bl.email, bl.created_at, COALESCE(p.full_name, p.name) as added_by_name
        FROM broader_sub_list bl JOIN players p ON p.id = bl.added_by_player_id
        WHERE bl.added_by_player_id IS NOT NULL AND bl.created_at >= datetime('now', '-30 days')
        ORDER BY bl.created_at DESC`
@@ -113,7 +117,7 @@ function getAttentionItems() {
   const unconfirmed = attachSession(
     db
       .prepare(
-        `SELECT wa.id as assignment_id, p.name as player_name, w.match_date, w.id as week_id,
+        `SELECT wa.id as assignment_id, COALESCE(p.full_name, p.name) as player_name, w.match_date, w.id as week_id,
                 s.id as session_id, s.name as session_name
          FROM week_assignments wa
          JOIN weeks w ON w.id = wa.week_id
@@ -133,7 +137,7 @@ function getAttentionItems() {
     db
       .prepare(
         `SELECT sr.id, sr.status, w.match_date, w.id as week_id,
-                s.id as session_id, s.name as session_name, p.name as original_player_name
+                s.id as session_id, s.name as session_name, COALESCE(p.full_name, p.name) as original_player_name
          FROM sub_requests sr
          JOIN week_assignments wa ON wa.id = sr.week_assignment_id
          JOIN weeks w ON w.id = wa.week_id
@@ -172,7 +176,7 @@ function getAttentionItems() {
   const staleBallDuty = attachSession(
     db
       .prepare(
-        `SELECT w.*, s.id as session_id, s.name as session_name, p.name as stale_player_name
+        `SELECT w.*, s.id as session_id, s.name as session_name, COALESCE(p.full_name, p.name) as stale_player_name
          FROM weeks w JOIN sessions s ON s.id = w.session_id
          JOIN players p ON p.id = w.ball_duty_player_id
          WHERE w.session_id IN (${placeholders}) AND w.ball_duty_player_id IS NOT NULL
@@ -195,7 +199,7 @@ function getAttentionItems() {
     db
       .prepare(
         `SELECT sw.id, sw.nudged_at,
-                ip.name as initiator_name, tp.name as target_name,
+                COALESCE(ip.full_name, ip.name) as initiator_name, COALESCE(tp.full_name, tp.name) as target_name,
                 iw.match_date as initiator_match_date, tw.match_date as target_match_date,
                 s.id as session_id, s.name as session_name
          FROM swap_requests sw
@@ -263,7 +267,7 @@ function getUpcomingActions(days = 21) {
           if (reminderAt <= windowEnd) {
             const recipients = db
               .prepare(
-                `SELECT p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+                `SELECT COALESCE(p.full_name, p.name) as name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
                  WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed')
                    AND NOT EXISTS (
                      SELECT 1 FROM email_log el
@@ -315,7 +319,7 @@ function getUpcomingActions(days = 21) {
         if (followUpAt <= windowEnd && followUpAt <= matchAt && now < matchAt) {
           const stillUnconfirmed = db
             .prepare(
-              `SELECT p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+              `SELECT COALESCE(p.full_name, p.name) as name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
                WHERE wa.week_id = ? AND wa.status = 'scheduled'
                  AND NOT EXISTS (
                    SELECT 1 FROM email_log el
@@ -346,7 +350,7 @@ function getUpcomingActions(days = 21) {
       // escalate; if it gets filled before the deadline, it never will.
       const openRequest = db
         .prepare(
-          `SELECT sr.id, p.name as original_player_name FROM sub_requests sr
+          `SELECT sr.id, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
            JOIN week_assignments wa ON wa.id = sr.week_assignment_id
            JOIN players p ON p.id = wa.player_id
            WHERE wa.week_id = ? AND sr.status = 'open'`

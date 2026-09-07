@@ -38,7 +38,7 @@
   <select name="player" id="player" onchange="this.form.submit()">
     <option value="">Select…</option>
     <% roster.forEach(function(p) { %>
-      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= fullName(p) %></option>
     <% }) %>
   </select>
 </form>

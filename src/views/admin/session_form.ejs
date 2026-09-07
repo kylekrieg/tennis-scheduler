@@ -154,9 +154,9 @@
       <thead><tr><th>Player</th><% if (lockedWeeksCount > 0) { %><th>Already played</th><% } %><th>Target games (remaining)</th><th>Priority</th><th></th></tr></thead>
       <tbody>
         <% players.forEach(function(p) { %>
-          <tr class="roster-row<%= enrolled.has(p.id) ? ' roster-enrolled' : '' %>" data-player-name="<%= p.name.toLowerCase() %>">
+          <tr class="roster-row<%= enrolled.has(p.id) ? ' roster-enrolled' : '' %>" data-player-name="<%= (p.name + ' ' + fullName(p)).toLowerCase() %>">
             <td>
-              <%= p.name %>
+              <%= fullName(p) %>
               <input type="hidden" name="player_id" value="<%= p.id %>">
             </td>
             <% if (lockedWeeksCount > 0) { %><td class="muted"><%= playedCounts.has(p.id) ? playedCounts.get(p.id) : 0 %></td><% } %>
@@ -194,7 +194,7 @@
     <% players.forEach(function(p) { %>
       <div class="checkbox-row">
         <input type="checkbox" name="adhoc_player_id" id="adhoc_p<%= p.id %>" value="<%= p.id %>" <%= enrolled.has(p.id) ? 'checked' : '' %>>
-        <label for="adhoc_p<%= p.id %>" style="margin:0;font-weight:400;"><%= p.name %></label>
+        <label for="adhoc_p<%= p.id %>" style="margin:0;font-weight:400;"><%= fullName(p) %></label>
       </div>
     <% }) %>
     <p class="muted">Need a new player? Add them on the <a href="/admin/players">Players</a> page first.</p>

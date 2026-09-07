@@ -127,7 +127,7 @@ function findOverlappingSessionEnrollments(sessionId = null) {
 
       const sharedPlayers = db
         .prepare(
-          `SELECT p.id, p.name, spa.priority as priorityA, spb.priority as priorityB
+          `SELECT p.id, p.name, p.full_name, spa.priority as priorityA, spb.priority as priorityB
            FROM session_players spa
            JOIN session_players spb ON spb.player_id = spa.player_id AND spb.session_id = ?
            JOIN players p ON p.id = spa.player_id
@@ -137,13 +137,16 @@ function findOverlappingSessionEnrollments(sessionId = null) {
         .all(b.id, a.id);
 
       for (const row of sharedPlayers) {
-        const { id, name, priorityA, priorityB } = row;
+        const { id, name, full_name, priorityA, priorityB } = row;
         let resolution = 'unresolved';
         if (priorityA != null && priorityB != null) {
           if (priorityA === priorityB) resolution = 'tied';
           else resolution = priorityA < priorityB ? 'a_wins' : 'b_wins';
         }
-        conflicts.push({ sessionA: a, sessionB: b, player: { id, name }, priorityA, priorityB, resolution });
+        // Both name fields carried through (Kyle, 2026-09-07: admin pages
+        // should show the full name) — this list is only ever rendered on
+        // admin pages (session detail, Status page), never a public one.
+        conflicts.push({ sessionA: a, sessionB: b, player: { id, name, full_name }, priorityA, priorityB, resolution });
       }
     }
   }
@@ -189,7 +192,7 @@ function findActualDoubleBookings(sessionId = null) {
   const scopedId = sessionId ? Number(sessionId) : null;
   const rows = db
     .prepare(
-      `SELECT p.id as playerId, p.name as playerName, w1.match_date as date,
+      `SELECT p.id as playerId, p.name as playerName, p.full_name as playerFullName, w1.match_date as date,
               s1.id as session1Id, s1.name as session1Name, s1.club_name as session1Club, s1.court_info as session1Court, s1.match_time as session1Time, s1.match_day_of_week as session1Dow,
               s2.id as session2Id, s2.name as session2Name, s2.club_name as session2Club, s2.court_info as session2Court, s2.match_time as session2Time, s2.match_day_of_week as session2Dow
        FROM week_assignments wa1
@@ -209,7 +212,12 @@ function findActualDoubleBookings(sessionId = null) {
     .filter((r) => !scopedId || r.session1Id === scopedId || r.session2Id === scopedId);
 
   return rows.map((r) => ({
-    player: { id: r.playerId, name: r.playerName },
+    // Both name fields carried through (Kyle, 2026-09-07) — every consumer
+    // of this function (the admin Double-booked table, Status page,
+    // jointSolver.js) is admin-facing and should show the full name; only
+    // doubleBookingMapForSession() below is consumed by public pages, and
+    // it never exposes this player object at all (see its own doc comment).
+    player: { id: r.playerId, name: r.playerName, full_name: r.playerFullName },
     date: r.date,
     // match_day_of_week is included alongside the other display fields so
     // every consumer can call sessionFullTitle(sessionA/B) directly for the

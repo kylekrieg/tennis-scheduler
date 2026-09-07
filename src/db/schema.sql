@@ -5,10 +5,11 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS players (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
+  name          TEXT NOT NULL, -- the PUBLIC name, shown on every unauthenticated page (schedule, lookahead, My Page, PDF, calendar, public stats) — e.g. "Kyle K", first name + last initial, matching how the roster has always been entered. See full_name below and src/services/playerName.js.
   email         TEXT NOT NULL UNIQUE,
   active        INTEGER NOT NULL DEFAULT 1,
-  slug          TEXT  -- URL-safe name-based id for "My Page" (/me/<slug>) links, e.g. 'brian-b'. App-level uniqueness only (see playerSlug.js) — generated once at creation and never auto-regenerated on rename, so existing bookmarks/emails/calendar links keep working. NULL only briefly for a pre-migration row before db/index.js's one-time backfill runs.
+  slug          TEXT,  -- URL-safe name-based id for "My Page" (/me/<slug>) links, e.g. 'brian-b'. App-level uniqueness only (see playerSlug.js) — generated once at creation and never auto-regenerated on rename, so existing bookmarks/emails/calendar links keep working. NULL only briefly for a pre-migration row before db/index.js's one-time backfill runs. Always derived from the public `name` above, never from full_name — unaffected by the full-name split (Kyle, 2026-09-07).
+  full_name     TEXT  -- the real full name (Kyle, 2026-09-07): "for the broader sub list, I have full names called out... everywhere we have a public facing page, we should use the public name field. Anywhere admin is looking at it, it should be a full name... in emails... we should use full names as that's a trusted system." Shown on every admin page and in every email; NULL until an admin fills it in on the Players page, in which case src/services/playerName.js's fullName() falls back to the public `name` so nothing renders blank.
 );
 
 -- Single-row global settings table
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS week_assignments (
   token           TEXT UNIQUE, -- vestigial as of the multi-token redesign — see week_assignment_tokens. Left in place (never dropped) per this app's additive-only migration philosophy; no longer read.
   token_used_at   TEXT, -- last time ANY token for this assignment was used (any row in week_assignment_tokens)
   confirmed_at    TEXT,
+  manually_placed INTEGER NOT NULL DEFAULT 0, -- set by the plain Reassign-to-roster-player action (Kyle, 2026-09-07) — an admin manually picked this player for this slot, as opposed to the scheduler generating it. Suppresses the Need-a-sub button / "I found a sub" line on this assignment's reminder+follow-up emails (see email.js) since an admin-arranged placement shouldn't invite a player to self-service out of it the same way a normal scheduled slot does.
   UNIQUE(week_id, player_id)
 );
 

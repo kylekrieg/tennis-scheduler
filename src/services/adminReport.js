@@ -2,6 +2,7 @@
 const db = require('../db');
 const email = require('./email');
 const subFlow = require('./subFlow');
+const { fullName } = require('./playerName');
 
 /**
  * Admin pre-match status report (Kyle, 2026-08-26): "we need to define at
@@ -27,14 +28,16 @@ const subFlow = require('./subFlow');
 function resolveOfferPlayerName(offer) {
   if (!offer) return null;
   if (offer.candidate_player_id) {
-    const p = db.prepare('SELECT name FROM players WHERE id = ?').get(offer.candidate_player_id);
-    return p ? p.name : null;
+    const p = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(offer.candidate_player_id);
+    return p ? fullName(p) : null;
   }
   if (offer.broader_list_id) {
     const bl = db.prepare('SELECT * FROM broader_sub_list WHERE id = ?').get(offer.broader_list_id);
     if (!bl) return null;
-    const p = db.prepare('SELECT name FROM players WHERE email = ?').get(bl.email);
-    return p ? p.name : bl.name;
+    const p = db.prepare('SELECT name, full_name FROM players WHERE email = ?').get(bl.email);
+    // bl.name is already the full name (broader_sub_list has no separate
+    // full_name column) — see playerName.js's doc comment.
+    return p ? fullName(p) : bl.name;
   }
   return null;
 }
@@ -67,9 +70,9 @@ function swapsAffectingAssignments(assignmentIds) {
       const otherWeek = db
         .prepare(`SELECT w.match_date FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id WHERE wa.id = ?`)
         .get(sw.target_assignment_id);
-      const otherPlayer = db.prepare('SELECT name FROM players WHERE id = ?').get(sw.initiator_player_id);
+      const otherPlayer = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(sw.initiator_player_id);
       map.set(sw.initiator_assignment_id, {
-        otherName: otherPlayer ? otherPlayer.name : 'someone',
+        otherName: otherPlayer ? fullName(otherPlayer) : 'someone',
         otherDate: otherWeek ? otherWeek.match_date : null,
       });
     }
@@ -77,9 +80,9 @@ function swapsAffectingAssignments(assignmentIds) {
       const otherWeek = db
         .prepare(`SELECT w.match_date FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id WHERE wa.id = ?`)
         .get(sw.initiator_assignment_id);
-      const otherPlayer = db.prepare('SELECT name FROM players WHERE id = ?').get(sw.target_player_id);
+      const otherPlayer = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(sw.target_player_id);
       map.set(sw.target_assignment_id, {
-        otherName: otherPlayer ? otherPlayer.name : 'someone',
+        otherName: otherPlayer ? fullName(otherPlayer) : 'someone',
         otherDate: otherWeek ? otherWeek.match_date : null,
       });
     }
@@ -97,7 +100,7 @@ function buildWeekReport(weekId) {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
 
   const assignments = db
-    .prepare(`SELECT wa.*, p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY p.name`)
+    .prepare(`SELECT wa.*, p.name, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.week_id = ? ORDER BY p.name`)
     .all(weekId);
   const assignmentIds = assignments.map((a) => a.id);
   const swapMap = swapsAffectingAssignments(assignmentIds);
@@ -108,17 +111,18 @@ function buildWeekReport(weekId) {
   const subbedOut = [];
 
   for (const a of assignments) {
+    const displayName = fullName(a);
     if (a.status === 'confirmed') {
       if (a.is_sub) {
-        confirmed.push(`${a.name} (sub)`);
+        confirmed.push(`${displayName} (sub)`);
       } else if (swapMap.has(a.id)) {
         const info = swapMap.get(a.id);
-        confirmed.push(`${a.name} (via swap with ${info.otherName}${info.otherDate ? `, who was playing ${email.fmtDate(info.otherDate)}` : ''})`);
+        confirmed.push(`${displayName} (via swap with ${info.otherName}${info.otherDate ? `, who was playing ${email.fmtDate(info.otherDate)}` : ''})`);
       } else {
-        confirmed.push(a.name);
+        confirmed.push(displayName);
       }
     } else if (a.status === 'scheduled') {
-      unconfirmed.push(a.name);
+      unconfirmed.push(displayName);
     } else if (a.status === 'needs_sub') {
       const sr = db
         .prepare(`SELECT * FROM sub_requests WHERE week_assignment_id = ? ORDER BY id DESC LIMIT 1`)
@@ -126,7 +130,7 @@ function buildWeekReport(weekId) {
       let label = 'request open';
       if (sr && sr.status === 'escalated') label = 'escalated to the sub list';
       else if (sr && sr.status === 'unfilled') label = 'UNFILLED';
-      needsSub.push(`${a.name} (${label})`);
+      needsSub.push(`${displayName} (${label})`);
     } else if (a.status === 'subbed_out') {
       const sr = db
         .prepare(`SELECT * FROM sub_requests WHERE week_assignment_id = ? ORDER BY id DESC LIMIT 1`)
@@ -136,12 +140,12 @@ function buildWeekReport(weekId) {
         const offer = db.prepare(`SELECT * FROM sub_offers WHERE sub_request_id = ? AND status = 'claimed'`).get(sr.id);
         subName = resolveOfferPlayerName(offer);
       }
-      subbedOut.push(subName ? `${a.name} — replaced by ${subName}` : `${a.name} — replaced by a sub`);
+      subbedOut.push(subName ? `${displayName} — replaced by ${subName}` : `${displayName} — replaced by a sub`);
     }
   }
 
   const ballDuty = week.ball_duty_player_id
-    ? db.prepare('SELECT name FROM players WHERE id = ?').get(week.ball_duty_player_id)
+    ? db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(week.ball_duty_player_id)
     : null;
 
   return {
@@ -151,7 +155,7 @@ function buildWeekReport(weekId) {
     unconfirmed,
     needsSub,
     subbedOut,
-    ballDutyName: ballDuty ? ballDuty.name : null,
+    ballDutyName: ballDuty ? fullName(ballDuty) : null,
     activeCount: assignments.filter((a) => a.status !== 'subbed_out').length,
     playersPerWeek: session.players_per_week,
     needsAttention: !!week.needs_attention,
