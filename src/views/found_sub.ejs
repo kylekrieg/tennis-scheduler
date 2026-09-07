@@ -1,0 +1,37 @@
+<%- include('partials/header', {title}) %>
+<div class="card">
+  <h1>I found a sub</h1>
+  <p class="notice" style="font-size:16px;">For <strong><%= assignment.name %></strong> — <strong><%= fmtDate(week.match_date) %></strong> at <%= fmtTime(week.match_time) %>.</p>
+  <p class="muted">Who's covering for you? Pick them from the list below, or enter their name and email if they're not on it yet.</p>
+
+  <form method="post" action="/found-sub/<%= token %>">
+    <label for="candidate_key">Who's subbing in?</label>
+    <select name="candidate_key" id="candidate_key" onchange="document.getElementById('new-person-fields').style.display = this.value === '__new__' ? 'block' : 'none';">
+      <option value="">Select…</option>
+      <% candidates.forEach(function (c) { %>
+        <option value="<%= c.key %>"><%= c.name %><%= c.blackedOut ? ' (blacked out that date)' : '' %></option>
+      <% }) %>
+      <option value="__new__">— Someone new (not on this list) —</option>
+    </select>
+
+    <div id="new-person-fields" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;">
+      <p class="muted" style="margin-top:0;">This person will be added to the sub list so they can be found again next time.</p>
+      <label for="new_name">Their name</label>
+      <input type="text" name="new_name" id="new_name" placeholder="First and last name">
+      <label for="new_email">Their email</label>
+      <input type="email" name="new_email" id="new_email" placeholder="name@example.com">
+    </div>
+
+    <% if (candidates.some(c => c.blackedOut)) { %>
+      <p class="muted">"Blacked out that date" means they've told the app they can't play that day — they can still be picked if you've already coordinated with them, but double-check first.</p>
+    <% } %>
+
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn green" type="submit">Confirm this sub</button>
+      <a class="btn neutral" href="/schedule">Cancel</a>
+    </div>
+  </form>
+
+  <p class="muted" style="margin-top:16px;">We'll email them to confirm — nothing changes until they click that link. If they don't respond within 24 hours of the match, this automatically falls back to the regular sub-list process, same as any other sub request.</p>
+</div>
+<%- include('partials/footer') %>

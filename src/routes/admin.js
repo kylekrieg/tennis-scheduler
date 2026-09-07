@@ -1951,7 +1951,7 @@ router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(asy
   // killed by this resend. See tokenStore.js.
   const raw = tokenStore.issueToken(assignment.id);
   const upcoming = subFlow.upcomingWeeksPreview(session.id, week.match_date, 3);
-  await email.sendConfirmationReminder({ player: assignment, week, session, confirmToken: raw, needSubToken: raw, upcomingWeeks: upcoming });
+  await email.sendConfirmationReminder({ player: assignment, week, session, confirmToken: raw, needSubToken: raw, foundSubToken: raw, upcomingWeeks: upcoming });
 
   flash(req, `Confirmation link resent to ${assignment.name}.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
@@ -2649,7 +2649,19 @@ router.post('/players/:id/activate', (req, res) => {
 // --- Broader sub list ---------------------------------------------------
 
 router.get('/sub-list', (req, res) => {
-  const list = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
+  // added_by_name resolves added_by_player_id -> the player's own name, so
+  // the page can flag a self-arranged entry (added via a player's "I found
+  // a sub" pick — see subFlow.js's arrangeSelfSub()) as worth a quick
+  // review, per Kyle's point 9: "the admin can then go into the sub list
+  // and update their name and slug to the standard." NULL for every entry
+  // an admin added directly here, which is the existing, unflagged case.
+  const list = db
+    .prepare(
+      `SELECT bl.*, p.name as added_by_name FROM broader_sub_list bl
+       LEFT JOIN players p ON p.id = bl.added_by_player_id
+       ORDER BY bl.name`
+    )
+    .all();
   // Which sessions each master-list person is currently assigned to, purely
   // for visibility on this page — one query rather than one per row. Actual
   // assignment happens on each session's own /subs page, not here. Selects

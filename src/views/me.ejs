@@ -63,6 +63,10 @@
                       <button class="btn small red" type="submit">Need a sub</button>
                     </form>
                     <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>&assignment=<%= a.id %>">Propose a swap</a>
+                    <form method="post" action="/found-sub/start" style="display:inline;">
+                      <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                      <button class="btn small neutral" type="submit">I found a sub</button>
+                    </form>
                   </div>
                 <% } %>
               </td>

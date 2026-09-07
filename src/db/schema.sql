@@ -106,10 +106,12 @@ CREATE TABLE IF NOT EXISTS blackout_pending (
 );
 
 CREATE TABLE IF NOT EXISTS broader_sub_list (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  email         TEXT NOT NULL UNIQUE,
-  slug          TEXT  -- admin-editable "My Page" slug reserved ahead of time (Kyle, 2026-09-01) — used directly by claimSub() the moment this person claims a sub and becomes a real players row. See playerSlug.js's broaderSubSlugTaken()/generateUniqueBroaderSubSlug().
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                TEXT NOT NULL,
+  email               TEXT NOT NULL UNIQUE,
+  slug                TEXT,  -- admin-editable "My Page" slug reserved ahead of time (Kyle, 2026-09-01) — used directly by claimSub() the moment this person claims a sub and becomes a real players row. See playerSlug.js's broaderSubSlugTaken()/generateUniqueBroaderSubSlug().
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  added_by_player_id  INTEGER REFERENCES players(id)  -- NULL when an admin added this row directly (Admin -> Sub List); set when a player added them via "I found a sub" (see subFlow.js's arrangeSelfSub()) — lets the admin Sub List page flag a self-arranged entry worth reviewing (name/slug cleanup, see CLAUDE.md's "Found your own sub" section).
 );
 
 -- Which master-list subs apply to which session (Kyle, 2026-08-13): the

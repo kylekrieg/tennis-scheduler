@@ -38,11 +38,12 @@ async function sendReminderEmailsForWeek(week, session) {
       .get(week.id, a.email);
     if (already) continue;
 
-    // A fresh token identifies the row; /confirm/:token and /need-sub/:token
-    // are distinguished by URL path, not by having separate tokens. This
-    // does NOT invalidate any token already issued for this assignment
-    // (there shouldn't be one yet, since dedup above means this only fires
-    // once per week/player) — see tokenStore.js.
+    // A fresh token identifies the row; /confirm/:token, /need-sub/:token,
+    // and (as of 2026-09-07) /found-sub/:token are all distinguished by URL
+    // path, not by having separate tokens. This does NOT invalidate any
+    // token already issued for this assignment (there shouldn't be one yet,
+    // since dedup above means this only fires once per week/player) — see
+    // tokenStore.js.
     const raw = tokenStore.issueToken(a.id);
 
     await email.sendConfirmationReminder({
@@ -51,6 +52,7 @@ async function sendReminderEmailsForWeek(week, session) {
       session,
       confirmToken: raw,
       needSubToken: raw,
+      foundSubToken: raw,
       upcomingWeeks: upcoming,
     });
     sentCount++;
@@ -184,7 +186,7 @@ async function processFollowUps() {
           // clicked anything yet.
           const raw = tokenStore.issueToken(a.id);
 
-          await email.sendFollowUpReminder({ player: a, week, session, confirmToken: raw, needSubToken: raw });
+          await email.sendFollowUpReminder({ player: a, week, session, confirmToken: raw, needSubToken: raw, foundSubToken: raw });
         }
       }
     } catch (err) {

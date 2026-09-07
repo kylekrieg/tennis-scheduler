@@ -286,6 +286,26 @@ ensureColumn('broader_sub_list', 'slug', 'TEXT');
   }
 }
 
+// "I found a sub" (Kyle, 2026-09-07): a self-arranged broader_sub_list entry
+// needs a created_at (so the admin Sub List page can show recent additions)
+// and an added_by_player_id (so it can name who added them) — neither
+// existed before this feature, so every pre-existing row gets a safe
+// default: created_at backfills to "now" (the real creation date isn't
+// recoverable, and this is only ever used to show/sort recent self-arranged
+// additions, not for anything that depends on the true historical value),
+// added_by_player_id stays NULL (correctly reads as "admin-added" for every
+// row that predates this feature, which is accurate).
+// NOTE: SQLite's ALTER TABLE ADD COLUMN rejects a non-constant default like
+// datetime('now') outright ("Cannot add a column with non-constant
+// default") even though the exact same expression is fine in CREATE TABLE
+// above — this crashed every existing install on boot until fixed here.
+// Add the column bare (nullable, no default) and backfill in a second step,
+// same "id ASC, unconditional WHERE-guarded" pattern as players.slug/
+// admins.username above.
+ensureColumn('broader_sub_list', 'created_at', 'TEXT');
+raw.exec(`UPDATE broader_sub_list SET created_at = datetime('now') WHERE created_at IS NULL`);
+ensureColumn('broader_sub_list', 'added_by_player_id', 'INTEGER REFERENCES players(id)');
+
 // Admin usernames (Kyle, 2026-08-29): every admin row created before this
 // column existed has no username — backfill each one from their name, same
 // "unconditional WHERE-guarded, id-ASC, collision-resolved" pattern as

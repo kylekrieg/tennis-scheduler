@@ -63,7 +63,7 @@
 </table>
 
 <h2 id="timing">6. The full email/notification timeline</h2>
-<p>Section 5 covers what you do; this is the exact timing of what the app does on its own — the same three decision trees on the player-facing <a href="/help#timing">How It Works</a> page, redrawn here from your side with the admin actions that intersect each flow, plus the separate ad-hoc pickup-game flow (mirroring <a href="/help#adhoc">How It Works</a>'s own version of it), and a fifth flow that's admin-only: the status report email addressed to you. Worth knowing cold, since it's what tells you whether something's actually stuck or just hasn't hit its next automatic step yet.</p>
+<p>Section 5 covers what you do; this is the exact timing of what the app does on its own — the same decision trees on the player-facing <a href="/help#timing">How It Works</a> page, redrawn here from your side with the admin actions that intersect each flow, plus the separate ad-hoc pickup-game flow (mirroring <a href="/help#adhoc">How It Works</a>'s own version of it), and a sixth flow that's admin-only: the status report email addressed to you. Worth knowing cold, since it's what tells you whether something's actually stuck or just hasn't hit its next automatic step yet.</p>
 
 <h3>Confirming you're playing</h3>
 <div class="flowchart">
@@ -92,6 +92,13 @@
       <div class="flow-step">
         <div class="flow-title">Jumps to Request a Sub</div>
         <div class="flow-detail">See that flow below — an email goes out to the rest of the roster.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">They click "Already found your own sub?"</div>
+      <div class="flow-step">
+        <div class="flow-title">Jumps to I Found a Sub</div>
+        <div class="flow-detail">See that flow below — only the one named person gets emailed, not the whole roster.</div>
       </div>
     </div>
     <div class="flow-branch">
@@ -180,6 +187,54 @@
     </div>
   </div>
   <p class="flow-note">You can close this out at any point — <strong>Reassign</strong>, <strong>Mark confirmed</strong>, or <strong>Clear sub request</strong> if it was a mistake (puts the player back to "scheduled" so they're reminded normally again).</p>
+</div>
+
+<h3>I Found a Sub</h3>
+<div class="flowchart">
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">From a reminder/follow-up email</div>
+      <div class="flow-step">
+        <div class="flow-title">Clicks "Already found your own sub?"</div>
+        <div class="flow-detail">The link itself proves it's really them — straight to the picker below.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">From My Page</div>
+      <div class="flow-step">
+        <div class="flow-title">Clicks "I found a sub" — no link yet</div>
+        <div class="flow-detail">Gets a verification email first, same bot/mis-click protection as the other two self-service flows.</div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-title">Picks who they coordinated with</div>
+    <div class="flow-detail">A list of everyone on this session's own roster and sub list (blacked-out candidates shown, just flagged — this is a specific choice they've already made, not a blind fan-out), or "someone new" with a name and email if it's nobody the system knows yet.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-branches">
+    <div class="flow-branch">
+      <div class="flow-branch-label">Existing player or sub</div>
+      <div class="flow-step">
+        <div class="flow-title">Sub request opens, addressed to just that one person</div>
+        <div class="flow-detail">Same <code>sub_requests</code>/<code>sub_offers</code> machinery as any other sub — a plain confirm link, no race with anyone else.</div>
+      </div>
+    </div>
+    <div class="flow-branch">
+      <div class="flow-branch-label">Brand-new person</div>
+      <div class="flow-step">
+        <div class="flow-title">Added to the Broader Sub List automatically</div>
+        <div class="flow-detail">Also linked to this specific session's sub list. You get an email (if this session has <strong>Admin report emails</strong> configured) naming who added them and why, and it always shows up on the <a href="/admin/status">Status page</a> and in the <a href="/admin/activity-log">Activity Log</a> regardless — worth a look on the <a href="/admin/sub-list">Sub List page</a> to tidy up their auto-generated slug or merge them with an existing entry under a different email.</div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step">
+    <div class="flow-title">Named person gets a confirm email</div>
+    <div class="flow-detail">Same wording as any other sub offer. If they don't respond, this falls into the exact same 24-hour escalation-to-the-sub-list path as a normal Request a Sub — nothing special about how it was created changes what happens if it stalls.</div>
+  </div>
+  <p class="flow-note">The original player's own confirmation email explains the fallback up front, so nobody's left wondering. Their assignment shows <span class="badge needs_sub">needs sub</span> exactly like any other in-progress sub request the whole time.</p>
 </div>
 
 <h3>Swap a Week</h3>

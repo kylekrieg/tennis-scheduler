@@ -24,6 +24,7 @@ const honeypot = require('../services/honeypot');
 // rateLimiter.js's doc comment and "Rate limiting" in CLAUDE.md.
 const requestSubStartLimiter = rateLimiter({ name: 'request-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
 const swapStartLimiter = rateLimiter({ name: 'swap-start', windowMs: 60 * 60 * 1000, max: 10 });
+const foundSubStartLimiter = rateLimiter({ name: 'found-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
 // Pre-launch security review (Kyle, 2026-08-29): POST /blackout had no abuse
 // protection of any kind — unlike every other public mutation in this app,
 // it isn't gated by an unguessable token, just a session_id/player_id pair
@@ -480,6 +481,56 @@ router.post('/request-sub/start', requestSubStartLimiter, asyncHandler(async (re
   });
 }));
 
+/**
+ * My-Page-initiated entry point for "I found a sub" (Kyle, 2026-09-07,
+ * point 2) — same bot-protection shape as /request-sub/start above (My Page
+ * has no login, so nothing here proves the browser belongs to the named
+ * player): honeypot check first, then mint a fresh token and email a
+ * verification link to that player's own address on file. Only clicking
+ * through from that email actually opens the /found-sub/:token candidate
+ * picker. The reminder/follow-up email's own "I found a sub" button skips
+ * this gate entirely, since that link already reused a token that was
+ * itself emailed to the right inbox.
+ */
+router.post('/found-sub/start', foundSubStartLimiter, asyncHandler(async (req, res) => {
+  if (honeypot.isBot(req)) {
+    return res.render('message', {
+      title: 'I found a sub',
+      heading: 'Check your email',
+      body: "If that was a valid request, we've sent a confirmation link to the email on file. Nothing has changed yet.",
+      tone: 'ok',
+    });
+  }
+  const assignmentId = Number(req.body.assignment_id);
+  const assignment = db
+    .prepare(
+      `SELECT wa.*, p.name, p.email, p.slug FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       WHERE wa.id = ? AND w.locked = 0 AND wa.status IN ('scheduled', 'confirmed')`
+    )
+    .get(assignmentId);
+  if (!assignment) return res.redirect('/me');
+
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const raw = tokenStore.issueToken(assignment.id);
+  await email.sendFoundSubVerification({
+    player: { name: assignment.name, email: assignment.email },
+    week,
+    session,
+    foundSubToken: raw,
+  });
+
+  res.render('message', {
+    title: 'I found a sub',
+    heading: 'Check your email',
+    body: `We've sent a confirmation link to the email on file for ${assignment.name} — click it to pick who's covering this week. Nothing has changed yet.`,
+    tone: 'ok',
+    myPageId: assignment.slug || assignment.player_id,
+  });
+}));
+
 // --- Direct player-to-player swaps (swapFlow.js) ---------------------------
 // A two-way trade of two specific players' own weeks, distinct from Request
 // a Sub above (a one-to-many fan-out where anyone can claim the open slot).
@@ -585,6 +636,7 @@ router.post('/swap/start', swapStartLimiter, asyncHandler(async (req, res) => {
     body: `We've sent a confirmation link to the email on file for ${initiatorCtx.player.name} — click it to actually send the proposal to ${result.targetCtx.player.name}. Nothing has been sent to them yet.`,
     tone: 'ok',
     myPageId: initiatorCtx.player.slug || initiatorCtx.player.id,
+    sessionId: initiatorCtx.session.id,
   });
 }));
 
@@ -627,6 +679,7 @@ router.post('/swap/verify/:token', asyncHandler(async (req, res) => {
     body: "We've emailed the other player your proposal — you'll hear back once they accept or decline. Nothing changes until then.",
     tone: 'ok',
     myPageId: (initiatorCtx && initiatorCtx.player.slug) || (initiatorCtx && initiatorCtx.player.id),
+    sessionId: initiatorCtx && initiatorCtx.session.id,
   });
 }));
 
@@ -666,6 +719,7 @@ router.post('/swap/respond/:token', asyncHandler(async (req, res) => {
       body: messages[result.reason] || 'This link is no longer valid.',
       tone: 'error',
       myPageId: result.respondingPlayerId,
+      sessionId: result.sessionId,
     });
   }
   if (!result.accepted) {
@@ -675,6 +729,7 @@ router.post('/swap/respond/:token', asyncHandler(async (req, res) => {
       body: "You've declined the swap. Nothing changed for you — the other player has been notified.",
       tone: 'ok',
       myPageId: result.respondingPlayerId,
+      sessionId: result.sessionId,
     });
   }
   res.render('message', {
@@ -683,6 +738,7 @@ router.post('/swap/respond/:token', asyncHandler(async (req, res) => {
     body: "You're all set — both of you have been emailed the details, and My Page has your updated schedule.",
     tone: 'ok',
     myPageId: result.respondingPlayerId,
+    sessionId: result.sessionId,
   });
 }));
 
@@ -699,20 +755,29 @@ router.post('/confirm/:token', (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Confirm', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
 
+  // Kyle, 2026-09-07: the "Back to schedule" button on this result page used
+  // to always land on /schedule with no session selected, so a player in
+  // more than one session had to re-pick which one they'd just confirmed
+  // for. week.session_id (from the assignment's own week) lets us link
+  // straight to /schedule?session=<id> instead, landing them right on the
+  // week they just acted on.
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const sessionId = week ? week.session_id : null;
+
   db.prepare("UPDATE week_assignments SET token_used_at = datetime('now') WHERE id = ?").run(assignment.id);
 
   if (assignment.status === 'confirmed') {
-    return res.render('message', { title: 'Confirm', heading: "You're already confirmed", body: 'No action needed — see you on the court!', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: "You're already confirmed", body: 'No action needed — see you on the court!', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
   }
   if (assignment.status === 'subbed_out') {
-    return res.render('message', { title: 'Confirm', heading: 'Already subbed out', body: 'A substitute already took this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: 'Already subbed out', body: 'A substitute already took this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id, sessionId });
   }
   if (assignment.status === 'needs_sub') {
-    return res.render('message', { title: 'Confirm', heading: 'Sub already requested', body: "You've already requested a sub for this week. Contact the admin if you'd like to undo that.", tone: 'error', myPageId: assignment.slug || assignment.player_id });
+    return res.render('message', { title: 'Confirm', heading: 'Sub already requested', body: "You've already requested a sub for this week. Contact the admin if you'd like to undo that.", tone: 'error', myPageId: assignment.slug || assignment.player_id, sessionId });
   }
 
   db.prepare("UPDATE week_assignments SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?").run(assignment.id);
-  res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
+  res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
 });
 
 router.get('/need-sub/:token', (req, res) => {
@@ -726,13 +791,18 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Need a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
 
+  // Same reasoning as POST /confirm/:token above (Kyle, 2026-09-07): send
+  // the player back to their own session/week instead of a bare /schedule.
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const sessionId = week ? week.session_id : null;
+
   db.prepare("UPDATE week_assignments SET token_used_at = datetime('now') WHERE id = ?").run(assignment.id);
 
   if (assignment.status === 'subbed_out') {
-    return res.render('message', { title: 'Need a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id });
+    return res.render('message', { title: 'Need a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id, sessionId });
   }
   if (assignment.status === 'needs_sub') {
-    return res.render('message', { title: 'Need a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.slug || assignment.player_id });
+    return res.render('message', { title: 'Need a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
   }
 
   const result = await subFlow.createSubRequest(assignment.id);
@@ -743,6 +813,7 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
       body: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
       tone: 'error',
       myPageId: assignment.slug || assignment.player_id,
+      sessionId,
     });
   }
   res.render('message', {
@@ -751,6 +822,108 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
     body: `An email went out to the ${result.offerCount} other player(s) not already playing that week. First to confirm gets the spot.`,
     tone: 'ok',
     myPageId: assignment.slug || assignment.player_id,
+    sessionId,
+  });
+}));
+
+/**
+ * "I found a sub" (Kyle, 2026-09-07): a player who's already coordinated a
+ * sub outside the app tells the system who it is, instead of the system
+ * fanning out to a whole candidate pool and waiting for a claim. This token
+ * is the exact same one already minted for Confirm/Need-a-sub in that same
+ * reminder/follow-up email (see cron.js) — tokenStore.findAssignmentByToken()
+ * doesn't care which route a token was used on, only which assignment it
+ * points to — so this needs no new token type of its own. The My-Page
+ * entry point (`POST /found-sub/start`, below) mints its own fresh token via
+ * the same tokenStore, gated behind an email-verification step first, since
+ * unlike the reminder email's link, nothing there already proves the
+ * browser belongs to the named player.
+ */
+router.get('/found-sub/:token', (req, res) => {
+  const assignment = tokenStore.findAssignmentByToken(req.params.token);
+  if (!assignment) return res.render('message', { title: 'I found a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const sessionId = week ? week.session_id : null;
+
+  if (assignment.status === 'subbed_out') {
+    return res.render('message', { title: 'I found a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id, sessionId });
+  }
+  if (assignment.status === 'needs_sub') {
+    return res.render('message', { title: 'I found a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
+  }
+
+  const candidates = subFlow.eligibleSelfArrangedCandidates(week.id);
+  res.render('found_sub', { title: 'I found a sub', assignment, week, token: req.params.token, candidates });
+});
+
+router.post('/found-sub/:token', asyncHandler(async (req, res) => {
+  const assignment = tokenStore.findAssignmentByToken(req.params.token);
+  if (!assignment) return res.render('message', { title: 'I found a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
+
+  // Same reasoning as POST /confirm/:token and /need-sub/:token above
+  // (Kyle, 2026-09-07): send the player back to their own session/week
+  // instead of a bare /schedule.
+  const week = subFlow.getWeekWithSession(assignment.week_id);
+  const sessionId = week ? week.session_id : null;
+
+  db.prepare("UPDATE week_assignments SET token_used_at = datetime('now') WHERE id = ?").run(assignment.id);
+
+  if (assignment.status === 'subbed_out') {
+    return res.render('message', { title: 'I found a sub', heading: 'Already subbed out', body: 'A substitute has already taken this slot.', tone: 'error', myPageId: assignment.slug || assignment.player_id, sessionId });
+  }
+  if (assignment.status === 'needs_sub') {
+    return res.render('message', { title: 'I found a sub', heading: 'Already requested', body: 'A sub request is already out for this week — no need to do anything else.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
+  }
+
+  const candidateKey = String(req.body.candidate_key || '').trim();
+  const newName = String(req.body.new_name || '').trim();
+  const newEmail = String(req.body.new_email || '').trim();
+
+  let selection;
+  if (newName || newEmail) {
+    selection = { newPerson: { name: newName, email: newEmail } };
+  } else if (candidateKey) {
+    selection = { candidateKey };
+  } else {
+    return res.render('message', {
+      title: 'I found a sub',
+      heading: 'Pick someone',
+      body: "Choose a name from the list, or enter a new person's name and email.",
+      tone: 'error',
+      myPageId: assignment.slug || assignment.player_id,
+      sessionId,
+    });
+  }
+
+  const result = await subFlow.arrangeSelfSub(assignment.id, selection);
+
+  if (!result.ok) {
+    const messages = {
+      locked: "This week's schedule is locked — contact the admin directly.",
+      concurrent: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
+      invalid_new_person: 'Enter a valid name and email address for the new person.',
+      invalid_candidate: 'That pick is no longer available — they may have been scheduled elsewhere since this page loaded. Please go back and try again.',
+      self: "You can't name yourself as your own sub.",
+      no_selection: "Choose a name from the list, or enter a new person's name and email.",
+      not_found: 'This link is invalid or has expired.',
+    };
+    return res.render('message', {
+      title: 'I found a sub',
+      heading: 'Could not complete this',
+      body: messages[result.reason] || 'Something went wrong — please try again or contact the admin.',
+      tone: 'error',
+      myPageId: assignment.slug || assignment.player_id,
+      sessionId,
+    });
+  }
+
+  res.render('message', {
+    title: 'I found a sub',
+    heading: 'Sub request sent',
+    body: `We've emailed ${result.candidate.name} asking them to confirm they're covering for you. You'll get a separate email once they do — if they haven't confirmed within 24 hours of the match, this automatically opens up to the regular sub list, same as any other sub request.`,
+    tone: 'ok',
+    myPageId: assignment.slug || assignment.player_id,
+    sessionId,
   });
 }));
 
@@ -941,7 +1114,7 @@ router.post('/claim-sub/:token', asyncHandler(async (req, res) => {
     };
     return res.render('message', { title: 'Claim sub', heading: 'Spot no longer available', body: messages[result.reason] || 'This link is no longer valid.', tone: 'error' });
   }
-  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id });
+  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id, sessionId: result.week.session_id });
 }));
 
 // Ad-hoc pickup-game sign-up (see adhocFlow.js) — GET renders a landing page

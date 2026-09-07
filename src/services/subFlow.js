@@ -6,7 +6,10 @@ const email = require('./email');
 const { zonedTimeToUtc } = require('./tz');
 const { getTimezone } = require('./settings');
 const { carriedOverBlackoutsForSession } = require('./sessionHelper');
-const { generateUniqueSlug } = require('./playerSlug');
+const { generateUniqueSlug, generateUniqueBroaderSubSlug } = require('./playerSlug');
+const { logPlayerActivity } = require('./activityLog');
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * This session's sub candidate pool — used both by escalateOverdueRequests()
@@ -71,6 +74,105 @@ function upcomingWeeksPreview(sessionId, fromDate, count = 3) {
       : null;
     return { ...w, players, ballDutyName: ballDuty ? ballDuty.name : null };
   });
+}
+
+/**
+ * "I found a sub" (Kyle, 2026-09-07): the candidate list shown to a player
+ * on the /found-sub/:token page when they've already coordinated a sub
+ * outside the app and just need to tell the system who it is. Per Kyle's
+ * point 2 ("a list of all the players — both on the roster for that session
+ * and the sub list"), this unions two pools rather than reusing
+ * sessionSubList() alone: this session's own roster (session_players — a
+ * teammate who isn't playing *this* week could still be the one who agreed
+ * to fill in) plus the session's actual sub pool (sessionSubList(), which
+ * itself already merges the broader list + any players explicitly assigned
+ * as subs — see that function's own doc comment).
+ *
+ * Each candidate gets a namespaced `key` (`player:<id>` or `broader:<id>`)
+ * rather than a bare id, since a real player's id and a broader_sub_list
+ * id are drawn from different tables and can collide numerically — the key
+ * is what arrangeSelfSub() below actually receives from the submitted form.
+ * Deduped by key so someone on both the roster and the sub list (or added
+ * to the sub list twice via both session_sub_list and session_sub_players,
+ * see sessionSubList()) only appears once.
+ *
+ * Blackout status is annotated, not filtered — unlike fanOutSubRequest()'s
+ * candidate pool (an unsolicited "will you sub?" email, where a blackout is
+ * a reason not to bother someone), this is a specific, already-agreed-upon
+ * choice the requesting player is making themselves. A blacked-out real
+ * player can still be picked (same "blackout is a strong signal, not a hard
+ * rule" pattern used everywhere else in this app — see the admin Reassign
+ * dropdown's own blackout override) — the picker just needs to show it so
+ * the requester isn't surprised later. Broader-list-only entries have no
+ * blackout concept (they're not a `players` row until they actually sub in).
+ */
+function eligibleSelfArrangedCandidates(weekId) {
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(weekId);
+  if (!week) return [];
+
+  const alreadyPlaying = new Set(
+    db
+      .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ? AND status != 'subbed_out'`)
+      .all(weekId)
+      .map((r) => r.player_id)
+  );
+
+  const blackoutSet = new Set(
+    db
+      .prepare('SELECT player_id, date FROM blackout_dates WHERE session_id = ?')
+      .all(week.session_id)
+      .map((b) => `${b.player_id}|${b.date}`)
+  );
+  for (const key of carriedOverBlackoutsForSession(week.session_id).keys()) blackoutSet.add(key);
+
+  const byKey = new Map();
+
+  const roster = db
+    .prepare(
+      `SELECT p.id, p.name, p.email FROM session_players sp JOIN players p ON p.id = sp.player_id
+       WHERE sp.session_id = ? AND p.active = 1`
+    )
+    .all(week.session_id);
+  for (const p of roster) {
+    if (alreadyPlaying.has(p.id)) continue;
+    byKey.set(`player:${p.id}`, {
+      key: `player:${p.id}`,
+      candidateType: 'player',
+      id: p.id,
+      name: p.name,
+      email: p.email,
+      blackedOut: blackoutSet.has(`${p.id}|${week.match_date}`),
+    });
+  }
+
+  for (const c of sessionSubList(week.session_id)) {
+    if (c.candidateType === 'player') {
+      if (alreadyPlaying.has(c.id)) continue;
+      const key = `player:${c.id}`;
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        key,
+        candidateType: 'player',
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        blackedOut: blackoutSet.has(`${c.id}|${week.match_date}`),
+      });
+    } else {
+      const key = `broader:${c.id}`;
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        key,
+        candidateType: 'broader',
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        blackedOut: false,
+      });
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Is there already an active (open/escalated) sub request anywhere in this
@@ -433,6 +535,160 @@ async function claimSub(rawToken) {
 }
 
 /**
+ * "I found a sub" (Kyle, 2026-09-07): a player who's already coordinated a
+ * sub outside the app tells the system who it is, instead of the system
+ * fanning out to a whole candidate pool and waiting for someone to claim it.
+ * Deliberately built as a single-candidate variant of the exact same
+ * sub_requests/sub_offers shape createSubRequest()/fanOutSubRequest() already
+ * use — one sub_requests row, one sub_offers row for the named person — so
+ * claimSub() (the actual confirm-and-take-the-slot mutation), the
+ * needs_sub/subbed_out badge logic, the Stats page's Sub History table, and
+ * escalateOverdueRequests()'s 24-hours-before-match fallback all work
+ * completely unmodified. If the named person never confirms, that fallback
+ * fires exactly as it would for any other still-`open` request — no special
+ * casing needed here for "what if they don't respond" (Kyle's own pick,
+ * "falls back to normal escalation").
+ *
+ * `selection` is one of:
+ *   { candidateKey: 'player:<id>' | 'broader:<id>' } — a pick from
+ *     eligibleSelfArrangedCandidates(), i.e. someone already known to this
+ *     session (its own roster, or its existing sub pool).
+ *   { newPerson: { name, email } } — someone the system has never heard of.
+ *     Deduped by email against BOTH `players` and `broader_sub_list` first
+ *     (a player typing in a name/email that happens to already be on file
+ *     shouldn't create a duplicate identity) — only a genuine miss on both
+ *     counts is treated as "new" for the purposes of Kyle's points 3-5
+ *     (add to the sub list, alert the admin). A match against either table
+ *     is treated exactly like picking that person from the list.
+ */
+async function arrangeSelfSub(weekAssignmentId, selection = {}) {
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
+  if (!assignment) return { ok: false, reason: 'not_found' };
+  const week = getWeekWithSession(assignment.week_id);
+  if (week.locked) return { ok: false, reason: 'locked' };
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
+
+  if (hasActiveConcurrentSubRequest(week.id)) {
+    return { ok: false, reason: 'concurrent' };
+  }
+
+  let candidate; // { candidateType: 'player'|'broader', id, name, email }
+  let isNewPerson = false;
+
+  if (selection.newPerson) {
+    const name = String(selection.newPerson.name || '').trim();
+    const rawEmail = String(selection.newPerson.email || '').trim();
+    if (!name || !EMAIL_RE.test(rawEmail)) {
+      return { ok: false, reason: 'invalid_new_person' };
+    }
+    const emailLower = rawEmail;
+
+    const existingPlayer = db.prepare('SELECT * FROM players WHERE email = ?').get(emailLower);
+    const existingBroader = db.prepare('SELECT * FROM broader_sub_list WHERE email = ?').get(emailLower);
+
+    if (existingPlayer) {
+      candidate = { candidateType: 'player', id: existingPlayer.id, name: existingPlayer.name, email: existingPlayer.email };
+    } else if (existingBroader) {
+      db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(
+        session.id,
+        existingBroader.id
+      );
+      candidate = { candidateType: 'broader', id: existingBroader.id, name: existingBroader.name, email: existingBroader.email };
+    } else {
+      // Genuinely new — nobody on file has this email. Reserve a slug now
+      // (same reasoning as every other broader_sub_list entry, see
+      // playerSlug.js) and record who added them, so the admin Sub List
+      // page can flag this row as worth a name/slug cleanup pass (Kyle's
+      // point 9) and the Activity Log/Status page can say who it was.
+      const slug = generateUniqueBroaderSubSlug(db, name, null);
+      const info = db
+        .prepare('INSERT INTO broader_sub_list (name, email, slug, added_by_player_id) VALUES (?, ?, ?, ?)')
+        .run(name, emailLower, slug, player.id);
+      const newId = info.lastInsertRowid;
+      db.prepare('INSERT INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)').run(session.id, newId);
+      candidate = { candidateType: 'broader', id: newId, name, email: emailLower };
+      isNewPerson = true;
+    }
+  } else if (selection.candidateKey) {
+    const match = eligibleSelfArrangedCandidates(week.id).find((c) => c.key === selection.candidateKey);
+    if (!match) return { ok: false, reason: 'invalid_candidate' };
+    candidate = { candidateType: match.candidateType, id: match.id, name: match.name, email: match.email };
+  } else {
+    return { ok: false, reason: 'no_selection' };
+  }
+
+  if (candidate.candidateType === 'player' && candidate.id === player.id) {
+    return { ok: false, reason: 'self' };
+  }
+
+  const wasBallDuty = week.ball_duty_player_id === player.id;
+
+  const { subRequestId, rawToken } = db.transaction(() => {
+    db.prepare("UPDATE week_assignments SET status = 'needs_sub' WHERE id = ?").run(weekAssignmentId);
+    tokenStore.invalidateTokensForAssignment(weekAssignmentId);
+
+    const reqInfo = db
+      .prepare(
+        `INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id, fanout_sent_at)
+         VALUES (?, 'open', 'player', ?, datetime('now'))`
+      )
+      .run(weekAssignmentId, player.id);
+    const subRequestId = reqInfo.lastInsertRowid;
+
+    if (wasBallDuty) {
+      db.prepare(
+        "UPDATE weeks SET ball_duty_player_id = NULL, needs_attention = 1, notes = ? WHERE id = ?"
+      ).run(`Ball duty needs reassignment (was ${player.name}, now needs a sub)`, week.id);
+    }
+
+    const raw = generateRawToken();
+    if (candidate.candidateType === 'player') {
+      db.prepare(
+        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
+      ).run(subRequestId, candidate.id, hashToken(raw), 'pending');
+    } else {
+      db.prepare(
+        'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
+      ).run(subRequestId, candidate.id, hashToken(raw), 'pending');
+    }
+
+    return { subRequestId, rawToken: raw };
+  })();
+
+  await email.sendSelfArrangedSubInvite({
+    recipient: candidate,
+    week,
+    session,
+    claimToken: rawToken,
+    requestingPlayerName: player.name,
+  });
+
+  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.name });
+
+  if (isNewPerson) {
+    const description = `${player.name} added ${candidate.name} (${candidate.email}) to the sub list after arranging them as a sub for ${week.match_date}`;
+    logPlayerActivity({
+      playerName: player.name,
+      action: 'sub.self_arranged_new_person',
+      description,
+      sessionId: session.id,
+    });
+    if (session.admin_report_emails) {
+      await email.sendNewSubListEntryAlert({
+        session,
+        week,
+        newPersonName: candidate.name,
+        newPersonEmail: candidate.email,
+        addedByPlayerName: player.name,
+      });
+    }
+  }
+
+  return { ok: true, week, session, candidate, isNewPerson, subRequestId };
+}
+
+/**
  * Called when an admin manually resolves a slot that has (or had) an active
  * sub request — either by reassigning that slot to someone else, or by
  * marking the original player confirmed after all (they told the admin
@@ -591,4 +847,6 @@ module.exports = {
   getWeekWithSession,
   hasActiveConcurrentSubRequest,
   sessionSubList,
+  eligibleSelfArrangedCandidates,
+  arrangeSelfSub,
 };

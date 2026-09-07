@@ -4,7 +4,7 @@
 
 <h2>Needs attention</h2>
 <%
-  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.staleBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length;
+  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.staleBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length + attention.selfArrangedSubs.length;
 %>
 <% if (totalAttention === 0) { %>
   <p class="notice">All clear across every session — nothing needs attention right now.</p>
@@ -94,6 +94,16 @@
     <p class="muted">Nudged once already and still no answer — the target player hasn't accepted or declined. Open the session to check in, or cancel it from the week's card.</p>
     <% attention.staleSwaps.forEach(function(sw) { %>
       <div class="flag"><a href="/admin/sessions/<%= sw.session_id %>"><strong><%= sessionFullTitle(sw.session) %></strong></a> — <%= sw.initiator_name %> (<%= fmtDate(sw.initiator_match_date) %>) wants to swap with <%= sw.target_name %> (<%= fmtDate(sw.target_match_date) %>), nudged on <%= sw.nudged_at.split(' ')[0] %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.selfArrangedSubs.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Self-arranged subs added (last 30 days)</h3>
+    <p class="muted">A player used "I found a sub" and named someone the system didn't already know — added to the Broader Sub List automatically. Worth a quick look on the <a href="/admin/sub-list">Sub List page</a> to clean up the auto-generated slug or merge with an existing entry under a different email.</p>
+    <% attention.selfArrangedSubs.forEach(function(e) { %>
+      <div class="flag"><a href="/admin/sub-list"><strong><%= e.name %></strong></a> (<%= e.email %>) — added by <%= e.added_by_name %> on <%= fmtDate(e.created_at.slice(0, 10)) %></div>
     <% }) %>
   </div>
 <% } %>

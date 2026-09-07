@@ -267,7 +267,7 @@ async function respondToSwap(rawToken, accept) {
     initiatorCtx.player.id !== swapRequest.initiator_player_id ||
     targetCtx.player.id !== swapRequest.target_player_id
   ) {
-    return { ok: false, reason: 'no_longer_available' };
+    return { ok: false, reason: 'no_longer_available', sessionId: targetCtx.session.id };
   }
 
   if (!accept) {
@@ -286,7 +286,7 @@ async function respondToSwap(rawToken, accept) {
       initiatorWeek: initiatorCtx.week,
       session: initiatorCtx.session,
     });
-    return { ok: true, accepted: false, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id };
+    return { ok: true, accepted: false, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id, sessionId: targetCtx.session.id };
   }
 
   // Exclude this swap's own (still-pending, about to be accepted) row from
@@ -297,12 +297,12 @@ async function respondToSwap(rawToken, accept) {
     !isAssignmentSwappable(swapRequest.initiator_assignment_id, swapRequest.id) ||
     !isAssignmentSwappable(swapRequest.target_assignment_id, swapRequest.id)
   ) {
-    return { ok: false, reason: 'no_longer_available' };
+    return { ok: false, reason: 'no_longer_available', sessionId: targetCtx.session.id };
   }
   const stillEligible = eligibleTargetAssignments(swapRequest.initiator_assignment_id, targetCtx.player.id, swapRequest.id).some(
     (r) => r.id === swapRequest.target_assignment_id
   );
-  if (!stillEligible) return { ok: false, reason: 'no_longer_available' };
+  if (!stillEligible) return { ok: false, reason: 'no_longer_available', sessionId: targetCtx.session.id };
 
   db.transaction(() => {
     // Swap which player each existing assignment row belongs to — the week,
@@ -361,7 +361,7 @@ async function respondToSwap(rawToken, accept) {
     }
   }
 
-  return { ok: true, accepted: true, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id };
+  return { ok: true, accepted: true, respondingPlayerId: targetCtx.player.slug || targetCtx.player.id, sessionId: targetCtx.session.id };
 }
 
 /** Admin escape hatch for a stuck/unwanted pending proposal — mirrors

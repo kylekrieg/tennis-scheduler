@@ -36,8 +36,30 @@ function getAttentionItems() {
     }
   }
 
+  // Self-arranged sub-list additions ("I found a sub", Kyle, 2026-09-07 —
+  // see subFlow.js's arrangeSelfSub()): a brand-new broader_sub_list entry a
+  // player introduced themselves while naming their own arranged sub, worth
+  // a quick admin review to clean up the auto-generated slug or merge with
+  // an existing entry under a different email (per Kyle's point 9 and
+  // admin/sub_list.ejs's own note). Deliberately NOT scoped to the
+  // non-archived `sessions` list above (a self-arranged entry belongs to the
+  // Broader Sub List globally, not to one session) and not gated on
+  // whether a session's admin_report_emails happen to be configured — Kyle's
+  // own choice, "always log/flag" regardless of whether the email alert
+  // also fired. Capped to the last 30 days so this doesn't grow into a
+  // permanently-larger list once entries have long since been reviewed —
+  // there's no "reviewed" flag to otherwise clear a row from here.
+  const selfArrangedSubs = db
+    .prepare(
+      `SELECT bl.id, bl.name, bl.email, bl.created_at, p.name as added_by_name
+       FROM broader_sub_list bl JOIN players p ON p.id = bl.added_by_player_id
+       WHERE bl.added_by_player_id IS NOT NULL AND bl.created_at >= datetime('now', '-30 days')
+       ORDER BY bl.created_at DESC`
+    )
+    .all();
+
   if (sessions.length === 0) {
-    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], staleBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [] };
+    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], staleBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [], selfArrangedSubs };
   }
 
   // Players enrolled in two non-archived sessions on the same day of week
@@ -190,7 +212,7 @@ function getAttentionItems() {
       .all(...sessionIds)
   );
 
-  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps };
+  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps, selfArrangedSubs };
 }
 
 /**

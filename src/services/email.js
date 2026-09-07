@@ -410,7 +410,26 @@ function nextWeeksPreviewHtml(weeks) {
   return `<p><strong>Next few weeks:</strong></p><ul>${rows}</ul>`;
 }
 
-async function sendConfirmationReminder({ player, week, session, confirmToken, needSubToken, upcomingWeeks, test = false }) {
+/**
+ * The "I found a sub for this week" link (Kyle, 2026-09-07, point 1: "I
+ * don't want it on the same line as the confirmation & need a sub button")
+ * — its own row underneath, deliberately quieter styling (a plain text link,
+ * not a colored button) so it doesn't visually compete with the two primary
+ * actions above it. Points at /found-sub/:token using the exact same raw
+ * token already minted for Confirm/Need-a-sub in this same email —
+ * tokenStore.findAssignmentByToken() doesn't distinguish by route, only by
+ * the assignment it resolves to, so this needs no separate token of its own
+ * (see cron.js's sendReminderEmailsForWeek()/processFollowUps() and
+ * admin.js's resend route, all three of which pass the same `raw` value for
+ * confirmToken/needSubToken/foundSubToken).
+ */
+function foundSubLine(foundSubToken) {
+  if (!foundSubToken) return '';
+  const url = `${siteUrl()}/found-sub/${foundSubToken}`;
+  return `<p style="margin:4px 0 12px;"><a href="${url}" style="color:#444;text-decoration:underline;">Already found your own sub for this week?</a></p>`;
+}
+
+async function sendConfirmationReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, upcomingWeeks, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
   const subject = `Tennis ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — please confirm`;
@@ -422,6 +441,7 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
       <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
       <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
     </p>
+    ${foundSubLine(foundSubToken)}
     ${ballDutyNotice(player, week)}
     ${weatherBlockHtml(session, week)}
     ${nextWeeksPreviewHtml(upcomingWeeks)}
@@ -430,7 +450,7 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
   return sendMail({ to: player.email, subject, html, category: 'reminder', relatedWeekId: week.id, session, test });
 }
 
-async function sendFollowUpReminder({ player, week, session, confirmToken, needSubToken, test = false }) {
+async function sendFollowUpReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
   const dayPhrase = relativeDayPhrase(week.match_date);
@@ -443,6 +463,7 @@ async function sendFollowUpReminder({ player, week, session, confirmToken, needS
       <a href="${confirmUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;margin-right:8px;">Confirm you're playing</a>
       <a href="${needSubUrl}" style="display:inline-block;background:#b42318;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Need a sub? Click here</a>
     </p>
+    ${foundSubLine(foundSubToken)}
     ${ballDutyNotice(player, week)}
     ${footer(session, player)}
   `;
@@ -621,6 +642,119 @@ async function sendSubFilledNotice({ recipient, week, session, subName, test = f
     ${footer(session)}
   `;
   return sendMail({ to: recipient.email, subject, html, category: 'sub_filled', relatedWeekId: week.id, session, test });
+}
+
+// --- "I found a sub" (subFlow.js's arrangeSelfSub()) -----------------------
+
+/**
+ * Sent to the specific person a player named as their already-arranged sub —
+ * distinct from sendSubRequestFanout() above, which goes to a whole pool of
+ * candidates racing to claim one spot. Here there's exactly one recipient
+ * and no race, so the wording says so plainly ("X asked you to cover their
+ * spot") rather than "first to confirm gets it." Points at the same
+ * /claim-sub/:token landing page as every other sub-offer link — claimSub()
+ * doesn't distinguish how an offer was created, so this reuses that whole
+ * mutation path unmodified (auto-creates a `players` row from
+ * broader_sub_list if this person hasn't subbed in before, notifies the
+ * rest of the week's group, notifies the original player once claimed).
+ */
+async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken, requestingPlayerName, test = false }) {
+  const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
+  const subject = `${requestingPlayerName} asked you to sub in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${recipient.name},</p>
+    <p>${requestingPlayerName} said you agreed to cover their spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Click below to confirm you're in:</p>
+    <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I'm playing</a></p>
+    ${currentWeekRosterHtml(week)}
+    <p class="muted" style="color:#888;">Didn't agree to this? No action needed — nothing changes unless you click the button above, and ${requestingPlayerName} will be nudged to find someone else if it isn't confirmed before match time.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'self_arranged_sub_invite', relatedWeekId: week.id, session, test });
+}
+
+/**
+ * Sent to the requesting player right after they name their already-arranged
+ * sub — the "I found a sub" equivalent of sendSubRequestOwnConfirmation()
+ * above, same reasoning: confirms exactly who was just emailed, and spells
+ * out what happens if that person doesn't actually click through (the
+ * request sits `open` exactly like any other, so escalateOverdueRequests()'s
+ * normal 24-hours-before-match fallback picks it up automatically — Kyle's
+ * own choice, "falls back to normal escalation" — no special-casing needed
+ * here beyond saying so).
+ */
+async function sendSelfArrangedSubConfirmation({ player, week, session, subName, test = false }) {
+  const subject = `Sub request sent to ${subName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${player.name},</p>
+    <p>Got it — we've emailed <strong>${subName}</strong> asking them to confirm they're covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
+    <ul>
+      <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
+      <li><strong>If they haven't confirmed within 24 hours of the match:</strong> the request automatically opens up to this session's regular sub list, the same as any other sub request.</li>
+      <li><strong>If nobody has confirmed by match time:</strong> please contact your admin for help.</li>
+    </ul>
+    <p><strong>Named the wrong person, or they didn't actually agree?</strong> Reach out right away so it can be sorted out before match time.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'self_arranged_sub_self_notice', relatedWeekId: week.id, session, test });
+}
+
+/**
+ * Sent to a session's configured admin-report address(es) (same
+ * `admin_report_emails` field the pre-match status report uses — see
+ * adminReport.js) whenever a player's "I found a sub" pick introduces a
+ * genuinely new person the system has never heard of before (Kyle's point 5:
+ * "the admin should get an email or alert that a new player was added to the
+ * sub list by player X"). Deliberately only fires for a brand-new
+ * broader_sub_list row, not for a pick of someone already known (an existing
+ * roster player or an already-listed sub) — those need no admin attention.
+ * A session with no admin_report_emails configured still gets the always-on
+ * Activity Log entry (see arrangeSelfSub()'s logPlayerActivity call) and
+ * Status page listing — this email is an addition on top of that, not the
+ * only signal.
+ */
+async function sendNewSubListEntryAlert({ session, week, newPersonName, newPersonEmail, addedByPlayerName, test = false }) {
+  const to = (session.admin_report_emails || '').trim();
+  if (!to) return true; // nothing configured — the Activity Log/Status page entry is the only signal, and that's already handled by the caller.
+  const subListUrl = `${siteUrl()}/admin/sub-list`;
+  const subject = `New sub list entry: ${newPersonName} (added by ${addedByPlayerName})`;
+  const html = `
+    <p>${addedByPlayerName} used "I found a sub" for <strong>${fmtDate(week.match_date)}</strong> in ${sessionFullTitle(session)} and named someone the system didn't already know:</p>
+    <ul>
+      <li><strong>Name:</strong> ${newPersonName}</li>
+      <li><strong>Email:</strong> ${newPersonEmail}</li>
+    </ul>
+    <p>They've been added to the Broader Sub List and this session's sub pool automatically, with an auto-generated name/URL slug. Worth a quick look to clean up the slug or merge them with an existing entry if this is actually someone already on file under a different email:</p>
+    <p><a href="${subListUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Review the Sub List</a></p>
+  `;
+  return sendMail({ to, subject, html, category: 'new_sub_list_entry_alert', relatedWeekId: week.id, session, test });
+}
+
+/**
+ * Bot-protection gate for the My-Page-initiated "I found a sub" entry point
+ * (POST /found-sub/start), mirroring sendSubRequestVerification()'s role for
+ * Request a Sub exactly: My Page has no login, so nothing proves the browser
+ * clicking "I found a sub" actually belongs to the player whose assignment
+ * it names. This is sent to that player's own address on file with a fresh
+ * token; only clicking through to /found-sub/:token from here actually opens
+ * the candidate picker. The *reminder email's own* "I found a sub" button
+ * (see sendConfirmationReminder/sendFollowUpReminder) skips this gate
+ * entirely — that link already went to the right inbox, since it's the same
+ * per-assignment token every other button in that email already uses.
+ */
+async function sendFoundSubVerification({ player, week, session, foundSubToken, test = false }) {
+  const url = `${siteUrl()}/found-sub/${foundSubToken}`;
+  const subject = `Confirm — I found a sub — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${player.name},</p>
+    <p>Someone just clicked "I found a sub for this week" for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} on My Page. To keep this from happening by mistake (or automatically), nothing has been sent to anyone else yet — click below to confirm it's really you and pick who's covering for you:</p>
+    <p><a href="${url}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I found a sub</a></p>
+    <p class="muted" style="color:#888;">Didn't do this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'found_sub_verification', relatedWeekId: week.id, session, test });
 }
 
 // --- Direct player-to-player swaps (swapFlow.js) ---------------------------
@@ -955,6 +1089,10 @@ module.exports = {
   sendEscalationEmail,
   sendSubFilledNotice,
   sendSubFilledOriginalNotice,
+  sendSelfArrangedSubInvite,
+  sendSelfArrangedSubConfirmation,
+  sendNewSubListEntryAlert,
+  sendFoundSubVerification,
   sendSwapProposalVerification,
   sendSwapRequestEmail,
   sendSwapNudge,

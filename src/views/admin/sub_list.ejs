@@ -23,6 +23,9 @@
           <form method="post" action="/admin/sub-list/<%= l.id %>/edit" id="edit-<%= l.id %>">
             <input type="text" name="name" value="<%= l.name %>" style="width:140px;">
           </form>
+          <% if (l.added_by_name) { %>
+            <div class="muted" style="font-size:11px;margin-top:2px;">self-arranged — added by <%= l.added_by_name %><%= l.created_at ? ' on ' + fmtDate(l.created_at.slice(0, 10)) : '' %></div>
+          <% } %>
         </td>
         <td><input type="email" name="email" value="<%= l.email %>" form="edit-<%= l.id %>" style="width:200px;"></td>
         <td>
