@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, sessionsForPlayer, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, sessionsForPlayer, orderAssignmentsWithSubGroups, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const weather = require('../services/weather');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
@@ -57,12 +57,19 @@ function weekRowsForSession(sessionId, { limit } = {}) {
   const weeks = db.prepare(sql).all(sessionId);
   const dbMap = doubleBookingMapForSession(sessionId);
   return weeks.map((w) => {
-    const assignments = db
+    // Kyle, 2026-09-08: "Can we do that same type of thing on the public
+    // schedule page so players know who is subbing for whom?" — same
+    // reordering/indenting the admin session-detail page already does (see
+    // sessionHelper.js's orderAssignmentsWithSubGroups doc comment), but with
+    // `(p) => p.name` so a sub's replacesPlayerName reads the short public
+    // name here instead of admin.js's full name.
+    let assignments = db
       .prepare(
         `SELECT wa.*, p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
       )
       .all(w.id);
+    assignments = orderAssignmentsWithSubGroups(assignments, (p) => p.name);
     stampDoubleBookings(assignments, w.match_date, dbMap);
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
@@ -154,12 +161,13 @@ router.get('/lookahead', (req, res) => {
     .all(session.id, todayIso, session.lookahead_weeks || 4);
   const dbMap = doubleBookingMapForSession(session.id);
   const rows = weeks.map((w) => {
-    const assignments = db
+    let assignments = db
       .prepare(
         `SELECT wa.*, p.name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
          WHERE wa.week_id = ? ORDER BY wa.court, wa.team`
       )
       .all(w.id);
+    assignments = orderAssignmentsWithSubGroups(assignments, (p) => p.name);
     stampDoubleBookings(assignments, w.match_date, dbMap);
     const ballDuty = w.ball_duty_player_id
       ? db.prepare('SELECT name FROM players WHERE id = ?').get(w.ball_duty_player_id)
@@ -1005,11 +1013,38 @@ router.get('/me/:idOrSlug', (req, res) => {
   );
 
   const sessionCards = sessions.map((session) => {
+    // Kyle, 2026-09-08: "Do the sub indents show up on 'my page' also?" —
+    // they didn't; this page never reused orderAssignmentsWithSubGroups()
+    // since it's shaped differently (one row for the viewer themselves,
+    // plus a separate `others` list) rather than a single team/court table.
+    // Same underlying fact either way (a sub row's `replaces_assignment_id`
+    // names the row it took over), so both queries below join it in
+    // directly rather than pulling in the whole helper: `replaces_name` is
+    // the replaced player's short public name (never the full name — this
+    // is an unauthenticated page), null on a normal, non-sub row.
+    // Kyle, 2026-09-08: "if someone subs out a week, does that week drop
+    // off their 'my page'? ... Is that by design?" It wasn't a deliberate
+    // choice — `wa.status != 'subbed_out'` here simply excluded the row
+    // outright, same as everywhere else in the app subbed_out rows get
+    // filtered, but nobody had asked "should the original player still see
+    // it" until now. His pick: keep it visible with a note naming who took
+    // over, not hide it. So subbed_out rows are no longer excluded here —
+    // `replaced_by_name` (via the real `replaces_assignment_id` link,
+    // wherever a sub action set one) tells the view who to credit. A
+    // legacy subbed_out row from before that column existed has no such
+    // link, so a same-week/same-team/same-court fallback below fills in
+    // `replaced_by_name` too, but only when there's exactly one unmatched
+    // sub candidate — same ambiguity guard `orderAssignmentsWithSubGroups()`
+    // uses, rather than risk naming the wrong person.
     const upcoming = db
       .prepare(
-        `SELECT wa.*, w.match_date, w.locked
+        `SELECT wa.*, w.match_date, w.locked, rp.name AS replaces_name, sp.name AS replaced_by_name
          FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-         WHERE wa.player_id = ? AND w.session_id = ? AND w.match_date >= ? AND wa.status != 'subbed_out'
+         LEFT JOIN week_assignments rwa ON rwa.id = wa.replaces_assignment_id
+         LEFT JOIN players rp ON rp.id = rwa.player_id
+         LEFT JOIN week_assignments swa ON swa.replaces_assignment_id = wa.id
+         LEFT JOIN players sp ON sp.id = swa.player_id
+         WHERE wa.player_id = ? AND w.session_id = ? AND w.match_date >= ?
          ORDER BY w.match_date`
       )
       .all(playerId, session.id, todayIso);
@@ -1017,6 +1052,17 @@ router.get('/me/:idOrSlug', (req, res) => {
     upcoming.forEach((a) => {
       const other = dbMap.get(`${a.player_id}|${a.match_date}`);
       if (other) a.doubleBooked = other;
+
+      if (a.status === 'subbed_out' && !a.replaced_by_name) {
+        const candidates = db
+          .prepare(
+            `SELECT p.name FROM week_assignments wa2 JOIN players p ON p.id = wa2.player_id
+             WHERE wa2.week_id = ? AND wa2.team = ? AND wa2.court = ? AND wa2.is_sub = 1
+               AND wa2.replaces_assignment_id IS NULL AND wa2.id != ?`
+          )
+          .all(a.week_id, a.team, a.court, a.id);
+        if (candidates.length === 1) a.replaced_by_name = candidates[0].name;
+      }
 
       // Kyle, 2026-09-07: "is there a way to display who else is playing
       // that week and their status so when looking at 'my page', you can
@@ -1029,7 +1075,10 @@ router.get('/me/:idOrSlug', (req, res) => {
       // on the page a player actually has bookmarked.
       a.others = db
         .prepare(
-          `SELECT p.name, wa.status, wa.is_sub FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+          `SELECT p.name, wa.status, wa.is_sub, rp.name AS replaces_name
+           FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+           LEFT JOIN week_assignments rwa ON rwa.id = wa.replaces_assignment_id
+           LEFT JOIN players rp ON rp.id = rwa.player_id
            WHERE wa.week_id = ? AND wa.player_id != ? AND wa.status != 'subbed_out'
            ORDER BY p.name`
         )

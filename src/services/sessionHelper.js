@@ -451,6 +451,18 @@ function weekEmailRecipients(week, session) {
  *
  * Scoped to upcoming dates only (>= todayIso) so a one-time sub from months
  * ago doesn't resurrect a long-finished session onto their page forever.
+ *
+ * The `week_assignments` EXISTS check deliberately no longer excludes
+ * `subbed_out` rows (Kyle, 2026-09-08: "if someone subs out a week, does
+ * that week drop off their 'my page'? ... Is that by design?" — his pick
+ * was to keep it visible with a note, not hide it) — a pure sub whose only
+ * ever tie to a session is one now-subbed_out assignment still needs that
+ * session to show up on their My Page so the subbed-out note has somewhere
+ * to render. `ics.js`'s `buildPlayerFeedICS()` (the only other caller)
+ * still separately excludes `subbed_out` at its own per-event query level
+ * (see `ics.js`), so this relaxation only widens "which sessions does My
+ * Page consider" — it never resurrects a real calendar event for a match
+ * this player isn't playing anymore.
  */
 function sessionsForPlayer(playerId, todayIso = new Date().toISOString().slice(0, 10)) {
   return db
@@ -461,7 +473,7 @@ function sessionsForPlayer(playerId, todayIso = new Date().toISOString().slice(0
          EXISTS (SELECT 1 FROM session_players sp WHERE sp.session_id = s.id AND sp.player_id = ?)
          OR EXISTS (
            SELECT 1 FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-           WHERE w.session_id = s.id AND wa.player_id = ? AND wa.status != 'subbed_out' AND w.match_date >= ?
+           WHERE w.session_id = s.id AND wa.player_id = ? AND w.match_date >= ?
          )
        )
        ${SESSION_DISPLAY_ORDER}`
@@ -493,8 +505,16 @@ function sessionsForPlayer(playerId, todayIso = new Date().toISOString().slice(0
  * attached elsewhere by the caller (doubleBooked, reminded, followedUp, ...)
  * survives untouched. Supports an arbitrary chain depth (a sub who
  * themselves later gets subbed) even though that's rare in practice.
+ *
+ * `nameFn` defaults to `fullName()` (the admin session-detail page's own
+ * use — see admin.js). Kyle, 2026-09-08: "Can we do that same type of thing
+ * on the public schedule page so players know who is subbing for whom?" —
+ * the public schedule/lookahead pages pass `(p) => p.name` instead, so
+ * `replacesPlayerName` reads the short public name there rather than
+ * leaking a full name onto an unauthenticated page (same public-vs-admin
+ * name split as everywhere else — see playerName.js).
  */
-function orderAssignmentsWithSubGroups(assignments) {
+function orderAssignmentsWithSubGroups(assignments, nameFn = fullName) {
   const byId = new Map(assignments.map((a) => [a.id, a]));
   const childrenByParent = new Map(); // parentId -> [child assignment, ...]
   const parentIdOfChild = new Map(); // childId -> parentId
@@ -533,7 +553,7 @@ function orderAssignmentsWithSubGroups(assignments) {
     visited.add(a.id);
     a.subDepth = depth;
     const parentId = parentIdOfChild.get(a.id);
-    a.replacesPlayerName = parentId != null && byId.has(parentId) ? fullName(byId.get(parentId)) : null;
+    a.replacesPlayerName = parentId != null && byId.has(parentId) ? nameFn(byId.get(parentId)) : null;
     ordered.push(a);
     (childrenByParent.get(a.id) || []).forEach((child) => visit(child, depth + 1));
   };

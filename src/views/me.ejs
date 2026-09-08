@@ -51,14 +51,16 @@
                   <span class="badge double_booked">double booked</span>
                   <div class="muted" style="font-size:12px;margin-top:4px;">Also in <%= sessionFullTitle(a.doubleBooked) %> this date — resolve ahead of time.</div>
                 <% } else { %>
-                  <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= a.is_sub ? ' (sub)' : '' %></span>
+                  <span class="badge <%= a.status %>"><%= a.status.replace('_', ' ') %><%= (a.is_sub && a.status !== 'subbed_out') ? ' (sub)' : '' %></span>
                 <% } %>
+                <% if (a.is_sub && a.replaces_name) { %><div class="muted" style="font-size:12px;margin-top:4px;">Subbing for <%= a.replaces_name %></div><% } %>
+                <% if (a.status === 'subbed_out') { %><div class="muted" style="font-size:12px;margin-top:4px;"><% if (a.replaced_by_name) { %>You found a sub — <%= a.replaced_by_name %> is now playing.<% } else { %>You found a sub for this week.<% } %></div><% } %>
               </td>
               <td><%= card.ballDutyDates.has(a.match_date) ? 'Yes' : '' %></td>
               <td>
                 <% if (a.others && a.others.length) { %>
                   <% a.others.forEach(function(o, i) { %>
-                    <div style="margin-bottom:2px;"><%= o.name %><%= o.is_sub ? ' (sub)' : '' %> <span class="badge <%= o.status %>" style="font-size:10px;padding:1px 5px;"><%= o.status.replace('_', ' ') %></span></div>
+                    <div style="margin-bottom:2px;"><% if (o.is_sub && o.replaces_name) { %><span class="muted">&#8627;&nbsp;</span><% } %><%= o.name %><%= o.is_sub ? ' (sub)' : '' %> <span class="badge <%= o.status %>" style="font-size:10px;padding:1px 5px;"><%= o.status.replace('_', ' ') %></span><% if (o.is_sub && o.replaces_name) { %><div class="muted" style="font-size:10px;">subbing for <%= o.replaces_name %></div><% } %></div>
                   <% }) %>
                 <% } else { %>
                   <span class="muted">—</span>

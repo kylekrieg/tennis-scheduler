@@ -9,7 +9,7 @@
       <div class="muted" style="font-size:12px;margin-top:12px;">Also viewable — switch session:</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;">
         <% sessions.forEach(function(s) { %>
-          <a href="?session=<%= s.id %>" class="btn small <%= s.id === session.id ? 'green' : 'neutral' %>" style="border-left:4px solid <%= sessionColor(s) %>;">
+          <a href="?session=<%= s.id %>" class="btn <%= s.id === session.id ? 'green' : 'neutral' %>" style="border-left:4px solid <%= sessionColor(s) %>;">
             <%= sessionFullTitle(s) %> <span style="opacity:0.75;">(<%= s.status %>)</span>
           </a>
         <% }) %>

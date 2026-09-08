@@ -1,6 +1,4 @@
 <%- include('partials/header', {title, wideMain: true}) %>
-<h1><%= sessionFullTitle(session) %></h1>
-<p class="muted"><%= session.start_date %> – <%= session.end_date %> · match day/time editable by admin</p>
 <%- include('partials/session_picker', {sessions, session}) %>
 
 <table>
@@ -26,7 +24,8 @@
             <td>
               <% r.assignments.filter(a => a.team === team && a.court === court).forEach(function(a) { %>
                 <div style="margin-bottom:4px;">
-                  <%= a.name %><% if (a.is_sub) { %> <span class="muted">(sub)</span><% } %>
+                  <% if (a.subDepth) { %><span class="muted">&#8627;&nbsp;</span><% } %><%= a.name %><% if (a.is_sub) { %> <span class="muted">(sub)</span><% } %>
+                  <% if (a.replacesPlayerName) { %><div class="muted" style="font-size:11px;">subbing for <%= a.replacesPlayerName %></div><% } %>
                   <% if (a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                     <span class="badge double_booked">double booked</span>
                     <div class="muted" style="font-size:11px;">also in <%= sessionPublicLabel(a.doubleBooked) %></div>
