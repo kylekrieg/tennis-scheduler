@@ -16,14 +16,14 @@ Per-player targets for that first example 17-week session (weighted tiers, not e
 | Player | Target games |
 |---|---|
 | Kyle Krieg | 14 |
-| John Gunther | 14 |
-| Brian Beracha | 7 |
-| Shawn Anderson | 7 |
-| Michael Gibbons | 7 |
-| Greg Johnson | 7 |
-| Doug Geiger | 4 |
-| Bart Lautenbach | 4 |
-| Brian Potter | 4 |
+| Marcus Gable | 14 |
+| Colin Baxter | 7 |
+| Trevor Ashford | 7 |
+| Noah Griffin | 7 |
+| Felix Jansen | 7 |
+| Owen Garrity | 4 |
+| Dean Lockhart | 4 |
+| Nathan Prescott | 4 |
 
 ## 2. Season schedule generator (core engine)
 
@@ -147,7 +147,7 @@ Implementation lives in `src/services/swapFlow.js` (new `swap_requests` table, d
 
 **Follow-up: a comprehensive eligibility test suite, an identity-drift bug it caught, and overdue-swap handling (2026-08-11).** Kyle asked for every eligibility scenario to be tested, including races against admin actions — not just the happy path already covered above. That turned up a real bug: `respondToSwap()`'s re-validation checked whether an assignment *row* was still swappable, but never whether it still belonged to the *player* the swap actually named — so if an admin reassigned either side of a pending swap for an unrelated reason before it was accepted (same row id, so every other check still passed), the original recipient's still-live accept link would silently execute a trade with whoever now occupied that seat, who never saw the proposal or agreed to anything. Verified live (propose Alice-for-Carol → admin reassigns Carol's slot to Bob → Carol accepts her original email → trade wrongly executes as Alice-for-Bob), then fixed by snapshotting `initiator_player_id`/`target_player_id` at proposal time and having `respondToSwap()` compare both against the *current* occupants before doing anything — a mismatch fails closed with the same `no_longer_available` reason used for every other accept-time rejection. Reassigning a slot with a pending swap on it now also cancels that swap outright (rather than leaving a dead-but-`pending` row for the other, uninvolved player to eventually hit this same check and fail with no explanation).
 
-Separately, Kyle asked what happens if the target player simply never responds — nothing did at the time. Two new cron passes close that gap: a one-time nudge email once within 48 hours of whichever of the two weeks' matches comes first (double the sub-request lead time, since this is a one-to-one negotiation with no fan-out to fall back on), and an automatic expiry once that same deadline actually passes with no response, so a stale swap can't permanently block either assignment from being part of some other trade later. A nudged-but-still-unanswered swap surfaces on the dashboard and Status page. See `CLAUDE.md`'s "Direct player-to-player swaps" section (the identity-drift guard and overdue-swap nudge/expiry paragraphs) for full implementation detail.
+Separately, Kyle asked what happens if the target player simply never responds — nothing did at the time. Two new cron passes close that gap: a one-time nudge email once within 48 hours of whichever of the two weeks' matches comes first (double the sub-request lead time, since this is a one-to-one negotiation with no fan-out to fall back on), and an automatic expiry once that same deadline actually passes with no response, so a stale swap can't permanently block either assignment from being part of some other trade later. A nudgderek-hut-still-unanswered swap surfaces on the dashboard and Status page. See `CLAUDE.md`'s "Direct player-to-player swaps" section (the identity-drift guard and overdue-swap nudge/expiry paragraphs) for full implementation detail.
 
 ## 18. Player-facing double-booking visibility: resolved 2026-08-11
 
@@ -170,7 +170,7 @@ One structural question was resolved before building: a single scannable page wi
 
 `GET /help` renders `help.ejs`: pure static content (no DB query, no session context) with one section per topic, each linking to the real page it describes rather than duplicating instructions that could drift out of sync with the actual UI, plus a closing glossary table of what each status badge (`scheduled`, `confirmed`, `needs_sub`, `subbed_out`, `double_booked`) actually means. Added as the first link in the public nav, ahead of My Page, since it's meant to be where someone starts if they don't know where anything else is yet. See `CLAUDE.md`'s "Player orientation page" section for implementation detail.
 
-**Follow-up, same conversation (2026-08-12): real screenshots turned out not to be possible.** Kyle's original ask for the help page included "good pictures of examples" of the real UI (choosing a blackout date, confirming, the reminder email, requesting a sub both from the email and the site, a player-to-player swap) rather than just prose. Attempted via a headless Chromium (Puppeteer) in the sandbox so screenshots would be pixel-accurate against the real production HTML/CSS, not a mockup — blocked by the sandbox's network allowlist (`storage.googleapis.com`, where Chromium's binary is hosted, returns `403 blocked-by-allowlist`), no system Chromium/Chrome available via `apt` either (no `sudo`, no cached package index), and no browser-automation tool (Claude in Chrome, computer-use) connected in this session. Left as an open item — either Kyle sends real screenshots from the live Pi-hosted site for proper placement/captioning, or a future session with a connected browser tool revisits it. Not asked to build a substitute (hand-drawn mockups) since that wasn't what was requested.
+**Follow-up, same conversation (2026-08-12): real screenshots turned out not to be possible.** Kyle's original ask for the help page included "good pictures of examples" of the real UI (choosing a blackout date, confirming, the reminder email, requesting a sub both from the email and the site, a player-to-player swap) rather than just prose. Attempted via a headless Chromium (Puppeteer) in the sandbox so screenshots would be pixel-accurate against the real production HTML/CSS, not a mockup — blocked by the sandbox's network allowlist (`storage.googleapis.com`, where Chromium's binary is hosted, returns `403 blockderek-hy-allowlist`), no system Chromium/Chrome available via `apt` either (no `sudo`, no cached package index), and no browser-automation tool (Claude in Chrome, computer-use) connected in this session. Left as an open item — either Kyle sends real screenshots from the live Pi-hosted site for proper placement/captioning, or a future session with a connected browser tool revisits it. Not asked to build a substitute (hand-drawn mockups) since that wasn't what was requested.
 
 ## 20. Admin process guide: resolved 2026-08-12
 

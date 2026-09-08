@@ -17,6 +17,22 @@
   </tbody>
 </table>
 
+<% if (subStats.length) { %>
+<h2>Subs who played this season</h2>
+<p class="muted">Not on this session's own roster — picked up a real game via the broader sub list, a self-arranged sub, or a one-time sub. Target and ball duty don't apply to them, so just their games played are shown.</p>
+<table>
+  <thead><tr><th>Player</th><th>Games played</th></tr></thead>
+  <tbody>
+    <% subStats.forEach(function(s) { %>
+      <tr>
+        <td><%= fullName(s.player) %></td>
+        <td><%= s.played %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
 <h2>Partner matrix</h2>
 <table>
   <thead>

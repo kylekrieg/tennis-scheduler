@@ -6,7 +6,7 @@ const db = require('../db');
  * point of the actual mutation in each admin.js route, with a short
  * machine-readable `action` tag (e.g. 'session.schedule', 'week.reassign')
  * and a human-readable `description` (e.g. "Reassigned Wed 9/9 slot from
- * Kyle Krieg to John Gunther") — this is meant to read as a plain history,
+ * Kyle Krieg to Marcus Gable") — this is meant to read as a plain history,
  * not a technical event stream, so put the readable summary in `description`
  * and let `action` just be a stable tag for future filtering.
  *

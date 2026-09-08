@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS admin_activity_log (
   admin_id      INTEGER REFERENCES admins(id), -- nullable defensively; admins are never hard-deleted today (only deactivated — see admin.js), but not relied on
   admin_name    TEXT NOT NULL, -- denormalized snapshot at the time of the action, so the log reads correctly with one query, no JOIN required
   action        TEXT NOT NULL, -- short machine-readable tag, e.g. 'session.schedule', 'week.reassign' — see activityLog.js for the full list
-  description   TEXT NOT NULL, -- human-readable summary, e.g. "Reassigned Wed 9/9 slot from Kyle Krieg to John Gunther"
+  description   TEXT NOT NULL, -- human-readable summary, e.g. "Reassigned Wed 9/9 slot from Kyle Krieg to Marcus Gable"
   session_id    INTEGER REFERENCES sessions(id), -- nullable (not every action is session-scoped, e.g. admin account management). Deliberately NOT cascaded on session delete, same reasoning as email_log.related_week_id — a change record should outlive a deleted session for support/history purposes. POST /admin/sessions/:id/delete nulls this out first, same pattern it already uses for email_log.related_week_id.
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

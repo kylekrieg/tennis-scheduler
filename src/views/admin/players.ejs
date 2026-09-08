@@ -17,11 +17,12 @@
   <div class="actions"><button class="btn green" type="submit">Add player</button></div>
 </form>
 
-<h2>All players</h2>
+<h2>Roster players</h2>
+<p class="muted">Everyone who's ever been enrolled on a season's roster (<code>session_players</code>) — including past/archived seasons, not just this year's.</p>
 <table class="wide">
   <thead><tr><th>Full name (admin/emails)</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>
-    <% players.forEach(function(p) { %>
+    <% rosterPlayers.forEach(function(p) { %>
       <tr>
         <td>
           <form method="post" action="/admin/players/<%= p.id %>/edit" id="edit-<%= p.id %>">
@@ -49,7 +50,49 @@
         </td>
       </tr>
     <% }) %>
+    <% if (!rosterPlayers.length) { %>
+      <tr><td colspan="6" class="muted">No one's been enrolled on a season roster yet.</td></tr>
+    <% } %>
   </tbody>
 </table>
-<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page. "Public name" is what players see on every public page (schedule, lookahead, My Page, PDF, calendar); "Full name" is shown only here on the admin side and in emails — leave it blank for a player and the public name is used instead until you fill it in. The URL slug (used for My Page links) is generated from the public name automatically when a player is added and never changes on its own when you edit either name — only edit it directly here if you need to resolve two players landing on the same slug (e.g. two "Brian B"s).</p>
+
+<h2>Subs &amp; one-time players</h2>
+<p class="muted">A real player record exists for these people — they claimed a sub slot, were subbed in by an admin, or were added as a one-time sub — but they've never actually been on a season roster. Fully editable the same as roster players (handy for fixing a name like "Derek Holloway" down to "Derek H" after a sub claims a spot for the first time), just kept separate so they don't get mistaken for a regular.</p>
+<table class="wide">
+  <thead><tr><th>Full name (admin/emails)</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    <% subPlayers.forEach(function(p) { %>
+      <tr>
+        <td>
+          <form method="post" action="/admin/players/<%= p.id %>/edit" id="edit-<%= p.id %>">
+            <input type="text" name="full_name" value="<%= p.full_name || '' %>" placeholder="(same as public name)" style="width:150px;display:inline-block;">
+          </form>
+        </td>
+        <td>
+          <input type="text" name="name" value="<%= p.name %>" form="edit-<%= p.id %>" style="width:120px;display:inline-block;">
+        </td>
+        <td>
+          <input type="email" name="email" value="<%= p.email %>" form="edit-<%= p.id %>" style="width:190px;display:inline-block;">
+        </td>
+        <td>
+          <input type="text" name="slug" value="<%= p.slug %>" form="edit-<%= p.id %>" style="width:110px;">
+          <div class="muted" style="font-size:11px;">/me/<%= p.slug %></div>
+        </td>
+        <td><%= p.active ? 'active' : 'inactive' %></td>
+        <td>
+          <button class="btn small neutral" type="submit" form="edit-<%= p.id %>">Save</button>
+          <% if (p.active) { %>
+            <form class="inline" method="post" action="/admin/players/<%= p.id %>/deactivate"><button class="btn small neutral" type="submit">Deactivate</button></form>
+          <% } else { %>
+            <form class="inline" method="post" action="/admin/players/<%= p.id %>/activate"><button class="btn small neutral" type="submit">Activate</button></form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+    <% if (!subPlayers.length) { %>
+      <tr><td colspan="6" class="muted">Nobody yet — this fills in the first time a broader-sub-list pick, self-arranged sub, or one-time sub gets a real player record.</td></tr>
+    <% } %>
+  </tbody>
+</table>
+<p class="muted">Editing a player's name/email is a pure identity swap — every existing week assignment, ball duty slot, and blackout date carries over unchanged. Enroll/target changes per session are on each session's Edit page. "Public name" is what players see on every public page (schedule, lookahead, My Page, PDF, calendar); "Full name" is shown only here on the admin side and in emails — leave it blank for a player and the public name is used instead until you fill it in. The URL slug (used for My Page links) is generated from the public name automatically when a player is added and never changes on its own when you edit either name — only edit it directly here if you need to resolve two players landing on the same slug (e.g. two "Colin B"s).</p>
 <%- include('../partials/footer') %>

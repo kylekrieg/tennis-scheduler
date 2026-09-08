@@ -351,7 +351,7 @@ router.get('/stats', (req, res) => {
     // per-player breakdown under the summary you just built." Same
     // sessionRosterStats() helper the per-session Stats page uses, so the
     // two pages can never disagree on what "played" or "ball duty" means.
-    const playerStats = sessionRosterStats(s.id);
+    const { roster: playerStats, subs: subStats } = sessionRosterStats(s.id);
 
     return {
       session: s,
@@ -364,6 +364,7 @@ router.get('/stats', (req, res) => {
       openSubs,
       ballDutyIssues: missingBallDuty + staleBallDuty,
       playerStats,
+      subStats,
     };
   });
 
@@ -746,7 +747,7 @@ function invalidPlayerFields(b) {
 // Blank is always fine (auto-generate on create, leave unchanged on edit);
 // only validated when the admin has actually typed something into the
 // field, so this is purely a manual override for the rare real collision
-// (e.g. two "Brian B"s) Kyle asked to be able to resolve by hand.
+// (e.g. two "Colin B"s) Kyle asked to be able to resolve by hand.
 function invalidSlugField(rawSlug, excludePlayerId) {
   const slug = (rawSlug || '').trim();
   if (!slug) return null;
@@ -861,19 +862,27 @@ function saveAdhocRoster(sessionId, body) {
   const existing = new Set(
     db.prepare('SELECT player_id FROM session_players WHERE session_id = ?').all(sessionId).map((r) => r.player_id)
   );
+  // Returns which player ids were actually added/removed (Kyle, 2026-09-07)
+  // so the session.update activity-log entry can name names instead of
+  // just saying "roster" changed — see describeSessionChanges() below.
+  const added = [];
+  const removed = [];
   for (const pid of playerIds) {
     if (!existing.has(pid)) {
       db.prepare('INSERT INTO session_players (session_id, player_id, target_games, priority) VALUES (?, ?, 0, NULL)').run(
         sessionId,
         pid
       );
+      added.push(pid);
     }
   }
   for (const pid of existing) {
     if (!playerIds.has(pid)) {
       db.prepare('DELETE FROM session_players WHERE session_id = ? AND player_id = ?').run(sessionId, pid);
+      removed.push(pid);
     }
   }
+  return { added, removed, targetChanged: [] };
 }
 
 router.post('/sessions', (req, res) => {
@@ -988,10 +997,19 @@ function saveRoster(sessionId, body) {
   // Advisory only — see scheduleRun.js's doc comment on why this doesn't
   // drive any automatic scheduling behavior.
   const priorities = [].concat(body.priority || []);
-  const existing = new Set(
-    db.prepare('SELECT player_id FROM session_players WHERE session_id = ?').all(sessionId).map((r) => r.player_id)
-  );
+  const existingRows = db
+    .prepare('SELECT player_id, target_games, priority FROM session_players WHERE session_id = ?')
+    .all(sessionId);
+  const existing = new Set(existingRows.map((r) => r.player_id));
+  const existingByPid = new Map(existingRows.map((r) => [r.player_id, r]));
   const seen = new Set();
+  // Returns which player ids were added/removed/had their target games or
+  // priority changed (Kyle, 2026-09-07) so the session.update activity-log
+  // entry can name names instead of just saying "roster" changed — see
+  // describeSessionChanges() below.
+  const added = [];
+  const removed = [];
+  const targetChanged = [];
   playerIds.forEach((pidRaw, idx) => {
     const pid = Number(pidRaw);
     const target = Number(targets[idx] || 0);
@@ -1000,6 +1018,8 @@ function saveRoster(sessionId, body) {
     const priority = priorityRaw === undefined || priorityRaw === '' ? null : Number(priorityRaw);
     seen.add(pid);
     if (existing.has(pid)) {
+      const before = existingByPid.get(pid);
+      if (before.target_games !== target || before.priority !== priority) targetChanged.push(pid);
       db.prepare('UPDATE session_players SET target_games = ?, priority = ? WHERE session_id = ? AND player_id = ?').run(
         target,
         priority,
@@ -1014,13 +1034,16 @@ function saveRoster(sessionId, body) {
       db.prepare(
         'INSERT INTO session_players (session_id, player_id, target_games, original_target, priority) VALUES (?, ?, ?, ?, ?)'
       ).run(sessionId, pid, target, target, priority);
+      added.push(pid);
     }
   });
   for (const pid of existing) {
     if (!seen.has(pid)) {
       db.prepare('DELETE FROM session_players WHERE session_id = ? AND player_id = ?').run(sessionId, pid);
+      removed.push(pid);
     }
   }
+  return { added, removed, targetChanged };
 }
 
 router.get('/sessions/:id/edit', (req, res) => {
@@ -1080,6 +1103,65 @@ router.get('/sessions/:id/edit', (req, res) => {
     flashMsg: popFlash(req),
   });
 });
+
+// Human-readable labels for every session.update-relevant column, in the
+// same order as the UPDATE statement below, each with a formatter for its
+// before/after value. Kyle, 2026-09-07: the activity log used to just say
+// "(dates, roster, or settings)" for every save no matter what actually
+// changed — this diffs the session row before vs. after the UPDATE (plus
+// the roster add/remove/target-change result from saveRoster()/
+// saveAdhocRoster()) and reports only the fields that actually moved.
+const SESSION_FIELD_LABELS = [
+  ['name', 'name', (v) => v || '—'],
+  ['start_date', 'start date', (v) => v || '—'],
+  ['end_date', 'end date', (v) => v || '—'],
+  ['match_day_of_week', 'day of week', (v) => (v === null || v === undefined || v === '' ? '—' : email.DOW_NAMES[Number(v)])],
+  ['match_time', 'match time', (v) => (v ? email.fmtTime(v) : '—')],
+  ['reminder_time', 'reminder time', (v) => v || '—'],
+  ['reminder_days_before', 'reminder days before', (v) => v],
+  ['follow_up_lead_hours', 'follow-up lead hours', (v) => v],
+  ['reminders_enabled', 'reminders', (v) => (Number(v) ? 'on' : 'off')],
+  ['courts', 'courts', (v) => v],
+  ['players_per_week', 'players per week', (v) => v],
+  ['lookahead_weeks', 'lookahead weeks', (v) => v],
+  ['club_name', 'club', (v) => v || '—'],
+  ['court_info', 'court', (v) => v || '—'],
+  ['color', 'color', (v) => v || '—'],
+  ['adhoc_invite_lead_hours', 'invite lead hours', (v) => v],
+  ['adhoc_reminder_lead_hours', 'reminder lead hours', (v) => v],
+  ['adhoc_final_lead_hours', 'final roster lead hours', (v) => v],
+  ['admin_report_emails', 'admin report emails', (v) => v || 'none'],
+  ['admin_report_lead_hours', 'admin report lead hours', (v) => v],
+  ['weather_enabled', 'weather forecast', (v) => (Number(v) ? 'on' : 'off')],
+  ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
+  ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
+];
+
+function playerNamesForIds(ids) {
+  if (!ids || !ids.length) return [];
+  const rows = db.prepare(`SELECT * FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  return rows.map((r) => fullName(r));
+}
+
+function describeSessionChanges(before, after, rosterResult) {
+  const parts = [];
+  const norm = (v) => (v === null || v === undefined ? '' : String(v));
+  for (const [col, label, fmt] of SESSION_FIELD_LABELS) {
+    if (norm(before[col]) !== norm(after[col])) {
+      parts.push(`${label}: "${fmt(before[col])}" → "${fmt(after[col])}"`);
+    }
+  }
+  if (rosterResult) {
+    const addedNames = playerNamesForIds(rosterResult.added);
+    const removedNames = playerNamesForIds(rosterResult.removed);
+    if (addedNames.length) parts.push(`roster: added ${addedNames.join(', ')}`);
+    if (removedNames.length) parts.push(`roster: removed ${removedNames.join(', ')}`);
+    if (rosterResult.targetChanged.length) {
+      parts.push(`roster: target games/priority updated for ${playerNamesForIds(rosterResult.targetChanged).join(', ')}`);
+    }
+  }
+  return parts.length ? parts.join('; ') : 'no changes';
+}
 
 router.post('/sessions/:id', (req, res) => {
   const b = req.body;
@@ -1158,12 +1240,13 @@ router.post('/sessions/:id', (req, res) => {
     parseOptionalFloat(b.weather_lon),
     req.params.id
   );
-  if (sessionType === 'adhoc') {
-    saveAdhocRoster(req.params.id, b);
-  } else {
-    saveRoster(req.params.id, b);
-  }
-  logActivity(req, { action: 'session.update', description: `Updated session "${email.sessionFullTitle(db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id))}" (dates, roster, or settings)`, sessionId: Number(req.params.id) });
+  const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
+  const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  logActivity(req, {
+    action: 'session.update',
+    description: `Updated session "${email.sessionFullTitle(updatedSession)}" (${describeSessionChanges(existingSession, updatedSession, rosterResult)})`,
+    sessionId: Number(req.params.id),
+  });
   const overlapWarning = overlapWarningText(req.params.id);
   const baseMsg =
     sessionType === 'adhoc'
@@ -1741,7 +1824,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
   // real inbox to confirm through), a sub-list pick always has a real email
   // — either an existing players row or a broader_sub_list entry with a
   // real address — so this branch does NOT auto-confirm. Kyle, 2026-09-07,
-  // after a real incident: he picked Ed Bourneuf from this dropdown, and Ed
+  // after a real incident: he picked Derek Holloway from this dropdown, and Derek
   // showed up on the admin page as already "confirmed" despite never having
   // clicked anything, even though a real confirmation email had gone out to
   // him (via the next automatic/manual reminder pass, which legitimately
@@ -2696,7 +2779,7 @@ router.get('/sessions/:id/stats', (req, res) => {
   // db/index.js's ensureColumn comment. Shown here so the season-long number
   // isn't lost the moment an admin has to resubmit the roster form for an
   // unrelated reason.
-  const stats = sessionRosterStats(session.id);
+  const { roster: stats, subs: subStats } = sessionRosterStats(session.id);
   const roster = stats.map((s) => s.player);
 
   // Partner matrix. Keyed by week + court + team, not just week + team — with
@@ -2763,14 +2846,35 @@ router.get('/sessions/:id/stats', (req, res) => {
     };
   });
 
-  res.render('admin/stats', { title: 'Stats', session, stats, roster, partnerCounts, subHistory });
+  res.render('admin/stats', { title: 'Stats', session, stats, subStats, roster, partnerCounts, subHistory });
 });
 
 // --- Players (global roster) ------------------------------------------
 
 router.get('/players', (req, res) => {
-  const players = db.prepare('SELECT * FROM players ORDER BY active DESC, name').all();
-  res.render('admin/players', { title: 'Players', players, flashMsg: popFlash(req) });
+  // Split into "roster players" (ever enrolled on a session's roster, per
+  // session_players — including archived seasons, since that table isn't
+  // touched by archiving, only by an explicit session delete) vs. "subs &
+  // one-time players" (a real players row exists — claimed a slot via the
+  // broader sub list, a self-arranged sub, an admin's sub-list Reassign
+  // pick, or a one-time not-on-roster sub — but they've never actually been
+  // on any season's roster). Kyle, 2026-09-08: after Derek Holloway (a broader-
+  // sub-list pickup) showed up on this page indistinguishable from the
+  // actual regulars, flagged that this page reads as "the season roster"
+  // when it's really always been "every player identity that exists" —
+  // true even before broader-sub-list subs got real player rows, since a
+  // one-time sub's placeholder row landed here too, just less often noticed.
+  // Both groups render through the exact same editable table — a sub still
+  // sometimes needs a name/email correction here (see the Derek Holloway
+  // cleanup entry in CLAUDE.md) — this is purely a display grouping, not a
+  // capability change.
+  const rosterPlayerIds = new Set(
+    db.prepare('SELECT DISTINCT player_id FROM session_players').all().map((r) => r.player_id)
+  );
+  const allPlayers = db.prepare('SELECT * FROM players ORDER BY active DESC, name').all();
+  const rosterPlayers = allPlayers.filter((p) => rosterPlayerIds.has(p.id));
+  const subPlayers = allPlayers.filter((p) => !rosterPlayerIds.has(p.id));
+  res.render('admin/players', { title: 'Players', rosterPlayers, subPlayers, flashMsg: popFlash(req) });
 });
 
 router.post('/players', (req, res) => {
@@ -2813,7 +2917,7 @@ router.post('/players/:id/edit', (req, res) => {
   // 2026-08-26 — see playerSlug.js's doc comment): a bookmarked/emailed My
   // Page link should keep working through a name correction. It's only
   // touched here if the admin explicitly types a different value into the
-  // URL slug field, e.g. to resolve a real "two Brian B's" collision.
+  // URL slug field, e.g. to resolve a real "two Colin B's" collision.
   const fieldError = invalidPlayerFields(req.body);
   if (fieldError) {
     flash(req, fieldError, 'error');
@@ -3058,6 +3162,20 @@ router.post('/sessions/:id/subs', (req, res) => {
   if (!session) return res.status(404).send('Session not found');
   const selectedBroaderIds = [].concat(req.body.sub_ids || []).map(Number);
   const selectedPlayerIds = [].concat(req.body.player_ids || []).map(Number);
+
+  // This form replaces the session's *entire* sub list on every submit
+  // (delete-then-reinsert-all below), so the activity log used to just
+  // report the resulting totals ("4 from the broader list, 0 players") —
+  // which told an admin nothing about who actually changed. Kyle,
+  // 2026-09-07: capture what was assigned before this submit so the log
+  // can call out the actual names added/removed instead.
+  const beforeBroaderIds = new Set(
+    db.prepare('SELECT broader_list_id FROM session_sub_list WHERE session_id = ?').all(session.id).map((r) => r.broader_list_id)
+  );
+  const beforePlayerIds = new Set(
+    db.prepare('SELECT player_id FROM session_sub_players WHERE session_id = ?').all(session.id).map((r) => r.player_id)
+  );
+
   db.transaction(() => {
     db.prepare('DELETE FROM session_sub_list WHERE session_id = ?').run(session.id);
     const insertBroader = db.prepare('INSERT OR IGNORE INTO session_sub_list (session_id, broader_list_id) VALUES (?, ?)');
@@ -3066,10 +3184,33 @@ router.post('/sessions/:id/subs', (req, res) => {
     const insertPlayer = db.prepare('INSERT OR IGNORE INTO session_sub_players (session_id, player_id) VALUES (?, ?)');
     for (const id of selectedPlayerIds) insertPlayer.run(session.id, id);
   })();
+
+  const addedBroaderIds = selectedBroaderIds.filter((id) => !beforeBroaderIds.has(id));
+  const removedBroaderIds = [...beforeBroaderIds].filter((id) => !selectedBroaderIds.includes(id));
+  const addedPlayerIds = selectedPlayerIds.filter((id) => !beforePlayerIds.has(id));
+  const removedPlayerIds = [...beforePlayerIds].filter((id) => !selectedPlayerIds.includes(id));
+
+  const namesFor = (table, ids) => {
+    if (!ids.length) return [];
+    const rows = db.prepare(`SELECT * FROM ${table} WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+    return rows.map((r) => fullName(r));
+  };
+  const addedBroaderNames = namesFor('broader_sub_list', addedBroaderIds);
+  const removedBroaderNames = namesFor('broader_sub_list', removedBroaderIds);
+  const addedPlayerNames = namesFor('players', addedPlayerIds);
+  const removedPlayerNames = namesFor('players', removedPlayerIds);
+
+  const changeParts = [];
+  if (addedBroaderNames.length) changeParts.push(`added ${addedBroaderNames.join(', ')} to the broader sub list for this session`);
+  if (removedBroaderNames.length) changeParts.push(`removed ${removedBroaderNames.join(', ')} from the broader sub list for this session`);
+  if (addedPlayerNames.length) changeParts.push(`added ${addedPlayerNames.join(', ')} as player sub(s) for this session`);
+  if (removedPlayerNames.length) changeParts.push(`removed ${removedPlayerNames.join(', ')} as player sub(s) for this session`);
+  const changeSummary = changeParts.length ? changeParts.join('; ') : 'no change from before';
+
   const total = selectedBroaderIds.length + selectedPlayerIds.length;
   logActivity(req, {
     action: 'subs.session_assign',
-    description: `Set ${total} sub(s) for ${email.sessionFullTitle(session)} (${selectedBroaderIds.length} from the broader list, ${selectedPlayerIds.length} players)`,
+    description: `Set ${total} sub(s) for ${email.sessionFullTitle(session)} (${changeSummary})`,
     sessionId: session.id,
   });
   flash(req, `Sub list updated for ${session.name} — ${total} assigned.`);

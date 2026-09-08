@@ -131,7 +131,10 @@ router.get('/stats', (req, res) => {
       `SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'regular' AND status IN ('scheduled', 'active') ${SESSION_DISPLAY_ORDER}`
     )
     .all();
-  const rows = sessions.map((s) => ({ session: s, playerStats: sessionRosterStats(s.id) }));
+  const rows = sessions.map((s) => {
+    const { roster: playerStats, subs: subStats } = sessionRosterStats(s.id);
+    return { session: s, playerStats, subStats };
+  });
   res.render('player_stats', { title: 'Player Stats', rows });
 });
 
@@ -984,7 +987,7 @@ router.get('/me/:idOrSlug', (req, res) => {
   // sessionsForPlayer() (sessionHelper.js) covers both roster enrollment
   // *and* any session a sub currently has a real upcoming assignment in
   // without ever being on that session's own roster — see its doc comment
-  // (Kyle, 2026-09-07: Ed's confirmed sub slot was invisible here before
+  // (Kyle, 2026-09-07: Derek's confirmed sub slot was invisible here before
   // this fix, since he was never added to session_players).
   const sessions = sessionsForPlayer(playerId, todayIso);
 

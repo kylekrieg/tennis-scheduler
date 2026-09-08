@@ -7,14 +7,14 @@ const { runScheduler } = require('../services/scheduleRun');
 
 const roster = [
   { name: 'Kyle Krieg', email: 'kyle@example.com', target: 14 },
-  { name: 'John Gunther', email: 'john@example.com', target: 14 },
-  { name: 'Brian Beracha', email: 'brian.b@example.com', target: 7 },
-  { name: 'Shawn Anderson', email: 'shawn@example.com', target: 7 },
-  { name: 'Michael Gibbons', email: 'michael@example.com', target: 7 },
-  { name: 'Greg Johnson', email: 'greg@example.com', target: 7 },
-  { name: 'Doug Geiger', email: 'doug@example.com', target: 4 },
-  { name: 'Bart Lautenbach', email: 'bart@example.com', target: 4 },
-  { name: 'Brian Potter', email: 'brian.p@example.com', target: 4 },
+  { name: 'Marcus Gable', email: 'marcus@example.com', target: 14 },
+  { name: 'Colin Baxter', email: 'colin.b@example.com', target: 7 },
+  { name: 'Trevor Ashford', email: 'trevor@example.com', target: 7 },
+  { name: 'Noah Griffin', email: 'noah@example.com', target: 7 },
+  { name: 'Felix Jansen', email: 'felix@example.com', target: 7 },
+  { name: 'Owen Garrity', email: 'owen@example.com', target: 4 },
+  { name: 'Dean Lockhart', email: 'dean@example.com', target: 4 },
+  { name: 'Nathan Prescott', email: 'nathan.p@example.com', target: 4 },
 ];
 
 function todayPlus(days) {

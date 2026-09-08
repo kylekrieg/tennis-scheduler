@@ -30,6 +30,20 @@
         </tbody>
       </table>
     <% } %>
+    <% if (r.subStats.length) { %>
+      <h3>Subs who played this season</h3>
+      <table class="wide">
+        <thead><tr><th>Player</th><th>Games played</th></tr></thead>
+        <tbody>
+          <% r.subStats.forEach(function(s) { %>
+            <tr>
+              <td><a href="/me/<%= s.player.slug || s.player.id %>"><%= s.player.name %></a></td>
+              <td><%= s.played %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
   </div>
 <% }) %>
 

@@ -321,6 +321,21 @@ function carriedOverBlackoutsForSession(sessionId) {
  * games that count toward the player's own configured target, not
  * necessarily a match that's already happened. `ballDuty` is a season-wide
  * count of weeks.ball_duty_player_id matches, not just upcoming ones.
+ *
+ * Returns `{ roster, subs }` (Kyle, 2026-09-08 — previously returned the
+ * `roster` array bare; every call site updated accordingly). `subs` is
+ * anyone who's actually played a real game (`is_sub = 1`, not
+ * `subbed_out`) in this session but was never on its own roster — a
+ * broader-sub-list pickup, a self-arranged sub, an admin's sub-list
+ * Reassign pick, or a one-time not-on-roster sub. Deliberately NOT everyone
+ * on the broader sub list or a session's sub-candidate list — those are
+ * eligibility/willingness lists, most of whom may never have actually
+ * played; a stats page should reflect real play history, not who's merely
+ * willing. `target`/`originalTarget`/`ballDuty` don't apply to a sub (no
+ * `session_players` row to hold a target, and the ball-duty algorithm only
+ * ever considers roster members) so `subs` entries carry only `player` and
+ * `played` — no blank/zero columns pretending those concepts exist for
+ * them.
  */
 function sessionRosterStats(sessionId) {
   const roster = db
@@ -354,7 +369,8 @@ function sessionRosterStats(sessionId) {
     .all(sessionId);
   const ballDutyMap = new Map(ballDutyCounts.map((r) => [r.player_id, r.n]));
 
-  return roster.map((p) => ({
+  const rosterIds = new Set(roster.map((p) => p.id));
+  const rosterStats = roster.map((p) => ({
     player: p,
     target: targetMap.get(p.id) || 0,
     originalTarget: originalTargetMap.get(p.id),
@@ -362,6 +378,16 @@ function sessionRosterStats(sessionId) {
     subBonus: subBonusMap.get(p.id) || 0,
     ballDuty: ballDutyMap.get(p.id) || 0,
   }));
+
+  const subPlayerIds = [...subBonusMap.keys()].filter((id) => !rosterIds.has(id));
+  const subs = subPlayerIds.length
+    ? db
+        .prepare(`SELECT * FROM players WHERE id IN (${subPlayerIds.map(() => '?').join(',')}) ORDER BY name`)
+        .all(...subPlayerIds)
+        .map((p) => ({ player: p, played: subBonusMap.get(p.id) || 0 }))
+    : [];
+
+  return { roster: rosterStats, subs };
 }
 
 /**
@@ -417,9 +443,9 @@ function weekEmailRecipients(week, session) {
  * session_sub_players both only ever get a week_assignments row, never a
  * session_players one (see "Session sub list" and "One-time sub" in
  * CLAUDE.md). Without this, a confirmed sub's own upcoming match was
- * completely invisible on both their My Page and their calendar feed — Ed
+ * completely invisible on both their My Page and their calendar feed — Derek
  * Bourneuf's real, confirmed slot for 2026-09-09 (Kyle, 2026-09-07: "When I
- * click on Ed's my page it shows a blank page except for his calendar
+ * click on Derek's my page it shows a blank page except for his calendar
  * link... I thought when a player subs... their week would show up") is
  * the case that surfaced this.
  *
@@ -447,8 +473,8 @@ function sessionsForPlayer(playerId, todayIso = new Date().toISOString().slice(0
  * Reorders a week's assignment rows so a sub's row lands immediately after
  * (and indented beneath, via the `subDepth` this attaches) the slot they
  * replaced, instead of wherever it happened to fall in the plain
- * court/team ordering — Kyle, 2026-09-07: "place Ed's name under Jon D and
- * indent Ed's line so an admin knows that Ed is the one subbing for Jon...
+ * court/team ordering — Kyle, 2026-09-07: "place Derek's name under Perry D and
+ * indent Derek's line so an admin knows that Derek is the one subbing for Perry...
  * This might be a bit more clear if we have two players asking for subs."
  *
  * Prefers the real `week_assignments.replaces_assignment_id` link (set at

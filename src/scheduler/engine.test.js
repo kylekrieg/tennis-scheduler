@@ -18,14 +18,14 @@ console.log('Test 1: example roster (9 players, 17 weeks, no blackouts)');
 {
   const players = [
     { id: 1, name: 'Kyle Krieg', target: 14 },
-    { id: 2, name: 'John Gunther', target: 14 },
-    { id: 3, name: 'Brian Beracha', target: 7 },
-    { id: 4, name: 'Shawn Anderson', target: 7 },
-    { id: 5, name: 'Michael Gibbons', target: 7 },
-    { id: 6, name: 'Greg Johnson', target: 7 },
-    { id: 7, name: 'Doug Geiger', target: 4 },
-    { id: 8, name: 'Bart Lautenbach', target: 4 },
-    { id: 9, name: 'Brian Potter', target: 4 },
+    { id: 2, name: 'Marcus Gable', target: 14 },
+    { id: 3, name: 'Colin Baxter', target: 7 },
+    { id: 4, name: 'Trevor Ashford', target: 7 },
+    { id: 5, name: 'Noah Griffin', target: 7 },
+    { id: 6, name: 'Felix Jansen', target: 7 },
+    { id: 7, name: 'Owen Garrity', target: 4 },
+    { id: 8, name: 'Dean Lockhart', target: 4 },
+    { id: 9, name: 'Nathan Prescott', target: 4 },
   ];
   const weeks = makeWeeks(17);
   const isBlackedOut = () => false;

@@ -390,7 +390,7 @@ ensureColumn('sessions', 'weather_lat', 'REAL');
 ensureColumn('sessions', 'weather_lon', 'REAL');
 
 // Public name vs. full name (Kyle, 2026-09-07): "In the player roster... I
-// used Kyle K, or John G. This is what shows up on the public screen. This is
+// used Kyle K, or Marcus G. This is what shows up on the public screen. This is
 // fine as last names are not shown, but for the broader sub list, I have full
 // names called out... everywhere we have a public facing page, we should use
 // the public name field. Any where we have an admin looking at it, it should

@@ -11,7 +11,7 @@
  *
  * Name-based "My Page" URLs (Kyle, 2026-08-26): "players personal URL end
  * with a number. Is there a way to change that so the URL is their name? If
- * we do have 2 'Brian B' or 'John H' we'll need to figure out another
+ * we do have 2 'Colin B' or 'John H' we'll need to figure out another
  * method but as of right now, everybody has a unique first name and last
  * initial."
  *
@@ -22,7 +22,7 @@
  * of a bookmarkable URL is that it keeps working, so a name correction or
  * an admin fixing a typo shouldn't quietly break every link a player has
  * already bookmarked, printed, or saved in a calendar app. If a real
- * collision ever does happen (two "Brian B"s), the admin can manually set a
+ * collision ever does happen (two "Colin B"s), the admin can manually set a
  * distinct slug for one of them from the Players page — see admin.js's
  * invalidSlug()/slugTaken() and admin/players.ejs's new "URL slug" field.
  */
