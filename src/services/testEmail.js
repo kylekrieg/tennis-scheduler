@@ -149,6 +149,12 @@ const NEEDS_SESSION_WEEK = new Set([
   'sendSubFilledNotice',
   'sendSwapGroupNotice',
   'sendAdminWeekReport',
+  // "I found my own sub" flow (Kyle, 2026-09-08 — these four had no test
+  // entry at all until now, see the doc comment above TEMPLATES):
+  'sendFoundSubVerification',
+  'sendSelfArrangedSubInvite',
+  'sendSelfArrangedSubConfirmation',
+  'sendNewSubListEntryAlert',
 ]);
 
 /**
@@ -171,6 +177,8 @@ const TEMPLATES = {
       session: ctx.session,
       confirmToken: fakeToken(),
       needSubToken: fakeToken(),
+      foundSubToken: fakeToken(),
+      manuallyPlaced: false,
       upcomingWeeks: subFlow.upcomingWeeksPreview(ctx.session.id, ctx.week.match_date, 3),
       test: true,
     }),
@@ -184,6 +192,8 @@ const TEMPLATES = {
       session: ctx.session,
       confirmToken: fakeToken(),
       needSubToken: fakeToken(),
+      foundSubToken: fakeToken(),
+      manuallyPlaced: false,
       test: true,
     }),
   },
@@ -245,6 +255,52 @@ const TEMPLATES = {
       week: ctx.week,
       session: ctx.session,
       subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      test: true,
+    }),
+  },
+  found_sub_verification: {
+    label: 'Found your own sub — "confirm it\'s you" gate',
+    fn: 'sendFoundSubVerification',
+    build: (ctx) => ({ player: ctx.player, week: ctx.week, session: ctx.session, foundSubToken: fakeToken(), test: true }),
+  },
+  self_arranged_invite: {
+    label: 'Found your own sub — invite to the sub',
+    fn: 'sendSelfArrangedSubInvite',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      claimToken: fakeToken(),
+      requestingPlayerName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Player',
+      test: true,
+    }),
+  },
+  self_arranged_self_notice: {
+    label: 'Found your own sub — your own confirmation',
+    fn: 'sendSelfArrangedSubConfirmation',
+    build: (ctx) => ({
+      player: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      test: true,
+    }),
+  },
+  new_sub_list_entry_alert: {
+    // Real function sends to session.admin_report_emails, not to any
+    // player — same as sendAdminWeekReport, this only actually delivers
+    // when the chosen session has that field configured (matches
+    // production exactly: see sendNewSubListEntryAlert's own early-return
+    // when it's blank). newPersonName/newPersonEmail are synthetic since a
+    // real one only ever exists via arrangeSelfSub() naming a stranger.
+    label: 'Admin alert — new sub list entry',
+    fn: 'sendNewSubListEntryAlert',
+    build: (ctx) => ({
+      session: ctx.session,
+      week: ctx.week,
+      newPersonName: 'Test NewPerson',
+      newPersonEmail: 'test-newperson@example.com',
+      addedByPlayerName: fullName(ctx.player),
       test: true,
     }),
   },

@@ -431,6 +431,16 @@ function nextWeeksPreviewHtml(weeks) {
  * admin.js's resend route, all three of which pass the same `raw` value for
  * confirmToken/needSubToken/foundSubToken).
  */
+/** "24 hours" / "1 hour" — this session's configured escalation_lead_hours
+ * (Kyle, 2026-09-08), used by both sendSubRequestOwnConfirmation() and
+ * sendSelfArrangedSubConfirmation() so the copy in each always matches
+ * escalateOverdueRequests()'s actual per-session timing instead of a
+ * hardcoded 24. */
+function escalationHoursPhrase(session) {
+  const h = session.escalation_lead_hours;
+  return `${h} hour${h === 1 ? '' : 's'}`;
+}
+
 function foundSubLine(foundSubToken) {
   if (!foundSubToken) return '';
   const url = `${siteUrl()}/found-sub/${foundSubToken}`;
@@ -550,12 +560,12 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
  * them to chase it down). Now takes `candidates` (exactly who fanOutSubRequest
  * just emailed) and `sessionSubs` (this session's own escalation list, see
  * sessionSubList()) so the email can spell out the whole plan up front —
- * right now, in 24h if nobody's responded, and what to do if nobody ever
- * does. The escalation window is a plain 24h constant, same as
- * escalateOverdueRequests() below — not currently a per-session configurable
- * field the way follow_up_lead_hours/admin_report_lead_hours are, so this
- * copy is written to match that fixed number; if that ever becomes
- * configurable, this text needs to read it the same way.
+ * right now, and what to do if nobody ever does. The escalation window
+ * reads `session.escalation_lead_hours` (Kyle, 2026-09-08 — was a plain 24h
+ * constant, same as escalateOverdueRequests() below, until that became a
+ * per-session field the same way follow_up_lead_hours/admin_report_lead_hours
+ * already were) — this copy always matches whatever that session is actually
+ * configured to do, not a hardcoded number.
  */
 async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, test = false }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
@@ -572,7 +582,7 @@ async function sendSubRequestOwnConfirmation({ player, week, session, candidates
     <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Here's exactly what happens from here:</p>
     <ul>
       <li><strong>Right now:</strong> ${candidateNames ? `an email just went out to ${candidateNames} — first to confirm takes the spot.` : `no one else on the roster was free to ask for this date — see the next step below.`}</li>
-      <li><strong>If no one responds within 24 hours of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>
+      <li><strong>If no one responds within ${escalationHoursPhrase(session)} of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>
       <li><strong>If no one has confirmed by match time:</strong> please contact your admin for help finding a replacement.</li>
     </ul>
     <p>You'll get a separate email the moment someone actually confirms — no need to keep checking.</p>
@@ -729,7 +739,7 @@ async function sendSelfArrangedSubConfirmation({ player, week, session, subName,
     <p>Got it — we've emailed <strong>${subName}</strong> asking them to confirm they're covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
     <ul>
       <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
-      <li><strong>If they haven't confirmed within 24 hours of the match:</strong> the request automatically opens up to this session's regular sub list, the same as any other sub request.</li>
+      <li><strong>If they haven't confirmed within ${escalationHoursPhrase(session)} of the match:</strong> the request automatically opens up to this session's regular sub list, the same as any other sub request.</li>
       <li><strong>If nobody has confirmed by match time:</strong> please contact your admin for help.</li>
     </ul>
     <p><strong>Named the wrong person, or they didn't actually agree?</strong> Reach out right away so it can be sorted out before match time.</p>

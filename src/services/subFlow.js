@@ -582,7 +582,7 @@ async function claimSub(rawToken) {
  * use — one sub_requests row, one sub_offers row for the named person — so
  * claimSub() (the actual confirm-and-take-the-slot mutation), the
  * needs_sub/subbed_out badge logic, the Stats page's Sub History table, and
- * escalateOverdueRequests()'s 24-hours-before-match fallback all work
+ * escalateOverdueRequests()'s configurable-hours-before-match fallback all work
  * completely unmodified. If the named person never confirms, that fallback
  * fires exactly as it would for any other still-`open` request — no special
  * casing needed here for "what if they don't respond" (Kyle's own pick,
@@ -776,12 +776,15 @@ function closeActiveSubRequestForAssignment(weekAssignmentId) {
   return true;
 }
 
-/** Cron entry point: for any sub_request still open once we're within 24
- * hours *before* its week's match day/time (i.e. the original 5 didn't fill
- * it in time), fan out to the broader escalation list. Uses the same
- * timezone-aware wall-clock conversion as the reminder emails (tz.js) rather
- * than raw SQLite datetime math, since match_time is stored as local wall
- * time, not UTC. */
+/** Cron entry point: for any sub_request still open once we're within this
+ * session's configured escalation_lead_hours *before* its week's match
+ * day/time (i.e. the original 5 didn't fill it in time), fan out to the
+ * broader escalation list. Per-session, not hardcoded (Kyle, 2026-09-08) —
+ * defaults to 24h, same as the app's original fixed behavior, but each
+ * session can widen or narrow that window from Admin -> Sessions -> Edit.
+ * Uses the same timezone-aware wall-clock conversion as the reminder emails
+ * (tz.js) rather than raw SQLite datetime math, since match_time is stored
+ * as local wall time, not UTC. */
 async function escalateOverdueRequests() {
   const tz = getTimezone();
   const now = new Date();
@@ -807,7 +810,7 @@ async function escalateOverdueRequests() {
     const week = getWeekWithSession(req.week_id);
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
     const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
-    const escalateAt = new Date(matchAt.getTime() - 24 * 60 * 60 * 1000); // 24h before match
+    const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
     if (now < escalateAt) continue;
 
     escalatedCount++;

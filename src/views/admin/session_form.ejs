@@ -88,6 +88,10 @@
     <label for="admin_report_lead_hours">Send status report — hours before match time</label>
     <input type="number" name="admin_report_lead_hours" id="admin_report_lead_hours" value="<%= session ? session.admin_report_lead_hours : 8 %>" min="1">
 
+    <label for="escalation_lead_hours">Escalate to broader sub list — hours before match time</label>
+    <input type="number" name="escalation_lead_hours" id="escalation_lead_hours" value="<%= session ? session.escalation_lead_hours : 24 %>" min="1">
+    <p class="muted">If a sub request is still open this many hours before match time, it opens up beyond the original 5 non-playing regulars to this session's broader sub list (Admin -&gt; Sub List). Defaults to 24.</p>
+
     <label for="players_per_week">Players per week</label>
     <input type="number" name="players_per_week" id="players_per_week" value="<%= session ? session.players_per_week : 4 %>" min="4" step="4">
     <p class="muted">Must be a multiple of 4 — one doubles court is 4 players. 8 for 2 courts running at once, 12 for 3, and so on.</p>

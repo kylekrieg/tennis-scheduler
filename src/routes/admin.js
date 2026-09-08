@@ -809,6 +809,17 @@ function invalidFollowUpLeadHours(b) {
   return null;
 }
 
+// Broader sub list escalation lead time (Kyle, 2026-09-08) — same "plain
+// positive whole number of hours before match time" shape as the two
+// validators above; see escalateOverdueRequests() in subFlow.js.
+function invalidEscalationLeadHours(b) {
+  const hours = Number(b.escalation_lead_hours);
+  if (b.escalation_lead_hours !== undefined && (!Number.isInteger(hours) || hours <= 0)) {
+    return 'Escalation lead time must be a whole number of hours before match time, greater than 0.';
+  }
+  return null;
+}
+
 // Weather forecast (Kyle, 2026-09-05) — a per-session opt-in checkbox plus
 // lat/lon, shared by both regular and ad-hoc sessions (unlike the admin
 // report/ad-hoc-timing fields above, which are scoped to one session type
@@ -920,6 +931,11 @@ router.post('/sessions', (req, res) => {
     flash(req, followUpError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const escalationError = invalidEscalationLeadHours(b);
+  if (escalationError) {
+    flash(req, escalationError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -930,8 +946,8 @@ router.post('/sessions', (req, res) => {
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
-        admin_report_emails, admin_report_lead_hours, weather_enabled, weather_lat, weather_lon, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -955,6 +971,7 @@ router.post('/sessions', (req, res) => {
       Number(b.adhoc_final_lead_hours || 24),
       (b.admin_report_emails || '').trim() || null,
       Number(b.admin_report_lead_hours || 8),
+      Number(b.escalation_lead_hours || 24),
       b.weather_enabled ? 1 : 0,
       parseOptionalFloat(b.weather_lat),
       parseOptionalFloat(b.weather_lon),
@@ -1132,6 +1149,7 @@ const SESSION_FIELD_LABELS = [
   ['adhoc_final_lead_hours', 'final roster lead hours', (v) => v],
   ['admin_report_emails', 'admin report emails', (v) => v || 'none'],
   ['admin_report_lead_hours', 'admin report lead hours', (v) => v],
+  ['escalation_lead_hours', 'escalation lead hours', (v) => v],
   ['weather_enabled', 'weather forecast', (v) => (Number(v) ? 'on' : 'off')],
   ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
@@ -1204,6 +1222,11 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, followUpError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const escalationError = invalidEscalationLeadHours(b);
+  if (escalationError) {
+    flash(req, escalationError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -1213,7 +1236,7 @@ router.post('/sessions/:id', (req, res) => {
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
-     admin_report_emails=?, admin_report_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=? WHERE id=?`
+     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -1235,6 +1258,7 @@ router.post('/sessions/:id', (req, res) => {
     Number(b.adhoc_final_lead_hours || 24),
     (b.admin_report_emails || '').trim() || null,
     Number(b.admin_report_lead_hours || 8),
+    Number(b.escalation_lead_hours || 24),
     b.weather_enabled ? 1 : 0,
     parseOptionalFloat(b.weather_lat),
     parseOptionalFloat(b.weather_lon),

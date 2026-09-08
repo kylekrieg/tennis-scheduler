@@ -421,6 +421,15 @@ raw.exec(`
     AND EXISTS (SELECT 1 FROM broader_sub_list bsl WHERE bsl.email = players.email)
 `);
 
+// Escalation lead time (Kyle, 2026-09-08): "do we have sending out the sub
+// request email to the broader sub email list hard coded to a time, or is
+// that time configured in each session?" It was hard-coded (24h before match,
+// same for every session) in subFlow.js's escalateOverdueRequests() — this
+// makes it a per-session field like follow_up_lead_hours/
+// admin_report_lead_hours above. Default 24 matches the prior hardcoded
+// behavior exactly, so no existing session's timing changes on upgrade.
+ensureColumn('sessions', 'escalation_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.
