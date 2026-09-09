@@ -36,12 +36,18 @@ function issueToken(weekAssignmentId) {
  * if its week has already locked — the locked check here is a second line
  * of defense alongside invalidateTokensForWeek, in case cleanup hasn't run
  * for some reason (e.g. the cron tick that would have locked it hasn't
- * fired yet at the exact moment of the request). */
+ * fired yet at the exact moment of the request).
+ *
+ * p.full_name included (Kyle, 2026-09-09) — public.js's /confirm, /need-sub,
+ * and /found-sub token routes now log these player actions to the Activity
+ * Log (see activityLog.js's logPlayerActivity), which is an admin-facing
+ * view, so fullName() needs a full_name to prefer over the short public
+ * `.name` — same "admin sees full names" rule as everywhere else. */
 function findAssignmentByToken(rawToken) {
   const hashed = hashToken(rawToken);
   const row = db
     .prepare(
-      `SELECT wa.*, p.name, p.email, p.slug, w.locked AS week_locked
+      `SELECT wa.*, p.name, p.email, p.slug, p.full_name, w.locked AS week_locked
        FROM week_assignment_tokens t
        JOIN week_assignments wa ON wa.id = t.week_assignment_id
        JOIN players p ON p.id = wa.player_id

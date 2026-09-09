@@ -1,6 +1,8 @@
 'use strict';
 const db = require('../db');
 const { generateRawToken, hashToken } = require('./tokens');
+const { logPlayerActivity } = require('./activityLog');
+const { fullName } = require('./playerName');
 
 /**
  * Service layer for ad-hoc pickup-game sessions (sessions.session_type =
@@ -118,7 +120,7 @@ function findSignupByToken(rawToken) {
   const hashed = hashToken(rawToken);
   const row = db
     .prepare(
-      `SELECT ads.*, p.name, p.email, p.slug, w.match_date, w.locked AS week_locked, w.session_id
+      `SELECT ads.*, p.name, p.email, p.slug, p.full_name, w.match_date, w.locked AS week_locked, w.session_id
        FROM adhoc_signups ads
        JOIN players p ON p.id = ads.player_id
        JOIN weeks w ON w.id = ads.week_id
@@ -154,6 +156,15 @@ function recordSignup(rawToken) {
   if (!row) return null;
   if (!row.signed_up_at) {
     db.prepare("UPDATE adhoc_signups SET signed_up_at = datetime('now') WHERE id = ?").run(row.id);
+    // Activity log — only on the actual first-time signup, not the harmless
+    // repeat-click no-op above (Kyle, 2026-09-09: searchable breadcrumb of
+    // player actions). Admin-facing, full name.
+    logPlayerActivity({
+      playerName: fullName(row),
+      action: 'adhoc.signup',
+      description: `${fullName(row)} signed up for the ${row.match_date} pickup session`,
+      sessionId: row.session_id,
+    });
   }
   return db.prepare('SELECT * FROM adhoc_signups WHERE id = ?').get(row.id);
 }

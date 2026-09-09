@@ -127,7 +127,7 @@
       <div class="flow-branch-label">From the Request a Sub page</div>
       <div class="flow-step">
         <div class="flow-title">Picks their week — no link yet</div>
-        <div class="flow-detail">They get a verification email first. Nothing goes out to anyone else until they click the link in it — bot/mis-click protection, since this page has no login. Once it does fire, their own confirmation email names exactly who was just asked, when it escalates (24h, below) and to whom, and to contact you if nobody's confirmed by match time — so they're not left guessing or duplicating effort by texting someone who's already been emailed.</div>
+        <div class="flow-detail">They get a verification email first. Nothing goes out to anyone else until they click the link in it — bot/mis-click protection, since this page has no login. Once it does fire, their own confirmation email names exactly who was just asked, when it escalates (see below — 24h by default, configurable per session) and to whom, and to contact you if nobody's confirmed by match time — so they're not left guessing or duplicating effort by texting someone who's already been emailed.</div>
       </div>
     </div>
     <div class="flow-branch">
@@ -161,7 +161,7 @@
       <div class="flow-branch-label">Nobody claims it yet</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step">
-        <div class="flow-when">24 hours before match</div>
+        <div class="flow-when">24 hours before match (configurable per session, see Sessions -&gt; Edit)</div>
         <div class="flow-title">Escalates to this session's sub list</div>
         <div class="flow-detail">Only the subs assigned to this specific session via Manage subs get emailed — none assigned sends it straight to unfilled instead, no email.</div>
       </div>
@@ -232,7 +232,7 @@
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">Named person gets a confirm email</div>
-    <div class="flow-detail">Same wording as any other sub offer. If they don't respond, this falls into the exact same 24-hour escalation-to-the-sub-list path as a normal Request a Sub — nothing special about how it was created changes what happens if it stalls.</div>
+    <div class="flow-detail">Same wording as any other sub offer. If they don't respond, this falls into the exact same escalation-to-the-sub-list path as a normal Request a Sub (24h before match by default, configurable per session) — nothing special about how it was created changes what happens if it stalls.</div>
   </div>
   <p class="flow-note">The original player's own confirmation email explains the fallback up front, so nobody's left wondering. Their assignment shows <span class="badge needs_sub">needs sub</span> exactly like any other in-progress sub request the whole time.</p>
 </div>

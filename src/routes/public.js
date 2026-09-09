@@ -16,6 +16,8 @@ const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const honeypot = require('../services/honeypot');
+const { logPlayerActivity } = require('../services/activityLog');
+const { fullName } = require('../services/playerName');
 
 // Separate buckets (10/hour/IP each, generous for real use — a household
 // sharing an IP could submit several times without ever tripping this) so
@@ -793,6 +795,18 @@ router.post('/confirm/:token', (req, res) => {
   }
 
   db.prepare("UPDATE week_assignments SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?").run(assignment.id);
+
+  // Activity log — player self-service "I'm playing" confirm (Kyle,
+  // 2026-09-09: searchable breadcrumb of player actions in the same
+  // Activity Log as admin actions). Only fires on an actual status change,
+  // not the already-confirmed no-op above. Admin-facing, full name.
+  logPlayerActivity({
+    playerName: fullName(assignment),
+    action: 'player.confirm',
+    description: `${fullName(assignment)} confirmed they're playing ${week ? week.match_date : ''}`,
+    sessionId,
+  });
+
   res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
 });
 

@@ -32,6 +32,6 @@
     </div>
   </form>
 
-  <p class="muted" style="margin-top:16px;">We'll email them to confirm — nothing changes until they click that link. If they don't respond within 24 hours of the match, this automatically falls back to the regular sub-list process, same as any other sub request.</p>
+  <p class="muted" style="margin-top:16px;">We'll email them to confirm — nothing changes until they click that link. If they don't respond within <%= week.escalation_lead_hours %> hour<%= week.escalation_lead_hours === 1 ? '' : 's' %> of the match, this automatically falls back to the regular sub-list process, same as any other sub request.</p>
 </div>
 <%- include('partials/footer') %>

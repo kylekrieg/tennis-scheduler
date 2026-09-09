@@ -61,7 +61,7 @@ function sessionSubList(sessionId) {
 function getWeekWithSession(weekId) {
   return db
     .prepare(
-      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id
+      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours
        FROM weeks w JOIN sessions s ON s.id = w.session_id WHERE w.id = ?`
     )
     .get(weekId);
@@ -380,6 +380,17 @@ async function createSubRequest(weekAssignmentId) {
   const sessionSubs = sessionSubList(session.id);
   await email.sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs });
 
+  // Activity log — player self-service "Need a sub" (Kyle, 2026-09-09: wants
+  // a searchable breadcrumb of player actions — confirms, sub requests, and
+  // sub claims — in the same Activity Log as admin actions). Admin-facing,
+  // full name.
+  logPlayerActivity({
+    playerName: fullName(player),
+    action: 'sub.request',
+    description: `${fullName(player)} requested a sub for ${week.match_date} (${offerCount} candidate${offerCount === 1 ? '' : 's'} notified)`,
+    sessionId: session.id,
+  });
+
   return { blocked: false, subRequestId, offerCount };
 }
 
@@ -545,6 +556,19 @@ async function claimSub(rawToken) {
        VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
     ).run(originalAssignment.week_id, subPlayer.id, originalAssignment.team, originalAssignment.court, originalAssignment.id);
   })();
+
+  // Activity log — the sub's own confirm click, whichever pool it came from
+  // (the regular fan-out, the broader escalation list, or a self-arranged
+  // invite via arrangeSelfSub) — this is the one place all three converge
+  // (Kyle, 2026-09-09: wants "when a player confirms they are subbing for
+  // another player" in the searchable breadcrumb). Admin-facing, full names.
+  const originalPlayerForLog = db.prepare('SELECT * FROM players WHERE id = ?').get(originalAssignment.player_id);
+  logPlayerActivity({
+    playerName: fullName(subPlayer),
+    action: 'sub.claim',
+    description: `${fullName(subPlayer)} confirmed they're subbing for ${fullName(originalPlayerForLog)} on ${week.match_date}`,
+    sessionId: session.id,
+  });
 
   // Notify that week's full group of 4 (other 3 originals + the new sub)
   const groupRows = db
@@ -725,6 +749,18 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
   });
 
   await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName });
+
+  // Activity log — "I found a sub" itself (Kyle, 2026-09-09), separate from
+  // the isNewPerson-only entry below: this fires every time regardless of
+  // whether the named sub was already on file. The named person's own
+  // confirm click is logged separately, in claimSub() above, once they
+  // actually accept via the invite link this just sent.
+  logPlayerActivity({
+    playerName: fullName(player),
+    action: 'sub.self_arranged',
+    description: `${fullName(player)} arranged for ${candidate.fullName} to sub for them on ${week.match_date} (awaiting their confirmation)`,
+    sessionId: session.id,
+  });
 
   if (isNewPerson) {
     // Activity log — admin-facing, full names (Kyle, 2026-09-07).
