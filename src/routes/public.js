@@ -323,6 +323,22 @@ router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
     for (const date of selectedDates) insert.run(session.id, playerId, date, 'self');
   })();
 
+  // Activity log (Kyle, 2026-09-09: searchable breadcrumb of player
+  // actions) — only reached once the transaction above has actually
+  // committed, never on the honeypot/locked/invalid-input early returns
+  // above. Names the resulting date count rather than the full list (which
+  // can run long over a season) — the per-player self-report table already
+  // on /admin/blackouts and this session's own blackouts.ejs page is where
+  // an admin goes to see the actual dates.
+  logPlayerActivity({
+    playerName: fullName(player),
+    action: 'blackout.self_report',
+    description: selectedDates.length
+      ? `${fullName(player)} set ${selectedDates.length} blackout date${selectedDates.length === 1 ? '' : 's'} for themselves`
+      : `${fullName(player)} cleared all their own blackout dates`,
+    sessionId: session.id,
+  });
+
   res.redirect(`/blackout?session=${session.id}&player=${playerId}&saved=1`);
 }));
 

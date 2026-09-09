@@ -279,7 +279,13 @@ router.get('/status', (req, res) => {
   const days = Number(req.query.days) || 21;
   const attention = statusPage.getAttentionItems();
   const upcoming = statusPage.getUpcomingActions(days);
-  res.render('admin/status', { title: 'Status', attention, upcoming, days, flashMsg: popFlash(req) });
+  // wideMain (Kyle, 2026-09-09): "Can we make the status screen on the admin
+  // panel a bit wider so we can see more on 1 line for the upcoming
+  // automated actions?" — same fix already applied to Activity Log/Email
+  // Log (main.wide, 1400px vs. the narrow 900px default; see CLAUDE.md's
+  // "Six pre-launch cleanup items" for the documented table.wide-is-dead-CSS
+  // trap this avoids).
+  res.render('admin/status', { title: 'Status', attention, upcoming, days, flashMsg: popFlash(req), wideMain: true });
 });
 
 // All-active-sessions stats summary (Kyle, 2026-09-01): "if we were going to
@@ -478,6 +484,37 @@ function invalidUsernameField(rawUsername, excludeAdminId) {
   return null;
 }
 
+// Admin-account activity log wording (Kyle, 2026-09-09): "an edit to a new
+// admin or edit of an admin name, email or other needs to call out exactly
+// what the value was and what it is now and who performed the edit. Not
+// sure I like the format of the current logs." Two real gaps in what was
+// here before: admin.edit's description only ever mentioned name+username
+// bundled together in one "before" -> "after" string and silently dropped
+// email entirely even though email is one of the three fields this same
+// form edits; and none of the five admin.* actions named the acting admin
+// inside the description text itself — only the separate Admin column did,
+// which is easy to miss when scanning descriptions. describeAdminChanges()
+// mirrors describeSessionChanges() above (same "only report fields that
+// actually changed, one diff item per field" shape) and every admin.*
+// logActivity() call below now opens with "`<actor>` ..." explicitly, so
+// the who/what/before/after is legible from the description text alone.
+const ADMIN_FIELD_LABELS = [
+  ['name', 'name'],
+  ['email', 'email'],
+  ['username', 'username'],
+];
+
+function describeAdminChanges(before, after) {
+  const norm = (v) => (v === null || v === undefined || v === '' ? '—' : String(v));
+  const parts = [];
+  for (const [col, label] of ADMIN_FIELD_LABELS) {
+    if (norm(before[col]) !== norm(after[col])) {
+      parts.push(`${label}: "${norm(before[col])}" → "${norm(after[col])}"`);
+    }
+  }
+  return parts.length ? parts.join('; ') : 'no changes';
+}
+
 router.get('/admins', (req, res) => {
   const admins = db.prepare('SELECT * FROM admins ORDER BY active DESC, name').all();
   res.render('admin/admins', { title: 'Admins', admins, currentAdminId: req.session.adminId, flashMsg: popFlash(req) });
@@ -503,7 +540,10 @@ router.post('/admins', (req, res) => {
     username,
     hashPassword(password)
   );
-  logActivity(req, { action: 'admin.create', description: `Added admin "${name}" (username "${username}")` });
+  logActivity(req, {
+    action: 'admin.create',
+    description: `${req.session.adminName || 'An admin'} created a new admin account — name: "${name}", email: "${req.body.email || '—'}", username: "${username}"`,
+  });
   flash(req, `${name} added — they can log in at /admin with the username "${username}" and the password you just set.`);
   res.redirect('/admin/admins');
 });
@@ -537,10 +577,11 @@ router.post('/admins/:id/edit', (req, res) => {
   }
   const newEmail = (req.body.email || '').trim() || null;
   db.prepare('UPDATE admins SET name = ?, email = ?, username = ? WHERE id = ?').run(name, newEmail, newUsername, req.params.id);
+  const afterEdit = { name, email: newEmail, username: newUsername };
   if (before.name !== name || before.email !== newEmail || before.username !== newUsername) {
     logActivity(req, {
       action: 'admin.edit',
-      description: `Updated admin "${before.name}" (username "${before.username}") → "${name}" (username "${newUsername}")`,
+      description: `${req.session.adminName || 'An admin'} edited admin account "${before.name}" (username "${before.username}") — ${describeAdminChanges(before, afterEdit)}`,
     });
   }
   // Editing your own name/username doesn't need to log you out — unlike
@@ -560,12 +601,15 @@ router.post('/admins/:id/deactivate', (req, res) => {
     flash(req, "Can't deactivate the last remaining admin — add another admin first.", 'error');
     return res.redirect('/admin/admins');
   }
-  const target = db.prepare('SELECT name FROM admins WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT name, username FROM admins WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE admins SET active = 0 WHERE id = ?').run(req.params.id);
   // Logged before the possible session invalidation below, while
   // req.session.adminId/adminName (the acting admin) is still populated —
   // this matters specifically for the self-deactivation case.
-  logActivity(req, { action: 'admin.deactivate', description: `Deactivated admin "${target ? target.name : `#${req.params.id}`}"` });
+  logActivity(req, {
+    action: 'admin.deactivate',
+    description: `${req.session.adminName || 'An admin'} deactivated admin account "${target ? target.name : `#${req.params.id}`}"${target ? ` (username "${target.username}")` : ''}`,
+  });
   if (Number(req.params.id) === req.session.adminId) {
     req.session.isAdmin = false;
     return res.redirect('/admin/login');
@@ -575,9 +619,12 @@ router.post('/admins/:id/deactivate', (req, res) => {
 });
 
 router.post('/admins/:id/activate', (req, res) => {
-  const target = db.prepare('SELECT name FROM admins WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT name, username FROM admins WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE admins SET active = 1 WHERE id = ?').run(req.params.id);
-  logActivity(req, { action: 'admin.activate', description: `Reactivated admin "${target ? target.name : `#${req.params.id}`}"` });
+  logActivity(req, {
+    action: 'admin.activate',
+    description: `${req.session.adminName || 'An admin'} reactivated admin account "${target ? target.name : `#${req.params.id}`}"${target ? ` (username "${target.username}")` : ''}`,
+  });
   flash(req, 'Admin reactivated.');
   res.redirect('/admin/admins');
 });
@@ -588,10 +635,13 @@ router.post('/admins/:id/reset-password', (req, res) => {
     flash(req, 'Password must be at least 8 characters.', 'error');
     return res.redirect('/admin/admins');
   }
-  const target = db.prepare('SELECT name FROM admins WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT name, username FROM admins WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(password), req.params.id);
-  // Never log the password itself — just who it was reset for.
-  logActivity(req, { action: 'admin.reset_password', description: `Reset password for admin "${target ? target.name : `#${req.params.id}`}"` });
+  // Never log the password itself — just who reset it, and for whom.
+  logActivity(req, {
+    action: 'admin.reset_password',
+    description: `${req.session.adminName || 'An admin'} reset the password for admin account "${target ? target.name : `#${req.params.id}`}"${target ? ` (username "${target.username}")` : ''}`,
+  });
   flash(req, 'Password updated.');
   res.redirect('/admin/admins');
 });
@@ -3279,6 +3329,24 @@ router.post('/email', asyncHandler(async (req, res) => {
     }
     const tpl = testEmail.TEMPLATES[req.body.template_key];
     const player = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(Number(req.body.test_player_id) || 0);
+    // Activity log (Kyle, 2026-09-09): "if sending a test email template
+    // from the admin test email screen, in the activity log, it needs to be
+    // flagged as a 'test email' so it doesn't get mixed up for a real
+    // confirmation or action item email to a real player." A distinct
+    // action tag (email.test_send, vs. every real automated/player-facing
+    // action's own tag) plus a description that opens with "TEST EMAIL"
+    // and repeats it at the end — visible whether the admin is scanning the
+    // Action column or just reading the Description text — so this can
+    // never be mistaken for the real thing even out of context (e.g.
+    // filtered by session, where the Action column might be scrolled out of
+    // view). email_log's own 'test' category already keeps this out of
+    // every cron dedup check (see testEmail.js) — this is purely about the
+    // separate Activity Log surfacing the same fact just as unambiguously.
+    logActivity(req, {
+      action: 'email.test_send',
+      description: `TEST EMAIL — sent a test of "${tpl ? tpl.label : req.body.template_key}" to ${player ? fullName(player) : 'player'} (not a real automated send)`,
+      sessionId: null,
+    });
     flash(req, `Test email ("${tpl ? tpl.label : req.body.template_key}") sent to ${player ? fullName(player) : 'player'}. Links in it are inert — clicking them won't confirm, claim, or change anything real.`);
     return res.redirect('/admin/email');
   }
