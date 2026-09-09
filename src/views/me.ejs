@@ -31,7 +31,10 @@
     </h2>
     <p class="muted" style="margin-top:-8px;">
       Target: <strong><%= card.stats.target %></strong><% if (card.stats.originalTarget != null && card.stats.originalTarget !== card.stats.target) { %> <span class="muted">(originally <%= card.stats.originalTarget %>)</span><% } %>
+      &nbsp;&middot;&nbsp; Scheduled: <strong><%= card.stats.scheduled %></strong>
+      &nbsp;&middot;&nbsp; Subbed out: <strong><%= card.stats.subbedOut %></strong>
       &nbsp;&middot;&nbsp; Played: <strong><%= card.stats.played %></strong>
+      &nbsp;&middot;&nbsp; Sub bonus games: <strong><%= card.stats.subBonus %></strong>
       &nbsp;&middot;&nbsp; Ball duty: <strong><%= card.stats.ballDuty %></strong>
     </p>
 

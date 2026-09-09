@@ -1094,6 +1094,33 @@ router.get('/me/:idOrSlug', (req, res) => {
         if (candidates.length === 1) a.replaced_by_name = candidates[0].name;
       }
 
+      // Mirror of the replaced_by_name fallback just above, for the other
+      // direction (Kyle, 2026-09-09: Ed B's own "My Page" wasn't showing
+      // "Subbing for Jon D" under his confirmed (sub) badge, even though the
+      // reverse — Jon D's page correctly saying Ed B found/is now playing —
+      // worked fine). An is_sub row with no real replaces_assignment_id link
+      // (a legacy row, or a creation path — e.g. hand-seeded data — that
+      // never set one) otherwise has no way to name who it replaced. Same
+      // team/court guess as above, plus one more exclusion the reverse
+      // direction gets for free from its own `replaces_assignment_id IS
+      // NULL` filter: a subbed_out row already claimed by some *other* row's
+      // real link (e.g. Erik T's row, already linked from Jim N's) must not
+      // also count as a candidate here, or two subbed-out players on the
+      // same team/court (Erik T *and* Jon D, both team B court 1 that week)
+      // makes this ambiguous when it isn't — Jon D is the only one actually
+      // still unclaimed. Same single-remaining-candidate ambiguity guard as
+      // above otherwise.
+      if (a.is_sub && !a.replaces_name) {
+        const candidates = db
+          .prepare(
+            `SELECT p.name FROM week_assignments wa2 JOIN players p ON p.id = wa2.player_id
+             WHERE wa2.week_id = ? AND wa2.team = ? AND wa2.court = ? AND wa2.status = 'subbed_out' AND wa2.id != ?
+               AND NOT EXISTS (SELECT 1 FROM week_assignments wa3 WHERE wa3.replaces_assignment_id = wa2.id)`
+          )
+          .all(a.week_id, a.team, a.court, a.id);
+        if (candidates.length === 1) a.replaces_name = candidates[0].name;
+      }
+
       // Kyle, 2026-09-07: "is there a way to display who else is playing
       // that week and their status so when looking at 'my page', you can
       // see the other players and their current status?" Public name only
@@ -1105,7 +1132,7 @@ router.get('/me/:idOrSlug', (req, res) => {
       // on the page a player actually has bookmarked.
       a.others = db
         .prepare(
-          `SELECT p.name, wa.status, wa.is_sub, rp.name AS replaces_name
+          `SELECT p.name, wa.status, wa.is_sub, wa.team, wa.court, rp.name AS replaces_name
            FROM week_assignments wa JOIN players p ON p.id = wa.player_id
            LEFT JOIN week_assignments rwa ON rwa.id = wa.replaces_assignment_id
            LEFT JOIN players rp ON rp.id = rwa.player_id
@@ -1113,6 +1140,27 @@ router.get('/me/:idOrSlug', (req, res) => {
            ORDER BY p.name`
         )
         .all(a.week_id, playerId);
+
+      // Same fallback as above, applied per row in the "also playing" list —
+      // an other player's own is_sub row can be missing the real link just
+      // as easily as the viewer's own row can (this was in fact the exact
+      // case Kyle flagged: Ed B showed up unindented, with no "subbing for
+      // Jon D" note, in Jim N's and Erik T's "Also playing this week" list).
+      // Same already-claimed exclusion as the fallback above, for the same
+      // reason (two subbed-out players on one team/court otherwise reads as
+      // ambiguous when only one of them is actually still unlinked).
+      a.others.forEach((o) => {
+        if (o.is_sub && !o.replaces_name) {
+          const candidates = db
+            .prepare(
+              `SELECT p.name FROM week_assignments wa2 JOIN players p ON p.id = wa2.player_id
+               WHERE wa2.week_id = ? AND wa2.team = ? AND wa2.court = ? AND wa2.status = 'subbed_out'
+                 AND NOT EXISTS (SELECT 1 FROM week_assignments wa3 WHERE wa3.replaces_assignment_id = wa2.id)`
+            )
+            .all(a.week_id, o.team, o.court);
+          if (candidates.length === 1) o.replaces_name = candidates[0].name;
+        }
+      });
     });
 
     const ballDutyWeeks = db
@@ -1135,20 +1183,51 @@ router.get('/me/:idOrSlug', (req, res) => {
     const blackoutDates = upcomingSessionDates.filter((d) => allBlackoutDates.has(d));
 
     // Season-long stats for this session — same fields and same underlying
-    // queries as the admin Stats page (admin.js's GET /sessions/:id/stats),
-    // just scoped to this one player: target (+ original if it's since been
-    // edited down), games actually played (excludes is_sub rows, same as
-    // the admin page's "Played" column), and ball duty count. Deliberately
-    // no sub-bonus-games figure and no partner matrix here, per Kyle
-    // (2026-08-28) — this is meant to be a quick glance, not a repeat of
-    // the full admin Stats page.
+    // definitions as the reworked admin/public Stats pages (admin.js's GET
+    // /sessions/:id/stats and GET /stats, public.js's own GET /stats, all
+    // fed by sessionHelper.js's sessionRosterStats()), just scoped to this
+    // one player via direct queries rather than computing the whole
+    // session's roster and looking one row up. Kyle, 2026-09-09: "My page
+    // needs to have some additional player stats under the full session
+    // name" — expanded from target/played/ball-duty to the full six-field
+    // set (target, scheduled, subbed out, played, sub bonus games, ball
+    // duty) to match. "Scheduled" and "subbedOut" both key off is_sub = 0
+    // (a player's own original slot, not a game they picked up as a sub) —
+    // see sessionRosterStats()'s own doc comment for why "scheduled" never
+    // changes once a week locks. Deliberately still no partner matrix here,
+    // per Kyle (2026-08-28) — this is meant to be a quick glance, not a
+    // repeat of the full admin Stats page.
     const sp = db
       .prepare('SELECT target_games, original_target FROM session_players WHERE session_id = ? AND player_id = ?')
       .get(session.id, playerId);
+    const scheduledCount = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+         WHERE w.session_id = ? AND wa.player_id = ? AND wa.is_sub = 0`
+      )
+      .get(session.id, playerId).n;
+    const subbedOutCount = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+         WHERE w.session_id = ? AND wa.player_id = ? AND wa.is_sub = 0 AND wa.status = 'subbed_out'`
+      )
+      .get(session.id, playerId).n;
+    // Played/subBonus (Kyle, 2026-09-09, same day: "played should be how
+    // many they actually played. So as the week locks and they are
+    // confirmed, that counts as 'played'") — a plain 'scheduled' row never
+    // counts, whether the match hasn't happened yet or the player simply
+    // never clicked Confirm; only genuinely confirmed-and-locked rows do.
+    // Matches sessionRosterStats()'s identical fix in sessionHelper.js.
     const played = db
       .prepare(
         `SELECT COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-         WHERE w.session_id = ? AND wa.player_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0`
+         WHERE w.session_id = ? AND wa.player_id = ? AND wa.is_sub = 0 AND wa.status = 'confirmed' AND w.locked = 1`
+      )
+      .get(session.id, playerId).n;
+    const subBonusCount = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+         WHERE w.session_id = ? AND wa.player_id = ? AND wa.is_sub = 1 AND wa.status = 'confirmed' AND w.locked = 1`
       )
       .get(session.id, playerId).n;
     const ballDutyCount = db
@@ -1157,7 +1236,10 @@ router.get('/me/:idOrSlug', (req, res) => {
     const stats = {
       target: (sp && sp.target_games) || 0,
       originalTarget: sp ? sp.original_target : null,
+      scheduled: scheduledCount,
+      subbedOut: subbedOutCount,
       played,
+      subBonus: subBonusCount,
       ballDuty: ballDutyCount,
     };
 

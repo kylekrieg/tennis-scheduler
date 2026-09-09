@@ -1,15 +1,18 @@
-<%- include('../partials/admin_header', {title}) %>
+<%- include('../partials/admin_header', {title, wideMain: true}) %>
 <h1>Stats — <%= sessionFullTitle(session) %></h1>
 
 <h2>Games played vs. target</h2>
-<table>
-  <thead><tr><th>Player</th><th>Target</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
+<p class="muted">Target: games this player wants to play this session. Scheduled: every week they were ever put on a court for — this never changes once a week's been played. Subbed out: how many of those scheduled weeks they ended up not playing themselves. Played: the actual weeks they played (Scheduled minus Subbed out).</p>
+<table class="wide">
+  <thead><tr><th>Player</th><th>Target</th><th>Scheduled</th><th>Subbed out</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
   <tbody>
     <% stats.forEach(function(s) { %>
       <tr>
         <td><%= fullName(s.player) %></td>
         <td><%= s.target %><% if (s.originalTarget != null && s.originalTarget !== s.target) { %> <span class="muted">(originally <%= s.originalTarget %>)</span><% } %></td>
-        <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
+        <td><%= s.scheduled %></td>
+        <td><%= s.subbedOut %></td>
+        <td><%= s.played %></td>
         <td><%= s.subBonus %></td>
         <td><%= s.ballDuty %></td>
       </tr>

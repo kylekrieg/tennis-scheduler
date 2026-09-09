@@ -164,13 +164,26 @@ function buildWeekReport(weekId) {
 }
 
 /** Sends the report for one week to every address configured on its session
- * (comma-separated `admin_report_emails`), skipping anyone already sent to
- * for this exact week — same email_log-based dedup as every other
- * reminder-ish email in this app, which is what makes this safe to call
- * more than once (the automatic cron pass and the admin's own manual
- * "Send status report now" button share this one function, same pattern as
- * cron.js's sendRemindersNowForWeek). Returns how many were actually sent. */
-async function sendReportForWeek(weekId) {
+ * (comma-separated `admin_report_emails`). By default, skips anyone already
+ * sent to for this exact week — same email_log-based dedup as every other
+ * reminder-ish email in this app, which is what makes it safe for the
+ * automatic cron pass (cron.js's processAdminReports(), which runs every
+ * 60s and would otherwise re-send on every tick) to call this repeatedly.
+ *
+ * `force: true` (Kyle, 2026-09-09: "I want to make sure this fires off a new
+ * status report every single time it's pushed... it should fire to the
+ * admin status report email and report on what the latest status is in
+ * that moment in time") bypasses that dedup check entirely — used only by
+ * the admin's own manual "Send status report now" button, which should
+ * always send a fresh snapshot on every click, not just the first click
+ * after the automatic threshold passes. buildWeekReport() above already
+ * recomputes live from the current week_assignments/sub_requests/
+ * swap_requests rows on every call regardless of `force` — the dedup check
+ * being bypassed is what was actually stopping a re-send from reaching the
+ * admin's inbox, not stale data.
+ *
+ * Returns how many were actually sent. */
+async function sendReportForWeek(weekId, { force = false } = {}) {
   const report = buildWeekReport(weekId);
   const { session, week } = report;
   const recipients = (session.admin_report_emails || '')
@@ -180,10 +193,12 @@ async function sendReportForWeek(weekId) {
 
   let sentCount = 0;
   for (const to of recipients) {
-    const already = db
-      .prepare(`SELECT id FROM email_log WHERE category = 'admin_report' AND related_week_id = ? AND to_email = ?`)
-      .get(week.id, to);
-    if (already) continue;
+    if (!force) {
+      const already = db
+        .prepare(`SELECT id FROM email_log WHERE category = 'admin_report' AND related_week_id = ? AND to_email = ?`)
+        .get(week.id, to);
+      if (already) continue;
+    }
     await email.sendAdminWeekReport({ to, week, session, report });
     sentCount++;
   }

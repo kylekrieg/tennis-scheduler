@@ -46,14 +46,16 @@
       <% if (r.playerStats.length === 0) { %>
         <p class="muted">No players enrolled yet.</p>
       <% } else { %>
-        <table>
-          <thead><tr><th>Player</th><th>Target</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
+        <table class="wide">
+          <thead><tr><th>Player</th><th>Target</th><th>Scheduled</th><th>Subbed out</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
           <tbody>
             <% r.playerStats.forEach(function(s) { %>
               <tr>
                 <td><%= fullName(s.player) %></td>
                 <td><%= s.target %><% if (s.originalTarget != null && s.originalTarget !== s.target) { %> <span class="muted">(originally <%= s.originalTarget %>)</span><% } %></td>
-                <td><%= s.played %><% if (s.played !== s.target) { %> <span class="muted">(target <%= s.target %>)</span><% } %></td>
+                <td><%= s.scheduled %></td>
+                <td><%= s.subbedOut %></td>
+                <td><%= s.played %></td>
                 <td><%= s.subBonus %></td>
                 <td><%= s.ballDuty %></td>
               </tr>

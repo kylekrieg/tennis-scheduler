@@ -307,35 +307,76 @@ function carriedOverBlackoutsForSession(sessionId) {
 }
 
 /**
- * Per-player target/played/sub-bonus/ball-duty breakdown for one session's
- * roster. Originally lived inline in admin.js's per-session Stats route,
- * factored out (2026-09-01) when the all-active-sessions Stats Summary page
- * needed the exact same numbers so the two admin pages could never disagree
- * on what "played" or "ball duty" means. Moved here (2026-09-05) so the
- * public player-stats page (GET /stats in public.js — "Kyle: I'd like to
- * build a 'player stats' page on the public site... just the exploded view
- * of each session with each player") can share it too, for the same reason:
- * one definition of these numbers, not three.
+ * Per-player target/scheduled/subbed-out/played/sub-bonus/ball-duty
+ * breakdown for one session's roster. Originally lived inline in admin.js's
+ * per-session Stats route, factored out (2026-09-01) when the
+ * all-active-sessions Stats Summary page needed the exact same numbers so
+ * the two admin pages could never disagree on what "played" or "ball duty"
+ * means. Moved here (2026-09-05) so the public player-stats page (GET
+ * /stats in public.js — "Kyle: I'd like to build a 'player stats' page on
+ * the public site... just the exploded view of each session with each
+ * player") can share it too, for the same reason: one definition of these
+ * numbers, not three.
  *
- * `played` counts games with status != 'subbed_out' AND is_sub = 0 — i.e.
- * games that count toward the player's own configured target, not
- * necessarily a match that's already happened. `ballDuty` is a season-wide
- * count of weeks.ball_duty_player_id matches, not just upcoming ones.
+ * Reworked (Kyle, 2026-09-09): "The new stats should have Target..."
+ * Scheduled - the amount of times a player was scheduled to play during a
+ * session. This value should not change once the session is locked...
+ * Subbed out - the amount of times a player subbed out their week during a
+ * session. Played - the actual amount of weeks a player played during a
+ * session." Three of these fields already existed under slightly different
+ * framing; this added the two genuinely new ones:
+ *
+ * - `scheduled` — every `is_sub = 0` assignment row for that player in this
+ *   session, regardless of current status (scheduled, confirmed, needs_sub,
+ *   or subbed_out). This is what makes it permanent once a week locks: a
+ *   locked week's week_assignments row is never touched or regenerated
+ *   (see "Cron is an in-process interval loop" in CLAUDE.md), so once a
+ *   week plays, that row's contribution to `scheduled` can never change
+ *   again — only an still-open week's own resubmission of "Schedule these
+ *   players" can add or remove rows counted here.
+ * - `subbedOut` — the subset of those same `is_sub = 0` rows currently
+ *   `status = 'subbed_out'` — i.e. weeks this player was originally
+ *   scheduled for but ultimately didn't play themselves.
+ * - `played` — REDEFINED (Kyle, 2026-09-09, same day: "played should be how
+ *   many they actually played. So as the week locks and they are
+ *   confirmed, that counts as 'played'"). Originally this counted any
+ *   `is_sub = 0 AND status != 'subbed_out'` row, which double-counted a
+ *   still-*upcoming* week (nothing's actually been played yet, whether
+ *   `scheduled` or already `confirmed`) as if it had already happened. Now
+ *   it requires BOTH `status = 'confirmed'` AND `w.locked = 1` — a plain
+ *   `scheduled` row never counts, whether that's because the match hasn't
+ *   happened yet or because it has and the player simply never clicked
+ *   Confirm; there's no real signal either way that they actually played,
+ *   so it's deliberately not credited. This means `scheduled = played +
+ *   subbedOut` no longer holds as a strict invariant the way it briefly did
+ *   right after Scheduled/Subbed out were introduced — the gap between them
+ *   is exactly the still-open or never-confirmed rows, which is the point:
+ *   Scheduled is a season-long total that locks in permanently per week,
+ *   Played is only ever the actually-confirmed-and-happened subset of it.
+ * - `subBonus` — same `confirmed AND w.locked = 1` requirement now applies
+ *   here too (previously `is_sub = 1 AND status != 'subbed_out'`, same
+ *   overcounting problem for an upcoming sub slot) — a bonus game only
+ *   counts once it's genuinely been played and confirmed, for the same
+ *   reason `played` does.
+ * - `ballDuty` is a season-wide count of weeks.ball_duty_player_id matches,
+ *   not just upcoming ones — unaffected by this rework, since ball duty
+ *   isn't gated on confirmation the way play credit is.
  *
  * Returns `{ roster, subs }` (Kyle, 2026-09-08 — previously returned the
  * `roster` array bare; every call site updated accordingly). `subs` is
- * anyone who's actually played a real game (`is_sub = 1`, not
- * `subbed_out`) in this session but was never on its own roster — a
+ * anyone who's actually played a real game (`is_sub = 1`, `confirmed`, and
+ * the week has locked — see `subBonus` above) in this session but was never
+ * on its own roster — a
  * broader-sub-list pickup, a self-arranged sub, an admin's sub-list
  * Reassign pick, or a one-time not-on-roster sub. Deliberately NOT everyone
  * on the broader sub list or a session's sub-candidate list — those are
  * eligibility/willingness lists, most of whom may never have actually
  * played; a stats page should reflect real play history, not who's merely
- * willing. `target`/`originalTarget`/`ballDuty` don't apply to a sub (no
- * `session_players` row to hold a target, and the ball-duty algorithm only
- * ever considers roster members) so `subs` entries carry only `player` and
- * `played` — no blank/zero columns pretending those concepts exist for
- * them.
+ * willing. `target`/`originalTarget`/`scheduled`/`subbedOut`/`ballDuty`
+ * don't apply to a sub (no `session_players` row to hold a target, and the
+ * ball-duty algorithm only ever considers roster members) so `subs` entries
+ * carry only `player` and `played` — no blank/zero columns pretending those
+ * concepts exist for them.
  */
 function sessionRosterStats(sessionId) {
   const roster = db
@@ -345,18 +386,41 @@ function sessionRosterStats(sessionId) {
   const targetMap = new Map(targets.map((t) => [t.player_id, t.target_games]));
   const originalTargetMap = new Map(targets.map((t) => [t.player_id, t.original_target]));
 
+  // "Scheduled" — every is_sub=0 row regardless of status, so a locked
+  // week's row (never touched/regenerated once played) contributes
+  // permanently. "Subbed out" is the subset currently in that state.
+  const scheduledCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.is_sub = 0 GROUP BY player_id`
+    )
+    .all(sessionId);
+  const scheduledMap = new Map(scheduledCounts.map((r) => [r.player_id, r.n]));
+
+  const subbedOutCounts = db
+    .prepare(
+      `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+       WHERE w.session_id = ? AND wa.is_sub = 0 AND wa.status = 'subbed_out' GROUP BY player_id`
+    )
+    .all(sessionId);
+  const subbedOutMap = new Map(subbedOutCounts.map((r) => [r.player_id, r.n]));
+
+  // Played (Kyle, 2026-09-09): only a row that's genuinely confirmed on a
+  // week that has actually locked counts — see the doc comment above.
   const playedCounts = db
     .prepare(
       `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.status != 'subbed_out' AND wa.is_sub = 0 GROUP BY player_id`
+       WHERE w.session_id = ? AND wa.is_sub = 0 AND wa.status = 'confirmed' AND w.locked = 1 GROUP BY player_id`
     )
     .all(sessionId);
   const playedMap = new Map(playedCounts.map((r) => [r.player_id, r.n]));
 
+  // Same "actually played" requirement as playedCounts above — a sub slot
+  // only counts as a bonus game once it's genuinely confirmed and played.
   const subBonusCounts = db
     .prepare(
       `SELECT player_id, COUNT(*) as n FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status != 'subbed_out' GROUP BY player_id`
+       WHERE w.session_id = ? AND wa.is_sub = 1 AND wa.status = 'confirmed' AND w.locked = 1 GROUP BY player_id`
     )
     .all(sessionId);
   const subBonusMap = new Map(subBonusCounts.map((r) => [r.player_id, r.n]));
@@ -374,6 +438,8 @@ function sessionRosterStats(sessionId) {
     player: p,
     target: targetMap.get(p.id) || 0,
     originalTarget: originalTargetMap.get(p.id),
+    scheduled: scheduledMap.get(p.id) || 0,
+    subbedOut: subbedOutMap.get(p.id) || 0,
     played: playedMap.get(p.id) || 0,
     subBonus: subBonusMap.get(p.id) || 0,
     ballDuty: ballDutyMap.get(p.id) || 0,

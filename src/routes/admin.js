@@ -2339,11 +2339,20 @@ router.post('/sessions/:id/weeks/:weekId/send-reminders', asyncHandler(async (re
 
 // Manual trigger for the same status-report send cron.js's
 // processAdminReports() fires automatically — shares adminReport.js's
-// sendReportForWeek() directly (same dedup-by-email_log, so calling this
-// doesn't double-send to an address already reported to for this week; it's
-// mainly here so the admin can check what the report looks like without
-// waiting for the configured lead time). No-ops with a clear message if the
-// session has no admin_report_emails configured, rather than a silent 0-sent.
+// sendReportForWeek() directly, but with { force: true } (Kyle, 2026-09-09:
+// "I want to make sure this fires off a new status report every single
+// time it's pushed... it should fire to the admin status report email and
+// report on what the latest status is in that moment in time" — he'd been
+// seeing "Nothing to send — every configured address has already gotten
+// this week's report" on a repeat click, which was the shared dedup-by-
+// email_log check doing exactly what it's meant to do for the automatic
+// cron pass, just not what's wanted from a manual, on-demand click). The
+// automatic pass still dedups (see cron.js's processAdminReports(), which
+// calls sendReportForWeek() with no `force` and would otherwise re-send on
+// every 60s tick) — only this manual button bypasses it, so every click
+// here always sends a fresh snapshot to every configured address. No-ops
+// with a clear message if the session has no admin_report_emails
+// configured, rather than a silent 0-sent.
 router.post('/sessions/:id/weeks/:weekId/send-admin-report', asyncHandler(async (req, res) => {
   try {
     const session = db.prepare('SELECT admin_report_emails FROM sessions WHERE id = ?').get(req.params.id);
@@ -2351,12 +2360,8 @@ router.post('/sessions/:id/weeks/:weekId/send-admin-report', asyncHandler(async 
       flash(req, 'No admin report email(s) configured for this session — add one on the Edit page first.', 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
-    const count = await adminReport.sendReportForWeek(req.params.weekId);
-    if (count === 0) {
-      flash(req, 'Nothing to send — every configured address has already gotten this week\'s report.');
-    } else {
-      flash(req, `Sent the status report to ${count} address(es) just now.`);
-    }
+    const count = await adminReport.sendReportForWeek(req.params.weekId, { force: true });
+    flash(req, `Sent a fresh status report to ${count} address(es) just now.`);
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
   }
