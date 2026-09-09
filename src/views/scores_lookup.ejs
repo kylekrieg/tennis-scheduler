@@ -1,0 +1,15 @@
+<%- include('partials/header', {title}) %>
+<h1>Enter Scores</h1>
+<p class="muted">Pick your name to enter how many games you won each week — it only asks for weeks you've actually already played. Once you're on your page, bookmark it for next time.</p>
+
+<form method="get" action="/scores" class="card" style="max-width:320px;">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% allPlayers.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= p.name %></option>
+    <% }) %>
+  </select>
+</form>
+<p class="muted">Looking for the standings instead? <a href="/leaderboard">See the leaderboard</a>.</p>
+<%- include('partials/footer') %>

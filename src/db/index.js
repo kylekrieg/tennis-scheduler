@@ -430,6 +430,36 @@ raw.exec(`
 // behavior exactly, so no existing session's timing changes on upgrade.
 ensureColumn('sessions', 'escalation_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 
+// Game scores (Kyle, 2026-09-09): "a screen where players can enter the # of
+// games won during their weekly match... tally together during a session...
+// a running total can be seen with a player leader board." Each player
+// self-reports their own personal games-won number for their own
+// week_assignments row (not a single shared team score) — see
+// src/services/gameScores.js for the full read/write/lock rules and
+// src/routes/public.js's GET/POST /scores for the entry screen. Three bare
+// nullable columns, no default needed (every existing row simply has no
+// score yet, exactly what NULL already means):
+// - games_won: the player's own reported count for that week's match. NULL
+//   = never entered.
+// - games_won_entered_at: set once, the first time a score is saved for this
+//   row — never touched again on later edits. This is what the 24-hour
+//   self-service edit window (below) is measured from, not match time or
+//   week-lock time, so a score entered late (days after the match) still
+//   gets its own full 24h window to fix a typo.
+// - games_won_updated_at: stamped on every save (including the first), so
+//   the entry screen and admin session-detail page can show "last updated"
+//   without a separate history table.
+// Self-service editing after entry is gated by games_won_entered_at + 24h in
+// gameScores.js's canPlayerEdit() — this migration only adds the columns;
+// the actual lock check is pure application logic computed at request time,
+// same pattern as everywhere else in this app that avoids a stored "locked"
+// boolean in favor of computing it live (see e.g. weeks.locked, which IS
+// stored, but that one needs to be — it also invalidates tokens and is
+// checked by the cron loop, neither of which applies here).
+ensureColumn('week_assignments', 'games_won', 'INTEGER');
+ensureColumn('week_assignments', 'games_won_entered_at', 'TEXT');
+ensureColumn('week_assignments', 'games_won_updated_at', 'TEXT');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

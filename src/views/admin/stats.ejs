@@ -60,6 +60,25 @@
   </tbody>
 </table>
 
+<% if (leaderboard.length) { %>
+<h2>Games-won leaderboard</h2>
+<p class="muted">Total games won this season, from scores players entered themselves (or an admin set) on the "Games won" field above. Includes anyone who's scored at least one match, roster or sub.</p>
+<table>
+  <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+  <tbody>
+    <% leaderboard.forEach(function(row, i) { %>
+      <tr>
+        <td><%= i + 1 %></td>
+        <td><%= fullName(row.player) %></td>
+        <td><strong><%= row.totalGames %></strong></td>
+        <td><%= row.matchesScored %></td>
+        <td><%= row.avgPerMatch.toFixed(1) %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
 <h2>Sub history</h2>
 <table>
   <thead><tr><th>Week</th><th>Original player</th><th>Status</th><th>Requested</th><th>Escalated</th></tr></thead>

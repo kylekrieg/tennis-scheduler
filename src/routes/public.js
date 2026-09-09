@@ -18,6 +18,9 @@ const { rateLimiter } = require('../middleware/rateLimiter');
 const honeypot = require('../services/honeypot');
 const { logPlayerActivity } = require('../services/activityLog');
 const { fullName } = require('../services/playerName');
+const gameScores = require('../services/gameScores');
+const { getTimezone } = require('../services/settings');
+const { utcToZonedParts } = require('../services/tz');
 
 // Separate buckets (10/hour/IP each, generous for real use — a household
 // sharing an IP could submit several times without ever tripping this) so
@@ -38,6 +41,13 @@ const foundSubStartLimiter = rateLimiter({ name: 'found-sub-start', windowMs: 60
 // on the two routes above rather than reopening the confirmation-email
 // question.
 const blackoutLimiter = rateLimiter({ name: 'blackout-post', windowMs: 60 * 60 * 1000, max: 20 });
+// Same trust level as blackoutLimiter above — POST /scores/:idOrSlug has no
+// email-confirmation step either, just a guessable slug/numeric id and an
+// assignment id, and gameScores.setGameScore() itself already rejects an
+// assignment that isn't this player's own. Generous (20/hour/IP) since a
+// player fixing several weeks' backlog of scores in one sitting is normal
+// use, not abuse.
+const scoreEntryLimiter = rateLimiter({ name: 'score-entry', windowMs: 60 * 60 * 1000, max: 20 });
 
 // Stamps each assignment row with `doubleBooked` (the other session it
 // collides with, from doubleBookingMapForSession) when that player is also
@@ -145,6 +155,137 @@ router.get('/stats', (req, res) => {
     return { session: s, playerStats, subStats };
   });
   res.render('player_stats', { title: 'Player Stats', rows });
+});
+
+// Games-won leaderboard (Kyle, 2026-09-09): "a running total can be seen
+// with a player leader board." Session-scoped, same session_picker pattern
+// as /schedule/lookahead — resolveSession() picks the active session by
+// default, or whichever ?session= is passed, and the view offers a switcher
+// when more than one is viewable. See gameScores.js's sessionLeaderboard()
+// doc comment for exactly how ties are broken.
+router.get('/leaderboard', (req, res) => {
+  const { session, sessions } = resolveSession(req);
+  if (!session) return res.render('no_session', { title: 'Leaderboard' });
+  const board = gameScores.sessionLeaderboard(session.id);
+  res.render('leaderboard', { title: 'Leaderboard', session, sessions, board });
+});
+
+// Player lookup for the Scores page, same shape as GET /me above: ?player=
+// redirects to the nice bookmarkable /scores/<slug> URL; with nothing
+// selected yet, shows a name picker. Kept as its own separate lookup rather
+// than folded into /me itself, since a player arriving from a link on
+// /schedule or /lookahead (which don't know who's looking) needs somewhere
+// to land that isn't already player-scoped.
+router.get('/scores', (req, res) => {
+  const playerId = Number(req.query.player);
+  if (playerId) {
+    const p = db.prepare('SELECT slug FROM players WHERE id = ?').get(playerId);
+    return res.redirect(`/scores/${(p && p.slug) || playerId}`);
+  }
+  const allPlayers = db.prepare('SELECT id, slug, name FROM players WHERE active = 1 ORDER BY name').all();
+  res.render('scores_lookup', { title: 'Enter Scores', allPlayers });
+});
+
+// A player's own "enter your games won" page — accepts either their slug or
+// numeric id, exactly like GET /me/:idOrSlug (see that route's doc comment
+// for the slug-vs-id resolution rule). Unlike My Page, this looks
+// *backward*: every already-played (locked), actually-played
+// (scheduled/confirmed) match across every session this player has one in,
+// most recent first, grouped by session — the games-won mirror of My Page's
+// forward-looking "upcoming matches" list.
+router.get('/scores/:idOrSlug', (req, res) => {
+  const raw = req.params.idOrSlug;
+  let player = db.prepare('SELECT * FROM players WHERE slug = ?').get(raw);
+  if (!player && /^\d+$/.test(raw)) {
+    player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(raw));
+  }
+  if (!player) {
+    return res.render('message', {
+      title: 'Enter Scores',
+      heading: 'Player not found',
+      body: "This link doesn't match a known player.",
+      tone: 'error',
+    });
+  }
+
+  const sessions = gameScores.sessionsWithScoresForPlayer(player.id);
+  const allRows = gameScores.scoreRowsForPlayer(player.id);
+  const rowsBySession = new Map();
+  for (const r of allRows) {
+    if (!rowsBySession.has(r.session_id)) rowsBySession.set(r.session_id, []);
+    rowsBySession.get(r.session_id).push(r);
+  }
+
+  // lockAt is a UTC instant (see gameScores.js's lockInfo) — converted to
+  // this app's configured timezone before handing to the view, same
+  // utcToZonedParts -> fmtDate/fmtTime chain admin.js's subHistory display
+  // already uses for other stored UTC timestamps, so "editable until ..."
+  // reads in Kyle's own local time rather than raw UTC.
+  const tz = getTimezone();
+  const sessionCards = sessions.map((session) => {
+    const rows = (rowsBySession.get(session.id) || []).map((r) => {
+      const info = gameScores.lockInfo(r);
+      const lockAtParts = info.lockAt ? utcToZonedParts(info.lockAt, tz) : null;
+      return {
+        assignment: r,
+        canEdit: gameScores.canPlayerEdit(r),
+        alreadyEntered: r.games_won !== null,
+        lockAtDate: lockAtParts ? lockAtParts.date : null,
+        lockAtTime: lockAtParts ? lockAtParts.time : null,
+      };
+    });
+    return { session, rows };
+  });
+
+  res.render('scores', {
+    title: 'Enter Scores',
+    player,
+    sessionCards,
+    saved: req.query.saved === '1',
+    errorCode: req.query.error || null,
+    maxGames: gameScores.MAX_GAMES,
+  });
+});
+
+router.post('/scores/:idOrSlug', scoreEntryLimiter, (req, res) => {
+  const raw = req.params.idOrSlug;
+  let player = db.prepare('SELECT * FROM players WHERE slug = ?').get(raw);
+  if (!player && /^\d+$/.test(raw)) {
+    player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(raw));
+  }
+  if (!player) {
+    return res.render('message', {
+      title: 'Enter Scores',
+      heading: 'Player not found',
+      body: "This link doesn't match a known player.",
+      tone: 'error',
+    });
+  }
+
+  try {
+    const { row, wasFirstEntry } = gameScores.setGameScore({
+      assignmentId: Number(req.body.assignment_id),
+      gamesWon: req.body.games_won,
+      playerId: player.id,
+    });
+    const week = db.prepare('SELECT match_date FROM weeks WHERE id = ?').get(row.week_id);
+    // Admin-facing Activity Log entry (Kyle, 2026-09-09) — same pattern as
+    // every other self-service action (blackout.self_report,
+    // player.confirm, sub.*): a searchable breadcrumb of what players did to
+    // their own record, not just what admins did.
+    logPlayerActivity({
+      playerName: fullName(player),
+      action: wasFirstEntry ? 'score.enter' : 'score.update',
+      description: `${fullName(player)} ${wasFirstEntry ? 'entered' : 'updated'} their games won for ${week ? week.match_date : `week #${row.week_id}`} to ${row.games_won}`,
+      sessionId: row.session_id,
+    });
+    return res.redirect(`/scores/${raw}?saved=1`);
+  } catch (err) {
+    if (err instanceof gameScores.ScoreError) {
+      return res.redirect(`/scores/${raw}?error=${encodeURIComponent(err.code)}`);
+    }
+    throw err;
+  }
 });
 
 router.get('/schedule', (req, res) => {

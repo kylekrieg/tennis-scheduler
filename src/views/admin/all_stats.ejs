@@ -77,6 +77,23 @@
           </tbody>
         </table>
       <% } %>
+      <% if (r.leaderboard.length) { %>
+        <h3>Games-won leaderboard</h3>
+        <table>
+          <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+          <tbody>
+            <% r.leaderboard.forEach(function(row, i) { %>
+              <tr>
+                <td><%= i + 1 %></td>
+                <td><%= fullName(row.player) %></td>
+                <td><strong><%= row.totalGames %></strong></td>
+                <td><%= row.matchesScored %></td>
+                <td><%= row.avgPerMatch.toFixed(1) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
     </div>
   <% }) %>
 <% } %>

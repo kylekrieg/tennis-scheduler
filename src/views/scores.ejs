@@ -1,0 +1,60 @@
+<%- include('partials/header', {title, wideMain: true}) %>
+<h1><%= player.name %>'s Scores</h1>
+<p class="muted">Bookmark this page — enter how many games you won each week here, once that week's match has actually happened. You can fix an entry for 24 hours after you first save it; after that, ask an admin to change it.</p>
+
+<% if (saved) { %>
+  <div class="flag">Saved.</div>
+<% } else if (errorCode) { %>
+  <div class="flag error">
+    <% if (errorCode === 'locked') { %>The 24-hour window to enter or fix that score has closed — ask an admin to change it.
+    <% } else if (errorCode === 'not_scoreable') { %>That match isn't open for scores yet — it has to have actually happened first.
+    <% } else if (errorCode === 'not_yours') { %>That match isn't on your own page.
+    <% } else if (errorCode === 'invalid_value') { %>Enter a whole number of games from 0 to <%= maxGames %>.
+    <% } else { %>Something went wrong saving that score — try again.<% } %>
+  </div>
+<% } %>
+
+<% if (sessionCards.length === 0) { %>
+  <p class="muted">Nothing to score yet — this fills in after your first match actually happens.</p>
+<% } %>
+
+<% sessionCards.forEach(function(card) { %>
+  <div class="card wide" style="margin-bottom:20px;border-left:6px solid <%= sessionColor(card.session) %>;">
+    <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:<%= sessionColor(card.session) %>;flex-shrink:0;"></span>
+      <%= sessionFullTitle(card.session) %>
+    </h2>
+    <% if (card.rows.length === 0) { %>
+      <p class="muted">No played weeks yet in this session.</p>
+    <% } else { %>
+      <table class="wide">
+        <thead><tr><th style="white-space:nowrap;">Date</th><th>Your games won</th><th></th></tr></thead>
+        <tbody>
+          <% card.rows.forEach(function(r) { %>
+            <tr>
+              <td style="white-space:nowrap;"><%= fmtDate(r.assignment.match_date) %></td>
+              <td>
+                <% if (r.canEdit) { %>
+                  <form method="post" action="/scores/<%= player.slug || player.id %>" style="display:flex;align-items:center;gap:6px;">
+                    <input type="hidden" name="assignment_id" value="<%= r.assignment.id %>">
+                    <input type="number" name="games_won" min="0" max="<%= maxGames %>" step="1" value="<%= r.assignment.games_won !== null ? r.assignment.games_won : '' %>" required style="width:70px;">
+                    <button class="btn small green" type="submit"><%= r.alreadyEntered ? 'Update' : 'Save' %></button>
+                  </form>
+                  <% if (r.alreadyEntered) { %><div class="muted" style="font-size:11px;margin-top:4px;">Editable until <%= fmtDate(r.lockAtDate) %>, <%= fmtTime(r.lockAtTime) %></div><% } %>
+                <% } else if (r.alreadyEntered) { %>
+                  <strong><%= r.assignment.games_won %></strong> <span class="muted" style="font-size:11px;">— locked, ask an admin to change it</span>
+                <% } %>
+              </td>
+              <td class="muted" style="font-size:11px;"><%= r.assignment.is_sub ? 'as a sub' : '' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+    <div class="actions" style="margin-top:12px;">
+      <a class="btn small neutral" href="/leaderboard?session=<%= card.session.id %>">Leaderboard</a>
+    </div>
+  </div>
+<% }) %>
+
+<%- include('partials/footer') %>

@@ -1097,8 +1097,17 @@ async function sendCustomEmail({ to, subject, body, session = null, week = null,
  * each player falls into, matching swaps back to who traded with whom) is
  * done by the caller so this stays consistent with every other function in
  * this file only ever rendering, never querying.
+ *
+ * `manual: true` (set by adminReport.js's sendReportForWeek() when called
+ * with `force: true`, i.e. the admin's own "Send status report now" button)
+ * logs this send under 'admin_report_manual' instead of 'admin_report' —
+ * same trick as the `test` category override just below. A manual send
+ * needs to reach the inbox every time regardless of what's already been
+ * sent, but it must never satisfy processAdminReports()'s email_log dedup
+ * check for the real automatic send, or clicking the button once would
+ * silently cancel that week's scheduled report.
  */
-async function sendAdminWeekReport({ to, week, session, report, test = false }) {
+async function sendAdminWeekReport({ to, week, session, report, manual = false, test = false }) {
   const subject = `Status report — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
   const listOrNone = (arr) =>
     arr.length ? `<ul style="margin:4px 0 12px;">${arr.map((n) => `<li>${n}</li>`).join('')}</ul>` : `<p style="margin:2px 0 12px;color:#888;">— none —</p>`;
@@ -1121,7 +1130,7 @@ async function sendAdminWeekReport({ to, week, session, report, test = false }) 
     ${report.ballDutyName ? `<p><strong>Ball duty:</strong> ${report.ballDutyName}</p>` : ''}
     ${footer(session)}
   `;
-  return sendMail({ to, subject, html, category: 'admin_report', relatedWeekId: week.id, session, test });
+  return sendMail({ to, subject, html, category: manual ? 'admin_report_manual' : 'admin_report', relatedWeekId: week.id, session, test });
 }
 
 module.exports = {

@@ -1,0 +1,27 @@
+<%- include('partials/header', {title, wideMain: true}) %>
+<h1>Leaderboard</h1>
+<p class="muted">Total games won this season, from scores players have entered themselves on <a href="/scores">the Scores page</a>. Only counts weeks that have actually been played and scored — someone who hasn't entered a score yet just isn't on the board.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<% if (board.length === 0) { %>
+  <p class="muted">No scores entered yet for this session.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+    <tbody>
+      <% board.forEach(function(row, i) { %>
+        <tr>
+          <td><%= i + 1 %></td>
+          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+          <td><strong><%= row.totalGames %></strong></td>
+          <td><%= row.matchesScored %></td>
+          <td><%= row.avgPerMatch.toFixed(1) %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+<p class="actions" style="margin-top:16px;">
+  <a class="btn small neutral" href="/scores">Enter your scores</a>
+</p>
+<%- include('partials/footer') %>

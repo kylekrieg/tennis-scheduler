@@ -172,6 +172,9 @@ CREATE TABLE IF NOT EXISTS week_assignments (
   confirmed_at    TEXT,
   manually_placed INTEGER NOT NULL DEFAULT 0, -- set by the plain Reassign-to-roster-player action (Kyle, 2026-09-07) — an admin manually picked this player for this slot, as opposed to the scheduler generating it. Suppresses the Need-a-sub button / "I found a sub" line on this assignment's reminder+follow-up emails (see email.js) since an admin-arranged placement shouldn't invite a player to self-service out of it the same way a normal scheduled slot does.
   replaces_assignment_id INTEGER REFERENCES week_assignments(id), -- set on a sub's own new row at the moment they take over a slot (claimSub(), and the admin Reassign route's "one-time sub" and "sub list" branches) — points at the original, now-subbed_out row they replaced. Nullable/unset for every ordinary (non-sub) row. Lets the admin session-detail page show a sub indented directly under who they replaced instead of a flat, ambiguous list (Kyle, 2026-09-07) — see sessionHelper.js's orderAssignmentsWithSubGroups(). Never set retroactively for rows that predate this column; that display falls back to a same-team/court guess instead (see that function's doc comment).
+  games_won             INTEGER, -- Kyle, 2026-09-09: self-reported "games won" for a player's own week — see src/services/gameScores.js. NULL = never entered. Each player enters their own number (not a single shared team score), so this lives on the per-player assignment row rather than a per-team/week table.
+  games_won_entered_at  TEXT, -- set once, the first time a score is saved for this row — never touched again on later edits. The player's 24-hour self-service edit window (gameScores.js's canPlayerEdit()) is measured from this, not from match time or week-lock time.
+  games_won_updated_at  TEXT, -- stamped on every save (including the first) — "last updated" display, no separate history table.
   UNIQUE(week_id, player_id)
 );
 

@@ -19,27 +19,61 @@ const { fullName } = require('./playerName');
  * week_assignments rows into the four buckets Kyle asked for.
  */
 
-/** For a claimed sub_offers row, resolves the actual player who ended up in
- * the seat — either an existing roster player (candidate_player_id) or
- * someone claimed from the broader sub list, who claimSub() creates/reuses
- * a real players row for by email but never writes back onto the offer row
- * itself, so this has to redo that same email lookup rather than trusting
- * candidate_player_id to always be set. */
-function resolveOfferPlayerName(offer) {
-  if (!offer) return null;
-  if (offer.candidate_player_id) {
-    const p = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(offer.candidate_player_id);
-    return p ? fullName(p) : null;
-  }
-  if (offer.broader_list_id) {
-    const bl = db.prepare('SELECT * FROM broader_sub_list WHERE id = ?').get(offer.broader_list_id);
-    if (!bl) return null;
-    const p = db.prepare('SELECT name, full_name FROM players WHERE email = ?').get(bl.email);
-    // bl.name is already the full name (broader_sub_list has no separate
-    // full_name column) — see playerName.js's doc comment.
-    return p ? fullName(p) : bl.name;
-  }
-  return null;
+/**
+ * Maps a `subbed_out` assignment's id -> the full name of whoever ended up
+ * in that seat this week. Prefers the real `week_assignments.
+ * replaces_assignment_id` link (set at creation time by claimSub() and the
+ * admin Reassign route's "one-time sub"/"sub list" branches); falls back to
+ * the same same-team/same-court "exactly one unmatched candidate" heuristic
+ * sessionHelper.js's orderAssignmentsWithSubGroups() and public.js's My Page
+ * query already use for a pair with no real link (an admin placing a sub
+ * directly via Reassign outside the request-a-sub flow, a legacy row, etc.
+ * — see CLAUDE.md's 2026-09-09 "My Page: sub 'who's subbing for whom'
+ * callout missing" entry for the original version of this bug).
+ *
+ * This used to go through sub_requests/sub_offers instead (looking for a
+ * `sub_requests` row with status 'filled' and a claimed `sub_offers` row
+ * off of it) — that only ever covers a sub who came through the formal
+ * request-a-sub flow. A sub an admin placed directly has no sub_requests
+ * row at all, so that lookup silently found nothing and this fell back to
+ * a bare "replaced by a sub" even though the exact same pairing was already
+ * resolved correctly everywhere else in the app (Kyle, 2026-09-09: reported
+ * this exact case — Jon Deuchler's subbed_out row showing "replaced by a
+ * sub" instead of "replaced by Ed Bourneuf").
+ */
+function resolveSubNames(assignments) {
+  const byId = new Map(assignments.map((a) => [a.id, a]));
+  const subRows = assignments.filter((a) => a.is_sub);
+  const claimedChildIds = new Set();
+  const subNameByParentId = new Map();
+
+  // Real link first — always correct, no ambiguity possible.
+  subRows.forEach((sub) => {
+    if (sub.replaces_assignment_id && byId.has(sub.replaces_assignment_id)) {
+      subNameByParentId.set(sub.replaces_assignment_id, fullName(sub));
+      claimedChildIds.add(sub.id);
+    }
+  });
+
+  // Heuristic fallback, only for rows the real link didn't already account
+  // for: an unmatched `subbed_out` row paired with the one unmatched
+  // `is_sub` row sharing its team+court, but only when that pairing is
+  // unambiguous (exactly one candidate) — two players on the same team both
+  // needing subs the same week is deliberately left unresolved here rather
+  // than risk pairing the wrong two people.
+  const unmatchedSubbedOut = assignments.filter((a) => a.status === 'subbed_out' && !subNameByParentId.has(a.id));
+  const unmatchedSubRows = subRows.filter((a) => !a.replaces_assignment_id && !claimedChildIds.has(a.id));
+  unmatchedSubbedOut.forEach((parent) => {
+    const candidates = unmatchedSubRows.filter(
+      (c) => c.team === parent.team && c.court === parent.court && !claimedChildIds.has(c.id)
+    );
+    if (candidates.length === 1) {
+      subNameByParentId.set(parent.id, fullName(candidates[0]));
+      claimedChildIds.add(candidates[0].id);
+    }
+  });
+
+  return subNameByParentId;
 }
 
 /**
@@ -104,6 +138,7 @@ function buildWeekReport(weekId) {
     .all(weekId);
   const assignmentIds = assignments.map((a) => a.id);
   const swapMap = swapsAffectingAssignments(assignmentIds);
+  const subNameByParentId = resolveSubNames(assignments);
 
   const confirmed = [];
   const unconfirmed = [];
@@ -132,14 +167,7 @@ function buildWeekReport(weekId) {
       else if (sr && sr.status === 'unfilled') label = 'UNFILLED';
       needsSub.push(`${displayName} (${label})`);
     } else if (a.status === 'subbed_out') {
-      const sr = db
-        .prepare(`SELECT * FROM sub_requests WHERE week_assignment_id = ? ORDER BY id DESC LIMIT 1`)
-        .get(a.id);
-      let subName = null;
-      if (sr && sr.status === 'filled') {
-        const offer = db.prepare(`SELECT * FROM sub_offers WHERE sub_request_id = ? AND status = 'claimed'`).get(sr.id);
-        subName = resolveOfferPlayerName(offer);
-      }
+      const subName = subNameByParentId.get(a.id) || null;
       subbedOut.push(subName ? `${displayName} — replaced by ${subName}` : `${displayName} — replaced by a sub`);
     }
   }
@@ -182,6 +210,17 @@ function buildWeekReport(weekId) {
  * being bypassed is what was actually stopping a re-send from reaching the
  * admin's inbox, not stale data.
  *
+ * A forced send is logged under a distinct 'admin_report_manual' category
+ * (same trick as email.js's 'test' category for a template test send) — NOT
+ * 'admin_report' — precisely so it can never satisfy the dedup check above.
+ * Originally a manual send logged under the same 'admin_report' category as
+ * the automatic one, which meant clicking "Send status report now" wrote a
+ * row that then made the *automatic* pass at T-minus-admin_report_lead_hours
+ * think it had already sent for that week/recipient and silently skip it —
+ * a manual send would end up suppressing the real scheduled report instead
+ * of just supplementing it (Kyle, 2026-09-09: reported the automated report
+ * not firing after using the manual button).
+ *
  * Returns how many were actually sent. */
 async function sendReportForWeek(weekId, { force = false } = {}) {
   const report = buildWeekReport(weekId);
@@ -199,7 +238,7 @@ async function sendReportForWeek(weekId, { force = false } = {}) {
         .get(week.id, to);
       if (already) continue;
     }
-    await email.sendAdminWeekReport({ to, week, session, report });
+    await email.sendAdminWeekReport({ to, week, session, report, manual: force });
     sentCount++;
   }
   return sentCount;

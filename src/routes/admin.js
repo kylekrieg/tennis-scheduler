@@ -31,6 +31,7 @@ const jointSolver = require('../services/jointSolver');
 const testEmail = require('../services/testEmail');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const weather = require('../services/weather');
+const gameScores = require('../services/gameScores');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
 // abuse protection at all — bcrypt slows an individual guess but does
@@ -358,6 +359,10 @@ router.get('/stats', (req, res) => {
     // sessionRosterStats() helper the per-session Stats page uses, so the
     // two pages can never disagree on what "played" or "ball duty" means.
     const { roster: playerStats, subs: subStats } = sessionRosterStats(s.id);
+    // Games-won leaderboard (Kyle, 2026-09-09) — same helper the public
+    // /leaderboard page and this session's own Stats page use, so all three
+    // never disagree. See gameScores.js's sessionLeaderboard() doc comment.
+    const leaderboard = gameScores.sessionLeaderboard(s.id);
 
     return {
       session: s,
@@ -371,6 +376,7 @@ router.get('/stats', (req, res) => {
       ballDutyIssues: missingBallDuty + staleBallDuty,
       playerStats,
       subStats,
+      leaderboard,
     };
   });
 
@@ -1706,6 +1712,7 @@ router.get('/sessions/:id', (req, res) => {
     doubleBookingRows,
     distinctOtherSessions,
     multiCourt: session.players_per_week > 4,
+    maxGames: gameScores.MAX_GAMES,
     flashMsg: popFlash(req),
   });
 });
@@ -2483,6 +2490,43 @@ router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, re
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
+// Admin override for a player's self-reported games-won (Kyle, 2026-09-09) —
+// unlike the player's own /scores page, this has none of gameScores.js's
+// eligibility/24h-window gating (isAdmin: true bypasses both entirely, same
+// "admin can always fix it" latitude as Mark confirmed/Reassign above): an
+// admin can set or correct a score on any week, locked or not, at any time.
+router.post('/sessions/:id/weeks/:weekId/score/:assignmentId', (req, res) => {
+  const assignment = db
+    .prepare(
+      `SELECT wa.id, p.name, p.full_name, w.match_date FROM week_assignments wa
+       JOIN players p ON p.id = wa.player_id JOIN weeks w ON w.id = wa.week_id
+       WHERE wa.id = ?`
+    )
+    .get(req.params.assignmentId);
+  if (!assignment) return res.status(404).send('Not found');
+
+  try {
+    const { row, wasFirstEntry } = gameScores.setGameScore({
+      assignmentId: req.params.assignmentId,
+      gamesWon: req.body.games_won,
+      isAdmin: true,
+    });
+    logActivity(req, {
+      action: wasFirstEntry ? 'week.score_set' : 'week.score_edit',
+      description: `${wasFirstEntry ? 'Set' : 'Changed'} games won for ${fullName(assignment)} on ${email.fmtDate(assignment.match_date)} to ${row.games_won}`,
+      sessionId: Number(req.params.id),
+    });
+    flash(req, 'Games won saved.');
+  } catch (err) {
+    if (err instanceof gameScores.ScoreError) {
+      flash(req, err.message, 'error');
+    } else {
+      throw err;
+    }
+  }
+  res.redirect(`/admin/sessions/${req.params.id}`);
+});
+
 // --- Blackouts (admin, on behalf of a player) -----------------------------
 
 router.post('/sessions/:id/notify-blackouts', asyncHandler(async (req, res) => {
@@ -2925,7 +2969,9 @@ router.get('/sessions/:id/stats', (req, res) => {
     };
   });
 
-  res.render('admin/stats', { title: 'Stats', session, stats, subStats, roster, partnerCounts, subHistory });
+  const leaderboard = gameScores.sessionLeaderboard(session.id);
+
+  res.render('admin/stats', { title: 'Stats', session, stats, subStats, roster, partnerCounts, subHistory, leaderboard });
 });
 
 // --- Players (global roster) ------------------------------------------
