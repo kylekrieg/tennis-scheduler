@@ -610,7 +610,7 @@ router.get('/calendar/download', (req, res) => {
   const { value, error } = buildPlayerICS(playerId, sessionId);
   if (error) return res.status(400).send(error);
   res.setHeader('Content-Type', 'text/calendar');
-  res.setHeader('Content-Disposition', 'attachment; filename="tennis-schedule.ics"');
+  res.setHeader('Content-Disposition', 'attachment; filename="doubles-schedule.ics"');
   res.send(value);
 });
 

@@ -1,4 +1,4 @@
-# Tennis Doubles Scheduler — Technical Architecture
+# Tennis & Pickleball Doubles Scheduler — Technical Architecture
 
 *Reconstructed from the original requirements-gathering chat. Captures the infrastructure and configuration decisions made before the app was built — referenced by `README.md` but not previously saved into this project folder. For the as-built data model, routes, and implementation details as the app evolved, `CLAUDE.md` is the authoritative, up-to-date source; this doc reflects the original decisions rather than everything added since.*
 

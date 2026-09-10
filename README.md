@@ -1,6 +1,7 @@
-# Tennis Doubles Scheduler
+# Tennis & Pickleball Doubles Scheduler
 
-A no-login website for a recurring doubles tennis group: an automatic season
+A no-login website for a recurring doubles group — tennis, pickleball, or
+any other doubles sport played on a fixed rotation: an automatic season
 scheduler that balances playing time and partner variety, plus an
 email-driven confirmation and substitution system. Built from
 `Full_Scope_Of_Work.md` and `Technical_Architecture.md`.
@@ -16,7 +17,7 @@ email-driven confirmation and substitution system. Built from
 - **Direct player-to-player swaps** (`/swap`) — trade one of your upcoming weeks for another specific player's, instead of requesting a sub and fanning out to the whole roster. Both players keep playing the same number of games, just on different dates — neither counts as a sub. The other player has to accept via an emailed link before anything changes. If nobody's responded once it's within 48 hours of whichever of the two weeks comes first, the target player gets a one-time reminder email; if it's still unanswered once that same deadline actually arrives, the request quietly expires (the trade can't happen anymore either way) rather than sitting "pending" forever and blocking either assignment from being part of some other swap later. A still-unanswered, already-nudged swap shows up on the dashboard and Status page so it doesn't just go silent. If an accepted swap happens to land a player on a date they're already playing in a different session, it's not blocked — it's flagged on the session detail page, dashboard, and Status page for the admin to sort out (see "Double-booked" below). Every swap, and every email it sends, is recorded — proposals and responses show up in the Activity Log (tagged as the player's own action, not an admin's), and the emails themselves in the Email Log, same as everything else in the app.
 - **Personal calendar, two ways**: a one-time `.ics` download for the currently-selected season, or a subscribable feed (`/calendar/feed/<player>.ics`, with a one-click `webcal://` Subscribe button and a copyable URL for "Add calendar → From URL") that covers every session a player's currently enrolled in and stays up to date automatically as re-schedules and subs happen — no re-downloading needed. Your calendar app controls its own refresh interval; this app doesn't push updates.
 - **Blackout dates, self-service and locked once scheduled**: a player picks their name, checks the dates they can't play, and saves — takes effect immediately, no confirmation email or second click required. Once the admin clicks "Schedule these players," blackout dates for that session are locked and can no longer be changed from the player-facing page — a player who needs to miss a week after that point uses **Request a Sub** instead. Admins can still edit any player's blackout dates directly at any time from Admin → session → Blackout Dates, which bypasses the lock entirely. While a session is still in draft (before you've clicked "Schedule these players"), that same page has a **Notify roster** button that emails everyone currently enrolled a direct link to go enter their blackout dates — nothing does this automatically, so use this once the roster's set and you're ready for players to start submitting. Each player's link has their own name pre-selected on arrival, so following it and hitting Save can't land on the wrong person (manually switching the dropdown first still can, since there's no separate confirmation step anymore). It also shows a summary table of every blackout date on record for the session, grouped by player, so there's no need to click through each player one at a time to see the full picture. On the session detail page, each week also shows who's blacked out for that match right under the week header — useful context before manually reassigning someone. If a player is enrolled in more than one session and a date they've already blacked out in one happens to also be a match date in another, it automatically carries over — no need to enter it twice. It shows up on the other session's blackout page (both the admin and self-service versions) as an already-checked, greyed-out entry naming where it came from, and the scheduler treats it as a real blackout there too, not just a display note.
-- **Email-driven confirm / substitute flow**: reminder emails with links, an "are you sure?" step before a sub request fans out to the rest of the roster, first-click-wins substitute claiming, automatic escalation to a sub list if nobody responds in time, and a morning-of follow-up nudge for anyone who's stayed silent. The sub list itself is two-tiered: **Admin → Broader Sub List** manages the whole pool of people willing to sub across the entire install, and each session's own **Manage subs** page (linked from its detail page) picks which subset of that pool actually gets emailed when *that* session's requests go unanswered — a sub who only plays Tuesdays doesn't need to hear about a Thursday session's empty slot. That per-session pick isn't limited to the broader pool either — any active player not already on that session's own roster can be added as a candidate too, so one session's roster can double as another's sub list without re-entering anyone as a separate broader-list entry. If none of the automated channels turn up a sub, the admin can still record one found outside the app entirely — a "one-time sub (not on roster)" option on Reassign creates a minimal player record on the spot (name only, no email required) so the season's stats and history still account for them correctly. Every email body renders at a comfortable, explicit font size (17px) rather than relying on the recipient's mail client's own small default for unstyled text. Both the original reminder's link and the follow-up nudge's link stay valid at the same time — going back to an older email won't hit a dead link. A link stops working the moment its player requests a sub for that slot, or once the match's start time has passed. Every one of these emails has the match time and court/location right in the subject line (e.g. `Tennis Tuesday, Aug 25, 6:00 PM, Court 3 — please confirm`), pulled from that session's Edit page — no need to open the email to see when or where. A **Send automatic reminders** checkbox on the session's Edit page pauses the automatic reminder/follow-up emails for that session entirely (handy while testing a season before real players are on it) — manual sends, the per-player **Resend link** button and the per-week **Send reminders now** button, both still work regardless, so you can trigger things by hand while it's off. A session with reminders paused shows a badge on its detail page and a flag on the dashboard, so it's hard to forget one was left off.
+- **Email-driven confirm / substitute flow**: reminder emails with links, an "are you sure?" step before a sub request fans out to the rest of the roster, first-click-wins substitute claiming, automatic escalation to a sub list if nobody responds in time, and a morning-of follow-up nudge for anyone who's stayed silent. The sub list itself is two-tiered: **Admin → Broader Sub List** manages the whole pool of people willing to sub across the entire install, and each session's own **Manage subs** page (linked from its detail page) picks which subset of that pool actually gets emailed when *that* session's requests go unanswered — a sub who only plays Tuesdays doesn't need to hear about a Thursday session's empty slot. That per-session pick isn't limited to the broader pool either — any active player not already on that session's own roster can be added as a candidate too, so one session's roster can double as another's sub list without re-entering anyone as a separate broader-list entry. If none of the automated channels turn up a sub, the admin can still record one found outside the app entirely — a "one-time sub (not on roster)" option on Reassign creates a minimal player record on the spot (name only, no email required) so the season's stats and history still account for them correctly. Every email body renders at a comfortable, explicit font size (17px) rather than relying on the recipient's mail client's own small default for unstyled text. Both the original reminder's link and the follow-up nudge's link stay valid at the same time — going back to an older email won't hit a dead link. A link stops working the moment its player requests a sub for that slot, or once the match's start time has passed. Every one of these emails has the match time and court/location right in the subject line (e.g. `Doubles Tuesday, Aug 25, 6:00 PM, Court 3 — please confirm`), pulled from that session's Edit page — no need to open the email to see when or where. A **Send automatic reminders** checkbox on the session's Edit page pauses the automatic reminder/follow-up emails for that session entirely (handy while testing a season before real players are on it) — manual sends, the per-player **Resend link** button and the per-week **Send reminders now** button, both still work regardless, so you can trigger things by hand while it's off. A session with reminders paused shows a badge on its detail page and a flag on the dashboard, so it's hard to forget one was left off.
 - **Admin panel** (password-gated, supports multiple admins each with their own username and password — manage them under Admin → Admins): session setup with a live roster/target-math helper, one-click re-scheduling (tucked onto the Edit session page so it's not a stray click away from routine week-to-week actions), manual reassignment and ball-duty edits (reassigning, or manually confirming, a player who currently has an open sub request automatically closes that request out and kills its still-outstanding invite links, so a lingering email can't undo the admin's fix; there's also a standalone "Clear sub request" button next to the sub-status flag for clearing it directly, without reassigning anyone), a full stats view per session (targets vs. actual, ball duty totals, partner matrix, sub history) plus a one-page **Stats Summary** (Admin → Stats) rolling every active session's numbers and full per-player breakdown onto a single page, an Email Log with delivery status for every message the app has sent, a manual "Send reminders now" and "Send status report now" per week (plus, on a week with weather turned on, an "Update weather now" button — see below), a `(reminded)` tag next to each still-scheduled player showing whether their reminder (and follow-up) email has actually gone out, a **Send Email** page for a one-off custom message — to a single player, a whole session's active roster, everyone currently scheduled for one specific week, or a real test send of any of the app's ~20 email templates with every link made inert so nothing is actually claimed or confirmed — and the ability to permanently delete a session (with confirmation) from its Edit page — players are never deleted along with it, since a player can belong to more than one session. Each week's card also has its own **Send email to players** button for a quick one-off message to just that week's actual roster. Forms across the admin panel (session dates/times, players, sub list, ball duty, reassign) validate input server-side and reject blanks/bad values with a plain error message instead of crashing or silently saving garbage data.
 - **Status page** (Admin → Status) — one place with everything that needs a human across every session (scheduling conflicts, short-staffed weeks, unfilled sub requests, unconfirmed players, missing ball duty, paused reminders), plus a preview of what the reminder system is about to do on its own over the next 7/14/21/30 days — which week's reminder goes out when and to whom, follow-up nudges, sub-request escalations, and week locks — so you can confirm it's actually working without waiting for match day. Anything that should have already happened but hasn't is marked overdue, a real signal the background process has stopped running.
 - **Archiving a session** hides it from the dashboard and every player-facing page (schedule, lookahead, calendar, PDF, blackout dates, request-a-sub) without deleting anything — a season that's over just gets in the way otherwise. Archived sessions land in a collapsed "Archived sessions" section at the bottom of the dashboard, where a click un-hides them again; direct links (stats, edit, etc.) keep working the whole time. Archiving also silences all further reminder/follow-up/escalation emails for that session, in case there's still an unresolved week or sub request when you archive it.
@@ -200,9 +201,15 @@ src/
 
 ## Installing from scratch
 
-Starting from nothing but this folder (or a fresh clone) and a machine with internet access:
+Starting from nothing but a machine with internet access:
 
-1. **Install Node.js 22.5 or newer.** The app uses Node's built-in `node:sqlite` module, which requires it — there is no native module to compile, which is the whole point.
+1. **Get the code.** Clone the repo (skip this if you're already inside the folder):
+   ```
+   git clone https://github.com/kylekrieg/tennis-scheduler.git
+   cd tennis-scheduler
+   ```
+
+2. **Install Node.js 22.5 or newer.** The app uses Node's built-in `node:sqlite` module, which requires it — there is no native module to compile, which is the whole point.
    ```
    node --version   # must be >= 22.5 — if not, install/upgrade Node first
    ```
@@ -212,36 +219,36 @@ Starting from nothing but this folder (or a fresh clone) and a machine with inte
    sudo apt-get install -y nodejs
    ```
 
-2. **Install dependencies.** From inside the `tennis-scheduler` folder:
+3. **Install dependencies.** From inside the `tennis-scheduler` folder:
    ```
    npm install
    ```
    This should finish in a few seconds — nothing here needs `node-gyp` or a C++ toolchain.
 
-3. **Create your `.env` file** from the template:
+4. **Create your `.env` file** from the template:
    ```
    cp .env.example .env
    ```
 
-4. **Generate an admin password hash** and paste it into `.env`:
+5. **Generate an admin password hash** and paste it into `.env`:
    ```
    node src/scripts/hash-admin-password.js "choose-a-password"
    ```
    Copy the printed hash into `ADMIN_PASSWORD_HASH` in `.env`. This is only used to create the *first* admin account on the very first run — after that, admin accounts (including this one) live in the database and are managed from **Admin → Admins**, where you can add more people, each with their own username and password. `.env`'s `ADMIN_PASSWORD_HASH` is not read again after that first boot. That first account's username is auto-generated as `admin` (visible, and changeable, from **Admin → Admins** once you're logged in).
 
-5. **Fill in the rest of `.env`:**
+6. **Fill in the rest of `.env`:**
    - `SESSION_SECRET` — any long random string (e.g. `openssl rand -hex 32`).
    - `PUBLIC_SITE_URL` — `http://localhost:3000` for local use; the real domain once deployed (see below).
    - `GMAIL_USER` / `GMAIL_APP_PASSWORD` — optional for local testing. If left blank, emails are printed to the console instead of sent, which is enough to test every flow (confirm, sub request, escalation) without spamming anyone.
 
-6. **Start the app:**
+7. **Start the app:**
    ```
    npm start
    ```
    It creates `data/tennis.db` automatically on first run (SQLite, no separate database server needed) and starts the internal reminder/escalation check loop.
 
-7. **Load it in a browser:**
-   - `http://localhost:3000/admin` → log in with the password from step 4 → **New Session** to set up your roster, dates, match day/time, and per-player targets → **Schedule these players**.
+8. **Load it in a browser:**
+   - `http://localhost:3000/admin` → log in with the password from step 5 → **New Session** to set up your roster, dates, match day/time, and per-player targets → **Schedule these players**.
    - `http://localhost:3000/schedule` to see the generated season.
 
    Or, to see it working immediately with sample data instead of setting up your own roster first:
@@ -250,7 +257,7 @@ Starting from nothing but this folder (or a fresh clone) and a machine with inte
    ```
    This loads the example 9-player/17-week roster from the scope doc and generates its schedule, so `/schedule` and `/admin` have something to look at right away.
 
-That's the whole local install. Everything past this point (pm2, Cloudflare Tunnel, a real domain) is only needed to make it reachable from outside your own machine — see **Deploying to a Raspberry Pi** below.
+That's the whole local install. Everything past this point (pm2, Cloudflare Tunnel, a real domain) is only needed to make it reachable from outside your own machine — see **[RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md)**.
 
 ## Local development notes
 
@@ -260,56 +267,7 @@ That's the whole local install. Everything past this point (pm2, Cloudflare Tunn
 
 ## Deploying to a Raspberry Pi
 
-1. **Install Node.js LTS** (Node 22 or newer — required for `node:sqlite`):
-   ```
-   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-   sudo apt-get install -y nodejs
-   node --version   # confirm >= 22.5
-   ```
-
-2. **Copy the app onto the Pi** (git clone, scp, whatever's easiest) and install dependencies:
-   ```
-   cd tennis-scheduler
-   npm install
-   ```
-   This should complete in seconds — there's nothing to compile.
-
-3. **Create `.env`** from the example and fill in the real values (same as steps 3–5 above), plus:
-   - `PUBLIC_SITE_URL` — the domain you'll set up in step 5 below, e.g. `https://tennis.yourdomain.com`.
-   - `GMAIL_USER` / `GMAIL_APP_PASSWORD` — a real Gmail account and an [app password](https://myaccount.google.com/apppasswords) (not your normal Gmail password) — required this time, since this is the real deployment.
-
-4. **Install pm2 and run the app under it** so it survives reboots and restarts if it crashes:
-   ```
-   sudo npm install -g pm2
-   pm2 start src/server.js --name tennis-scheduler
-   pm2 save
-   pm2 startup     # follow the printed instructions (runs a sudo command once)
-   ```
-
-5. **Expose it publicly with a Cloudflare Tunnel** (no port forwarding needed):
-   ```
-   curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb -o cloudflared.deb
-   sudo dpkg -i cloudflared.deb
-   cloudflared tunnel login
-   cloudflared tunnel create tennis-scheduler
-   cloudflared tunnel route dns tennis-scheduler tennis.yourdomain.com
-   cloudflared tunnel run tennis-scheduler --url http://localhost:3000
-   ```
-   Run `cloudflared` under pm2 too (`pm2 start cloudflared -- tunnel run tennis-scheduler --url http://localhost:3000`) so the tunnel survives reboots, then `pm2 save` again.
-
-6. **Verify:**
-   - Load `https://tennis.yourdomain.com/schedule` from outside your home network.
-   - Log into `/admin` with username `admin` and the password you hashed earlier.
-   - Create a session, add the roster with target games, save, click **Schedule these players**, and confirm the season fills in.
-   - Use **Send Email** in the admin panel to send yourself a test email end-to-end and confirm it lands in your inbox.
-   - Check **Admin → Email Log** afterward and confirm that test email shows status `sent`, not `logged_dev_mode` — if it still says `logged_dev_mode`, `GMAIL_USER`/`GMAIL_APP_PASSWORD` aren't being picked up.
-
-### Notes on reliability
-
-- The reminder/follow-up/escalation logic runs as an internal check-loop (every 60s) inside the same Node process, not a fixed cron string — it asks "should this have gone out by now?" rather than "is it exactly this minute?", so if the Pi reboots or loses power overnight, anything that should have been sent already goes out as soon as the process is back up.
-- That same check-loop automatically locks each week once its scheduled match time has passed. Locked weeks are read-only in the admin panel (no reassign/resend/mark-confirmed/ball-duty edits — they just show what happened) and are always skipped when you click "Schedule these players" again, so a mid-season roster change never touches a match that's already been played.
-- Gmail SMTP doesn't reliably surface bounces. A typo'd player email will silently fail to deliver — the admin dashboard's "unconfirmed" flag and the Email Log are the indirect signals to watch for that.
-- `pm2 logs tennis-scheduler` is the fastest way to see what the app is doing (including the console-logged email previews if SMTP isn't configured yet).
+Full step-by-step instructions for taking this app from a fresh clone to running live on a Raspberry Pi — installing Node, copying the app over, running it under `pm2`, and exposing it publicly with a Cloudflare Tunnel — now live in their own guide: **[RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md)**.
 
 ## Backing up the database
 
@@ -325,7 +283,7 @@ Both write a timestamped copy into `backups/` using SQLite's own `VACUUM INTO`, 
 ```
 crontab -e
 ```
-then add:
+then add (swap `pi` for whatever user you're actually logged in as — run `whoami` if you're not sure; newer Raspberry Pi OS/Debian releases no longer create a default `pi` account and have you set your own username during first-boot setup instead):
 ```
 0 2 * * * cd /home/pi/tennis-scheduler && /usr/bin/node src/scripts/backup-db.js >> backup.log 2>&1 && /usr/bin/node src/scripts/backup-offsite.js >> backup.log 2>&1
 ```
@@ -358,7 +316,7 @@ That runs a backup every night at 2am, automatically prunes anything beyond the 
    OFFSITE_SSH_HOST=your-other-machine.local
    OFFSITE_SSH_USER=you
    OFFSITE_SSH_PATH=/home/you/tennis-backups
-   OFFSITE_SSH_KEY=/home/pi/.ssh/tennis_backup
+   OFFSITE_SSH_KEY=/home/pi/.ssh/tennis_backup   # again, swap "pi" for your actual username if different
    ```
    `OFFSITE_SSH_HOST` can be a hostname, a `.local` mDNS name (if both machines are on the same network), or a plain IP address. If the destination uses a non-default SSH port, set `OFFSITE_SSH_PORT` too (defaults to 22).
 
@@ -385,7 +343,7 @@ If you'd rather push to cloud storage (Google Drive, Dropbox, Backblaze B2, S3, 
 
 **Restoring after the Pi itself is gone** (SD card died, Pi was lost/stolen, starting over on new hardware): the `.db` backup covers every player, session, schedule, and log entry — but **not** `.env`, which never leaves the Pi's own disk and isn't part of any backup. Recovery is two separate things, not one:
 
-1. Set up a fresh Pi per "Deploying to a Raspberry Pi" above: clone from GitHub, `npm install`, `cp .env.example .env`.
+1. Set up a fresh Pi per [RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md): clone from GitHub, `npm install`, `cp .env.example .env`.
 2. Fill in the new `.env` — most of it doesn't need to match the old one exactly:
    - `ADMIN_PASSWORD_HASH` — put anything valid here (`node src/scripts/hash-admin-password.js "temp-password"`). It's only read to seed an admin row into an *empty* database; once you drop in a real `.db` backup (next step), the `admins` table already has your real logins in it and this value is never read again.
    - `SESSION_SECRET` — any new long random string is fine. It doesn't need to match the old one; the only effect of changing it is that anyone currently logged in gets signed out once.

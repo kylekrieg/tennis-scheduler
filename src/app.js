@@ -81,7 +81,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // require a restart. res.locals (not app.locals) is what makes that
 // possible: it's a per-request object, so this always reflects the current
 // app_settings row. Used by partials/header.ejs's public-facing brand link
-// only — admin_header.ejs keeps its own separate, hardcoded "🎾 Admin"
+// only — admin_header.ejs keeps its own separate, hardcoded "Admin"
 // brand, per Kyle's own scoping of this to "public facing pages."
 app.use((req, res, next) => {
   res.locals.siteTitle = getSiteTitle();

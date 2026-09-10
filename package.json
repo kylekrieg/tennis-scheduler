@@ -1,7 +1,7 @@
 {
   "name": "tennis-doubles-scheduler",
   "version": "1.0.0",
-  "description": "No-login season scheduler + email confirmation/substitution system for a recurring doubles tennis group.",
+  "description": "No-login season scheduler + email confirmation/substitution system for a recurring doubles group (tennis, pickleball, or similar).",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

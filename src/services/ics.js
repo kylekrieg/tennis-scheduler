@@ -42,7 +42,7 @@ function buildPlayerICS(playerId, sessionId) {
     }
     const doubleBooked = dbMap.get(`${playerId}|${r.match_date}`);
     return {
-      title: `${doubleBooked ? 'DOUBLE BOOKED — ' : ''}Tennis doubles${r.is_sub ? ' (sub)' : ''} — ${sessionPublicLabel(session)}`,
+      title: `${doubleBooked ? 'DOUBLE BOOKED — ' : ''}Doubles${r.is_sub ? ' (sub)' : ''} — ${sessionPublicLabel(session)}`,
       start: [y, mo, d, hh, mm],
       duration: { minutes: DEFAULT_DURATION_MINUTES },
       description: `Doubles match for ${player.name}. Full schedule: ${(process.env.PUBLIC_SITE_URL || '')}/schedule`
@@ -115,7 +115,7 @@ function buildPlayerFeedICS(playerId) {
       const doubleBooked = dbMap.get(`${playerId}|${r.match_date}`);
       events.push({
         uid: `assignment-${session.id}-${r.match_date}-${playerId}@tennis-scheduler.local`,
-        title: `${doubleBooked ? 'DOUBLE BOOKED — ' : ''}Tennis doubles${r.is_sub ? ' (sub)' : ''} — ${sessionPublicLabel(session)}`,
+        title: `${doubleBooked ? 'DOUBLE BOOKED — ' : ''}Doubles${r.is_sub ? ' (sub)' : ''} — ${sessionPublicLabel(session)}`,
         start: [y, mo, d, hh, mm],
         duration: { minutes: DEFAULT_DURATION_MINUTES },
         // Key omitted entirely (not set to undefined) when there's no court
@@ -129,7 +129,7 @@ function buildPlayerFeedICS(playerId) {
     }
   }
 
-  const { error, value } = createEvents(events, { calName: `Tennis — ${player.name}` });
+  const { error, value } = createEvents(events, { calName: `Doubles — ${player.name}` });
   if (error) return { error: error.message || String(error) };
   return { value };
 }

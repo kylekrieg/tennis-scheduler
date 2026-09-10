@@ -483,7 +483,7 @@ function actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPla
 async function sendConfirmationReminder({ player, week, session, confirmToken, needSubToken, foundSubToken, upcomingWeeks, manuallyPlaced = false, test = false }) {
   const confirmUrl = `${siteUrl()}/confirm/${confirmToken}`;
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
-  const subject = `Tennis ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — please confirm`;
+  const subject = `Doubles ${fmtDate(week.match_date)}, ${timeAndPlace(session)} — please confirm`;
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${fullName(player)},</p>

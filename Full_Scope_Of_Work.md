@@ -1,4 +1,4 @@
-# Tennis Doubles Scheduler — Full Scope of Work
+# Tennis & Pickleball Doubles Scheduler — Full Scope of Work
 
 *Reconstructed from the original requirements-gathering chat ("Tennis doubles scheduling website"). This is the functional spec the app was built from — referenced by `README.md` and `CLAUDE.md` but not previously saved into this project folder.*
 

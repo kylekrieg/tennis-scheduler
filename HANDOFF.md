@@ -1,19 +1,20 @@
-# Handoff: Tennis Doubles Scheduler
+# Handoff: Tennis & Pickleball Doubles Scheduler
 
 This is the "start here" document for whoever picks up this codebase next — written for a developer who'll be working with Claude (or another AI coding assistant) to extend it, not someone starting from zero on Node/Express. Read this first, then follow the pointers below into the deeper docs as needed. Don't try to read `CLAUDE.md` cover to cover before doing anything — it's a reference, not a tutorial.
 
 ## What this is
 
-A self-hosted, no-login season scheduler for a recurring doubles tennis group. Plain Node/Express/EJS, SQLite via Node's built-in `node:sqlite` (no native build step, by design — see "Gotchas" below), running on a Raspberry Pi. Two session types: regular (season-long, fairness-optimized scheduling with confirm/sub/swap flows) and ad-hoc (first-come-first-served pickup games). No user accounts for players — everything is single-use emailed links; only admins log in, each with their own username + password (see "Admin accounts" in `CLAUDE.md`).
+A self-hosted, no-login season scheduler for a recurring doubles group — tennis, pickleball, or any other doubles sport on a fixed rotation. Plain Node/Express/EJS, SQLite via Node's built-in `node:sqlite` (no native build step, by design — see "Gotchas" below), running on a Raspberry Pi. Two session types: regular (season-long, fairness-optimized scheduling with confirm/sub/swap flows) and ad-hoc (first-come-first-served pickup games). No user accounts for players — everything is single-use emailed links; only admins log in, each with their own username + password (see "Admin accounts" in `CLAUDE.md`).
 
 ## How the documentation fits together
 
-Four other docs exist in this folder, each answering a different question:
+Five other docs exist in this folder, each answering a different question:
 
 - **`CLAUDE.md`** — the deep one (100+ KB). A decision-by-decision technical history: not just *what* the code does but *why* it's built that way, including options that were tried and reverted. This is written specifically for an AI assistant reading the repo cold — if you're using Claude to make a change, point it at the relevant section of this file before it touches scheduling, email, tokens, or cron logic. Don't read it linearly; use it as a reference for the area you're about to touch.
 - **`Full_Scope_Of_Work.md`** — a chronological log of requirements conversations and what got built in response, numbered by section. Useful for "why does this feature exist" or "what was the original ask" context; less useful as a technical reference.
 - **`Technical_Architecture.md`** — a short, high-level architecture summary. Good first read if you want the 5-minute version before diving into `CLAUDE.md`.
 - **`README.md`** — feature list and setup commands, written for a human running the app, not extending it.
+- **`RASPBERRY_PI_SETUP.md`** — step-by-step instructions for deploying onto a Raspberry Pi (Node, `pm2`, Cloudflare Tunnel), pulled out of `README.md` into its own doc.
 - **In-app docs** — `/help` is the player-facing walkthrough (confirm, blackout dates, sub/swap, calendar, ad-hoc pickup games). `/admin/guide` is the admin-facing walkthrough of the actual day-to-day workflow. Both are useful to skim before changing anything user-facing, since they describe the intended behavior in plain language.
 
 This file is the map; `CLAUDE.md` is the territory.

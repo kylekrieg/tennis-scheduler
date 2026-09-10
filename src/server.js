@@ -23,6 +23,6 @@ process.on('uncaughtException', (err) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Tennis doubles scheduler listening on http://localhost:${PORT}`);
+  console.log(`Doubles scheduler listening on http://localhost:${PORT}`);
   cron.start();
 });

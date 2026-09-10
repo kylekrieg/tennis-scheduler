@@ -9,7 +9,7 @@ function fmtDateShort(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-/** "Wed · 5:30 PM · Frontenac Tennis Club, Court 4" — day/time/place, no
+/** "Wed · 5:30 PM · Frontenac Doubles Club, Court 4" — day/time/place, no
  * session name. Used only in the all-active-sessions PDF's "Session" column
  * (Kyle, 2026-08-31: "remove the session name and add the day of the week
  * and the time" — with several generically-named sessions active at once,

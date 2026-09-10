@@ -1,4 +1,4 @@
--- Tennis Doubles Scheduler — SQLite schema
+-- Doubles Scheduler — SQLite schema
 -- Matches the data model in Technical_Architecture.md
 
 PRAGMA foreign_keys = ON;
