@@ -96,8 +96,10 @@
       <a class="btn small neutral" href="/pdf?session=<%= card.session.id %>">Print Schedule</a>
       <a class="btn small neutral" href="/request-sub?session=<%= card.session.id %>&player=<%= player.id %>">Request a sub</a>
       <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>">Swap a week</a>
-      <a class="btn small neutral" href="/scores/<%= player.slug || player.id %>">Enter your scores</a>
-      <a class="btn small neutral" href="/leaderboard?session=<%= card.session.id %>">Leaderboard</a>
+      <% if (card.session.games_won_enabled) { %>
+        <a class="btn small neutral" href="/scores/<%= player.slug || player.id %>">Enter your scores</a>
+        <a class="btn small neutral" href="/leaderboard?session=<%= card.session.id %>">Leaderboard</a>
+      <% } %>
     </div>
   </div>
 <% }) %>

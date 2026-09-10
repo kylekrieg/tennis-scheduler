@@ -146,6 +146,13 @@
   <input type="number" step="any" name="weather_lon" id="weather_lon" value="<%= session && session.weather_lon != null ? session.weather_lon : '' %>" placeholder="e.g. -90.1994" min="-180" max="180">
   <p class="muted">The location to pull the forecast for — usually the club's address. Look up coordinates at <a href="https://www.latlong.net/" target="_blank" rel="noopener">latlong.net</a> if you don't have them handy. Only required if the checkbox above is on.</p>
 
+  <label for="games_won_enabled">Games-won leaderboard</label>
+  <div class="checkbox-row">
+    <input type="checkbox" name="games_won_enabled" id="games_won_enabled" value="1" <%= (!session || session.games_won_enabled) ? 'checked' : '' %>>
+    <label for="games_won_enabled" style="margin:0;font-weight:400;">Let players track games won and see a leaderboard</label>
+  </div>
+  <p class="muted">On by default. Uncheck for a group that doesn't want to bother with it — this removes the "Enter your scores" and "Leaderboard" links from this session's schedule, look-ahead, and My Page cards, and takes this session out of the public Scores/Leaderboard pages entirely. You (the admin) can still see and set games-won scores for this session from its session detail page and the admin Stats pages either way — this only turns off the player-facing side. Unchecking never deletes any scores already entered; they're just hidden until you turn it back on.</p>
+
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
     <p class="muted">Only currently-enrolled players are shown below. Search by name to find and add someone else — search reveals everyone in the system, not just this roster. A target &gt; 0 is what actually enrolls a player this session; the "Remove" button is a shortcut that zeroes a player's target and hides the row again (structural change either way — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>

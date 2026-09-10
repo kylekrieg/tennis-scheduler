@@ -57,10 +57,15 @@ function getBlackoutViewableSessions() {
  * concept at all (no fixed roster to sub out of — see "Ad-hoc sessions" in
  * CLAUDE.md), so they're excluded from the pool entirely rather than just
  * hidden after the fact, which could otherwise leave `session` resolved to
- * an ad-hoc one with no regular fallback available. */
-function resolveSession(req, { includeDraft = false, regularOnly = false } = {}) {
+ * an ad-hoc one with no regular fallback available. Pass gamesWonOnly: true
+ * for the public Leaderboard and group score-entry pages (Kyle, 2026-09-10)
+ * — a session with games_won_enabled off is excluded from the pool the same
+ * way, so both the ?session= switcher and the "pick the active one" default
+ * only ever land on a session that's actually tracking games won. */
+function resolveSession(req, { includeDraft = false, regularOnly = false, gamesWonOnly = false } = {}) {
   let sessions = includeDraft ? getBlackoutViewableSessions() : getViewableSessions();
   if (regularOnly) sessions = sessions.filter((s) => s.session_type === 'regular');
+  if (gamesWonOnly) sessions = sessions.filter((s) => s.games_won_enabled);
   if (sessions.length === 0) return { session: null, sessions };
 
   const requestedId = Number(req.query.session);

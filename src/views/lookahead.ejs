@@ -1,10 +1,12 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <h1>Next <%= session.lookahead_weeks || 4 %> Weeks</h1>
 <%- include('partials/session_picker', {sessions, session}) %>
+<% if (session.games_won_enabled) { %>
 <p class="actions" style="margin-top:-8px;margin-bottom:16px;">
   <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
   <a class="btn small neutral" href="/leaderboard?session=<%= session.id %>">Leaderboard</a>
 </p>
+<% } %>
 
 <% if (rows.length === 0) { %>
   <p class="muted">No upcoming weeks in this window.</p>

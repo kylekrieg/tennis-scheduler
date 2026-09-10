@@ -114,8 +114,10 @@ function scoreRowsForPlayer(playerId) {
   return db
     .prepare(
       `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id
-       FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
-       WHERE wa.player_id = ? AND w.locked = 1 AND wa.status IN ('scheduled', 'confirmed')
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN sessions s ON s.id = w.session_id
+       WHERE wa.player_id = ? AND w.locked = 1 AND wa.status IN ('scheduled', 'confirmed') AND s.games_won_enabled = 1
        ORDER BY w.match_date DESC`
     )
     .all(playerId);
@@ -133,7 +135,7 @@ function sessionsWithScoresForPlayer(playerId) {
        JOIN weeks w ON w.session_id = s.id
        JOIN week_assignments wa ON wa.week_id = w.id
        WHERE wa.player_id = ? AND w.locked = 1 AND wa.status IN ('scheduled', 'confirmed')
-         AND s.archived_at IS NULL
+         AND s.archived_at IS NULL AND s.games_won_enabled = 1
        ${SESSION_DISPLAY_ORDER}`
     )
     .all(playerId);
@@ -225,8 +227,10 @@ function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null
 
   const row = db
     .prepare(
-      `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id
-       FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id
+      `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id, s.games_won_enabled AS session_games_won_enabled
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN sessions s ON s.id = w.session_id
        WHERE wa.id = ?`
     )
     .get(assignmentId);
@@ -235,6 +239,18 @@ function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null
   if (!isAdmin) {
     if (playerId != null && row.player_id !== Number(playerId)) {
       throw new ScoreError('not_yours', "That match isn't on your own page.");
+    }
+    // Per-session opt-out (Kyle, 2026-09-10) — checked ahead of isScoreable
+    // below so the error is specific ("not tracked here") rather than the
+    // generic "hasn't happened yet" text. This is a backstop, not the normal
+    // path: scoreRowsForPlayer()/sessionsWithScoresForPlayer() already
+    // exclude a disabled session's rows from ever showing up on a player's
+    // Scores page, and the group-entry route only ever resolves an enabled
+    // session via resolveSession({gamesWonOnly: true}) — so this only
+    // actually fires against a stale bookmark or a direct/crafted POST, not
+    // normal navigation. Admins bypass this like every other gate here.
+    if (!row.session_games_won_enabled) {
+      throw new ScoreError('session_disabled', "Games-won tracking isn't turned on for this session.");
     }
     if (!isScoreable(row)) {
       throw new ScoreError('not_scoreable', "Scores can only be entered once a match has happened, for a week that was actually played.");

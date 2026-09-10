@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in CLAUDE.md and src/services/weather.js.
   weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
   weather_lon         REAL,
+  games_won_enabled  INTEGER NOT NULL DEFAULT 1, -- per-session opt-out (Kyle, 2026-09-10) for the games-won leaderboard feature — defaults ON since it's a fun extra some groups won't want. Gates only the PLAYER-facing surfaces (schedule/lookahead/My Page links, the group entry grid, the per-player Scores page, the public leaderboard); the admin session-detail "Games won" field and both admin Stats leaderboard tables are never gated by this, same "admin isn't restricted by a player-facing toggle" pattern as reminders_enabled/weather_enabled. See db/index.js's ensureColumn() doc comment for why the default must be 1, not 0.
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

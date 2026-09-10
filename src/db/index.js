@@ -460,6 +460,25 @@ ensureColumn('week_assignments', 'games_won', 'INTEGER');
 ensureColumn('week_assignments', 'games_won_entered_at', 'TEXT');
 ensureColumn('week_assignments', 'games_won_updated_at', 'TEXT');
 
+// Per-session opt-out for the games-won feature above (Kyle, 2026-09-10):
+// "is there a way to turn this off per session? If a group didn't want to
+// keep the # of games, the buttons could be removed from their schedule
+// page." Defaults to 1 (on) — same reasoning as manually_placed's doc
+// comment above about literal-vs-function-call ALTER TABLE defaults: a
+// literal default is safe, and 1 is the only safe choice here since the
+// feature has already been live for every session with no way to turn it
+// off, so a fresh column defaulting to 0 would silently pull the feature out
+// from under every existing session's players the moment this migration
+// runs. See sessionHelper.js's gamesWonEnabledForSession() (or the inline
+// `session.games_won_enabled` check, for a row that's already in hand) for
+// where this is actually read — admin visibility (the session-detail "Games
+// won" field, both admin Stats leaderboard tables) is deliberately NOT
+// gated by this flag, same "admin overrides aren't restricted by a
+// player-facing toggle" pattern as reminders_enabled/weather_enabled; only
+// the player-facing entry points (schedule/lookahead/My Page links, the
+// group entry grid, the per-player Scores page, the public leaderboard) are.
+ensureColumn('sessions', 'games_won_enabled', 'INTEGER NOT NULL DEFAULT 1');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

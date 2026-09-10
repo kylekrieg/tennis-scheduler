@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, sessionsForPlayer, orderAssignmentsWithSubGroups, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
+const { resolveSession, doubleBookingMapForSession, carriedOverBlackoutsForSession, sessionRosterStats, sessionsForPlayer, orderAssignmentsWithSubGroups, getViewableSessions, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const weather = require('../services/weather');
 const { hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
@@ -164,8 +164,22 @@ router.get('/stats', (req, res) => {
 // when more than one is viewable. See gameScores.js's sessionLeaderboard()
 // doc comment for exactly how ties are broken.
 router.get('/leaderboard', (req, res) => {
-  const { session, sessions } = resolveSession(req);
-  if (!session) return res.render('no_session', { title: 'Leaderboard' });
+  const { session, sessions } = resolveSession(req, { gamesWonOnly: true });
+  if (!session) {
+    // Distinguish "no session at all" from "there are sessions, just none
+    // tracking games won" (Kyle, 2026-09-10, per-session opt-out) — the
+    // generic no_session page's "check back once the admin has set one up"
+    // wording would be actively wrong for the latter case.
+    if (getViewableSessions().length > 0) {
+      return res.render('message', {
+        title: 'Leaderboard',
+        heading: 'Not tracked here',
+        body: "Games-won tracking isn't turned on for any current session.",
+        tone: 'ok',
+      });
+    }
+    return res.render('no_session', { title: 'Leaderboard' });
+  }
   const board = gameScores.sessionLeaderboard(session.id);
   res.render('leaderboard', { title: 'Leaderboard', session, sessions, board });
 });
@@ -182,8 +196,20 @@ router.get('/leaderboard', (req, res) => {
 // /scores/lookup and /scores/:idOrSlug below, for anyone who'd rather do it
 // that way.
 router.get('/scores', (req, res) => {
-  const { session, sessions } = resolveSession(req);
-  if (!session) return res.render('no_session', { title: 'Enter Scores' });
+  const { session, sessions } = resolveSession(req, { gamesWonOnly: true });
+  if (!session) {
+    // Same distinction as /leaderboard above — a session-with-it-off is not
+    // the same situation as no session existing at all.
+    if (getViewableSessions().length > 0) {
+      return res.render('message', {
+        title: 'Enter Scores',
+        heading: 'Not tracked here',
+        body: "Games-won tracking isn't turned on for any current session.",
+        tone: 'ok',
+      });
+    }
+    return res.render('no_session', { title: 'Enter Scores' });
+  }
 
   const weeks = gameScores.scoreEntryWeeksForSession(session.id);
   const requestedId = Number(req.query.week);

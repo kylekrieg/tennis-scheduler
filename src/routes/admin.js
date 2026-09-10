@@ -1002,8 +1002,8 @@ router.post('/sessions', (req, res) => {
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
-        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, games_won_enabled, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -1031,6 +1031,13 @@ router.post('/sessions', (req, res) => {
       b.weather_enabled ? 1 : 0,
       parseOptionalFloat(b.weather_lat),
       parseOptionalFloat(b.weather_lon),
+      // Same checkbox-to-int pattern as weather_enabled/reminders_enabled
+      // above. Unlike those two, though, this checkbox is rendered CHECKED
+      // by default on the New Session form (see session_form.ejs) so a
+      // freshly created session starts with the feature on, matching the
+      // column's own DEFAULT 1 — an admin has to actively uncheck it to
+      // opt a session out, never the other way around.
+      b.games_won_enabled ? 1 : 0,
       // Ad-hoc has no "Schedule these players" step to promote it out of
       // draft — it's ready to start inviting the moment it's saved, so it
       // skips straight to 'active'. Regular sessions keep starting 'draft'.
@@ -1209,6 +1216,7 @@ const SESSION_FIELD_LABELS = [
   ['weather_enabled', 'weather forecast', (v) => (Number(v) ? 'on' : 'off')],
   ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
+  ['games_won_enabled', 'games-won leaderboard', (v) => (Number(v) ? 'on' : 'off')],
 ];
 
 function playerNamesForIds(ids) {
@@ -1292,7 +1300,7 @@ router.post('/sessions/:id', (req, res) => {
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
-     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=? WHERE id=?`
+     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=?, games_won_enabled=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -1318,6 +1326,7 @@ router.post('/sessions/:id', (req, res) => {
     b.weather_enabled ? 1 : 0,
     parseOptionalFloat(b.weather_lat),
     parseOptionalFloat(b.weather_lon),
+    b.games_won_enabled ? 1 : 0,
     req.params.id
   );
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
