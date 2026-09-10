@@ -460,6 +460,16 @@ ensureColumn('week_assignments', 'games_won', 'INTEGER');
 ensureColumn('week_assignments', 'games_won_entered_at', 'TEXT');
 ensureColumn('week_assignments', 'games_won_updated_at', 'TEXT');
 
+// VESTIGIAL (Kyle, 2026-09-10, superseded the same day) — see this column's
+// doc comment in schema.sql: games played turned out to be one shared
+// number per match (week+court), not something each player reports
+// individually, so week_court_games (created directly in schema.sql, below
+// the CREATE TABLE IF NOT EXISTS block — a brand-new table needs no
+// ensureColumn migration) replaced this. Left in place, never dropped, same
+// additive-only philosophy as every other vestigial column in this file;
+// no longer read or written.
+ensureColumn('week_assignments', 'games_played', 'INTEGER');
+
 // Per-session opt-out for the games-won feature above (Kyle, 2026-09-10):
 // "is there a way to turn this off per session? If a group didn't want to
 // keep the # of games, the buttons could be removed from their schedule

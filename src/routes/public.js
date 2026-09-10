@@ -181,7 +181,20 @@ router.get('/leaderboard', (req, res) => {
     return res.render('no_session', { title: 'Leaderboard' });
   }
   const board = gameScores.sessionLeaderboard(session.id);
-  res.render('leaderboard', { title: 'Leaderboard', session, sessions, board });
+  // Win %-based ranking added alongside the total-games one above (Kyle,
+  // 2026-09-10) — see gameScores.js's sessionWinPercentLeaderboard() doc
+  // comment for why it's a second table rather than a replacement.
+  const winBoard = gameScores.sessionWinPercentLeaderboard(session.id);
+  // All-time, all-sessions boards (Kyle, 2026-09-10: "we should have a total
+  // leaderboard for all of the players entered into the system... broken
+  // out into each session, but also have a total players leaderboard") —
+  // deliberately NOT scoped by the session picker above (resolveSession()
+  // only affects which single session's two boards show; these two are
+  // always every session combined, so switching sessions leaves them
+  // unchanged).
+  const overallBoard = gameScores.overallLeaderboard();
+  const overallWinBoard = gameScores.overallWinPercentLeaderboard();
+  res.render('leaderboard', { title: 'Leaderboard', session, sessions, board, winBoard, overallBoard, overallWinBoard });
 });
 
 // Group score entry (Kyle, 2026-09-10): "instead of a dropdown and everybody
@@ -214,9 +227,32 @@ router.get('/scores', (req, res) => {
   const weeks = gameScores.scoreEntryWeeksForSession(session.id);
   const requestedId = Number(req.query.week);
   const selectedWeek = weeks.length ? weeks.find((w) => w.id === requestedId) || weeks[0] : null;
-  const rows = selectedWeek
-    ? gameScores.scoreRowsForWeek(selectedWeek.id).map((r) => ({ assignment: r, canEdit: gameScores.canPlayerEdit(r) }))
-    : [];
+
+  // Games played is one shared number per court (see gameScores.js's top
+  // doc comment) — grouped here into one block per court, each with its own
+  // games-played field, followed by that court's players and their
+  // individual games-won boxes. Collapses to a single group for the common
+  // single-court case.
+  let courts = [];
+  if (selectedWeek) {
+    const rowsByCourtMap = new Map();
+    for (const r of gameScores.scoreRowsForWeek(selectedWeek.id)) {
+      if (!rowsByCourtMap.has(r.court)) rowsByCourtMap.set(r.court, []);
+      rowsByCourtMap.get(r.court).push({ assignment: r, canEdit: gameScores.canPlayerEdit(r) });
+    }
+    const gamesPlayedByCourt = gameScores.gamesPlayedRowsForWeek(selectedWeek.id);
+    courts = [...rowsByCourtMap.keys()]
+      .sort((a, b) => a - b)
+      .map((court) => {
+        const gpRow = gamesPlayedByCourt.get(court);
+        return {
+          court,
+          rows: rowsByCourtMap.get(court),
+          gamesPlayed: gpRow ? gpRow.games_played : null,
+          canEditGamesPlayed: gameScores.canEditGamesPlayed(selectedWeek.locked, gpRow),
+        };
+      });
+  }
 
   res.render('scores_week', {
     title: 'Enter Scores',
@@ -224,23 +260,38 @@ router.get('/scores', (req, res) => {
     sessions,
     weeks,
     selectedWeek,
-    rows,
+    courts,
+    multiCourt: courts.length > 1,
     saved: Number(req.query.saved) || 0,
     errorCode: req.query.error || null,
     maxGames: gameScores.MAX_GAMES,
   });
 });
 
-// Batch save for the group entry grid above — one form post carries any
-// number of boxes as two position-paired arrays, assignment_id[] and
-// games_won[] (see the array-vs-bracket-object comment below for why it's
-// shaped this way instead of games_won[<assignmentId>]); a blank box is left
-// untouched rather than treated as "clear this score," so someone filling in
-// just their own box on an otherwise-empty week doesn't wipe anyone else's.
-// Each box still goes through gameScores.setGameScore()'s normal scoreable +
-// 24h-window gate — playerId is deliberately omitted (see that function's
-// doc comment for why the group page skips the ownership check on purpose)
-// — and one bad or locked box doesn't stop the rest of the grid from saving.
+// Batch save for the group entry grid above. Two independent kinds of
+// fields come in on the same POST: per-player games_won (assignment_id[] /
+// games_won[], position-paired) and, once per court present on the page,
+// the shared games-played total (court[] / court_games_played[], also
+// position-paired) — see gameScores.js's top doc comment for why games
+// played is one number per court rather than per player. The two are saved
+// independently: a blank box of either kind is left untouched (not treated
+// as "clear this value"), so someone filling in just their own games-won
+// box, or just the court's games-played box, on an otherwise-empty week
+// doesn't wipe anyone else's entry or force them to also fill in the other.
+// Each write still goes through gameScores.js's normal scoreable + 24h-
+// window gate (setGameScore's playerId is deliberately omitted here — see
+// that function's doc comment for why the group page skips the ownership
+// check on purpose) — and one bad or locked box doesn't stop the rest of
+// the grid from saving.
+//
+// Position-paired arrays (assignment_id[]/games_won[], court[]/
+// court_games_played[]) rather than bracket-keyed objects
+// (games_won[<assignmentId>]) — assignment ids and court numbers are both
+// plain integers, and qs (the parser behind
+// express.urlencoded({extended:true})) treats a purely-numeric bracket key
+// as an array index and silently compacts/reorders the result, which
+// scrambled real assignment ids onto the wrong rows in testing. Plain `[]`
+// arrays are always appended in submission order and never index-compacted.
 router.post('/scores', scoreEntryLimiter, (req, res) => {
   const weekId = Number(req.body.week_id);
   const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(weekId);
@@ -253,28 +304,40 @@ router.post('/scores', scoreEntryLimiter, (req, res) => {
     });
   }
 
-  // Two parallel arrays (assignment_id[], games_won[]) rather than a single
-  // bracket-keyed object (games_won[<assignmentId>]) — assignment ids are
-  // plain autoincrement integers, and qs (the parser behind
-  // express.urlencoded({extended:true})) treats a purely-numeric bracket key
-  // as an array index and silently compacts/reorders the result, which
-  // scrambled real assignment ids onto the wrong rows in testing. Position-
-  // paired arrays sidestep that entirely: qs only ever appends to them in
-  // submission order. Array.isArray guards the single-row case, where some
-  // parsers hand back a bare string instead of a one-element array.
   const toArray = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
-  const assignmentIds = toArray(req.body.assignment_id);
-  const gamesWonValues = toArray(req.body.games_won);
   let savedCount = 0;
   let lastErrorCode = null;
+
+  // Per-court shared games-played totals, saved first — so if a player's
+  // games-won box below happens to be checked against it in the same
+  // submission, the just-saved total is already in place.
+  const courtIds = toArray(req.body.court);
+  const courtGamesPlayedValues = toArray(req.body.court_games_played);
+  for (let i = 0; i < courtIds.length; i++) {
+    const raw = courtGamesPlayedValues[i];
+    if (raw === '' || raw === undefined || raw === null) continue; // left alone
+    try {
+      gameScores.setGamesPlayedForWeekCourt({ weekId, court: Number(courtIds[i]), gamesPlayed: raw });
+      savedCount++;
+    } catch (err) {
+      if (err instanceof gameScores.ScoreError) {
+        lastErrorCode = err.code;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const assignmentIds = toArray(req.body.assignment_id);
+  const gamesWonValues = toArray(req.body.games_won);
   for (let i = 0; i < assignmentIds.length; i++) {
     const assignmentIdRaw = assignmentIds[i];
-    const rawValue = gamesWonValues[i];
-    if (rawValue === '' || rawValue === undefined || rawValue === null) continue; // blank box = leave it alone
+    const rawWon = gamesWonValues[i];
+    if (rawWon === '' || rawWon === undefined || rawWon === null) continue; // blank box = leave it alone
     try {
       const { row, wasFirstEntry } = gameScores.setGameScore({
         assignmentId: Number(assignmentIdRaw),
-        gamesWon: rawValue,
+        gamesWon: rawWon,
       });
       const player = db.prepare('SELECT * FROM players WHERE id = ?').get(row.player_id);
       // logGroupScoreActivity, not logPlayerActivity — whoever is filling in
@@ -356,12 +419,22 @@ router.get('/scores/:idOrSlug', (req, res) => {
     const rows = (rowsBySession.get(session.id) || []).map((r) => {
       const info = gameScores.lockInfo(r);
       const lockAtParts = info.lockAt ? utcToZonedParts(info.lockAt, tz) : null;
+      // The shared games-played total for this row's own week+court (see
+      // gameScores.js's top doc comment) — shown/editable right alongside
+      // this player's own games-won box so whoever gets to this page first
+      // for a given match can fill it in without a trip to the group entry
+      // grid, but it's independent of games_won's own required-ness below:
+      // a player can save just their own games-won and leave this for
+      // someone else (or an admin) to fill in later.
+      const gpRow = gameScores.gamesPlayedRowForWeekCourt(r.week_id, r.court);
       return {
         assignment: r,
         canEdit: gameScores.canPlayerEdit(r),
         alreadyEntered: r.games_won !== null,
         lockAtDate: lockAtParts ? lockAtParts.date : null,
         lockAtTime: lockAtParts ? lockAtParts.time : null,
+        gamesPlayed: gpRow ? gpRow.games_played : null,
+        canEditGamesPlayed: gameScores.canEditGamesPlayed(r.week_locked, gpRow),
       };
     });
     return { session, rows };
@@ -392,6 +465,34 @@ router.post('/scores/:idOrSlug', scoreEntryLimiter, (req, res) => {
     });
   }
 
+  // games_played (Kyle, 2026-09-10) is optional here and saved
+  // independently of games_won — it's the shared per-week+court total (see
+  // gameScores.js's top doc comment), not this player's own value, so
+  // there's no reason to force every games-won save to also carry it. Saved
+  // first, same reasoning as the group entry grid's POST /scores: if
+  // games_won below happens to be checked against it, the just-saved total
+  // is already in place. A failure here is reported via a separate
+  // `played_error` query param rather than blocking the games_won save
+  // below, since the two are unrelated actions that just happen to share
+  // one form.
+  let playedErrorCode = null;
+  const rawPlayed = req.body.games_played;
+  const playedBlank = rawPlayed === '' || rawPlayed === undefined || rawPlayed === null;
+  if (!playedBlank) {
+    const assignment = db.prepare('SELECT week_id, court FROM week_assignments WHERE id = ?').get(req.body.assignment_id);
+    if (assignment) {
+      try {
+        gameScores.setGamesPlayedForWeekCourt({ weekId: assignment.week_id, court: assignment.court, gamesPlayed: rawPlayed });
+      } catch (err) {
+        if (err instanceof gameScores.ScoreError) {
+          playedErrorCode = err.code;
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
   try {
     const { row, wasFirstEntry } = gameScores.setGameScore({
       assignmentId: Number(req.body.assignment_id),
@@ -409,10 +510,14 @@ router.post('/scores/:idOrSlug', scoreEntryLimiter, (req, res) => {
       description: `${fullName(player)} ${wasFirstEntry ? 'entered' : 'updated'} their games won for ${week ? week.match_date : `week #${row.week_id}`} to ${row.games_won}`,
       sessionId: row.session_id,
     });
-    return res.redirect(`/scores/${raw}?saved=1`);
+    const qs = new URLSearchParams({ saved: '1' });
+    if (playedErrorCode) qs.set('played_error', playedErrorCode);
+    return res.redirect(`/scores/${raw}?${qs.toString()}`);
   } catch (err) {
     if (err instanceof gameScores.ScoreError) {
-      return res.redirect(`/scores/${raw}?error=${encodeURIComponent(err.code)}`);
+      const qs = new URLSearchParams({ error: err.code });
+      if (playedErrorCode) qs.set('played_error', playedErrorCode);
+      return res.redirect(`/scores/${raw}?${qs.toString()}`);
     }
     throw err;
   }

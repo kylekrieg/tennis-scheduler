@@ -40,6 +40,19 @@ const { SESSION_DISPLAY_ORDER } = require('./sessionHelper');
  * accounts, just a public page" trust level the rest of the app already
  * runs on (see setGameScore's playerId doc comment for exactly how that's
  * wired).
+ *
+ * GAMES PLAYED (Kyle, 2026-09-10, revised the same day): every 4 players on
+ * one court in one week play the same match, so there is exactly ONE real
+ * "games played" total for that week+court — not something each player
+ * reports individually (an earlier same-day cut did exactly that, on
+ * week_assignments.games_played; see that column's now-vestigial doc
+ * comment in schema.sql for why it was replaced). The shared value lives in
+ * its own week_court_games table, entered once — by any player, via either
+ * entry point, or by an admin — and is what sessionWinPercentLeaderboard()/
+ * overallWinPercentLeaderboard() below divide each player's games_won by.
+ * See setGamesPlayedForWeekCourt()'s doc comment for the write path and
+ * canEditGamesPlayed() for its own independent 24h self-service window,
+ * mirroring games_won's but keyed by week+court instead of by player.
  */
 
 const MAX_GAMES = 50; // sane sanity cap, not a real tennis rule — just guards against fat-fingered/garbage input
@@ -58,6 +71,16 @@ function parseDbTimestamp(s) {
  * the admin override route so the two can never disagree on what counts as
  * a valid score. */
 function parseGamesWon(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > MAX_GAMES) return null;
+  return n;
+}
+
+/** Same validation as parseGamesWon, for the shared games-played total (see
+ * this file's top doc comment). Kept as its own function rather than an
+ * alias so the two can diverge later without surprising the other caller. */
+function parseGamesPlayed(raw) {
   if (raw === undefined || raw === null || raw === '') return null;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0 || n > MAX_GAMES) return null;
@@ -102,6 +125,46 @@ function lockInfo(row, now = new Date()) {
 function canPlayerEdit(row, now = new Date()) {
   if (!isScoreable(row)) return false;
   return !lockInfo(row, now).locked;
+}
+
+/** Same "editable until 24h after first entry" shape as lockInfo() above,
+ * for the shared games-played total instead of one player's games-won.
+ * `gpRow` is a week_court_games row (or null/undefined if nothing's been
+ * entered for this week+court yet, in which case there's no lock — first
+ * entry is always open once the week itself is locked). */
+function lockInfoGamesPlayed(gpRow, now = new Date()) {
+  const enteredAt = gpRow ? parseDbTimestamp(gpRow.games_played_entered_at) : null;
+  if (!enteredAt) return { enteredAt: null, lockAt: null, locked: false };
+  const at = new Date(enteredAt.getTime() + EDIT_WINDOW_MS);
+  return { enteredAt, lockAt: at, locked: now >= at };
+}
+
+/** Whether a PLAYER (not an admin) may save the shared games-played total
+ * for this week+court right now — `weekLocked` gates it the same way
+ * isScoreable() gates games_won (no self-service before the match has
+ * actually happened), then the same 24h-from-first-entry window as
+ * canPlayerEdit(), just keyed by week+court instead of by assignment. No
+ * per-player ownership concept here at all — it's one shared number for
+ * everyone who played that match, by design (see this file's top doc
+ * comment). Admins bypass this entirely, same as canPlayerEdit(). */
+function canEditGamesPlayed(weekLocked, gpRow, now = new Date()) {
+  if (!weekLocked) return false;
+  return !lockInfoGamesPlayed(gpRow, now).locked;
+}
+
+/** The shared games-played row for one week+court, or undefined if nothing's
+ * been entered yet. */
+function gamesPlayedRowForWeekCourt(weekId, court) {
+  return db.prepare('SELECT * FROM week_court_games WHERE week_id = ? AND court = ?').get(weekId, court);
+}
+
+/** Every week_court_games row for one week (any court), keyed for the group
+ * entry grid to look up by court number without a query per court. */
+function gamesPlayedRowsForWeek(weekId) {
+  const rows = db.prepare('SELECT * FROM week_court_games WHERE week_id = ?').all(weekId);
+  const byCourt = new Map();
+  for (const r of rows) byCourt.set(r.court, r);
+  return byCourt;
 }
 
 /** Every one of this player's assignment rows across every session that are
@@ -173,7 +236,9 @@ function scoreEntryWeeksForSession(sessionId) {
  * order — the group entry grid's data source. Deliberately not scoped to a
  * player, unlike scoreRowsForPlayer above: this is "who actually played
  * this week," full stop, since anyone landing on the group page may fill in
- * any or all of the boxes. */
+ * any or all of the boxes. Includes `court` (via wa.*), which the route
+ * groups rows by so the shared games-played field can be shown once per
+ * court rather than once per player. */
 function scoreRowsForWeek(weekId) {
   return db
     .prepare(
@@ -182,13 +247,14 @@ function scoreRowsForWeek(weekId) {
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed')
-       ORDER BY p.name`
+       ORDER BY wa.court, p.name`
     )
     .all(weekId);
 }
 
-/** Result codes setGameScore() can throw as `err.code`, for the routes to
- * turn into a plain-language message rather than a raw 500. */
+/** Result codes setGameScore()/setGamesPlayedForWeekCourt() can throw as
+ * `err.code`, for the routes to turn into a plain-language message rather
+ * than a raw 500. */
 const ScoreError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -218,6 +284,18 @@ const ScoreError = class extends Error {
  * fixed after that — see schema.sql's doc comment); `games_won_updated_at`
  * is stamped on every save. Returns `{ row, wasFirstEntry }` so the caller
  * can log/word the activity entry as "entered" vs. "updated".
+ *
+ * Cross-checked against the shared games-played total for this row's
+ * week+court (see this file's top doc comment), if one has been entered yet
+ * — a games_won that exceeds it is definitely a typo (either the win or the
+ * shared total), so it's refused as invalid_value rather than silently
+ * accepted. Applied unconditionally, even for isAdmin: true — unlike the
+ * eligibility/lock gates above (which are pure workflow rules an admin can
+ * always bypass), this is a data-integrity check, same class as the
+ * MAX_GAMES cap itself. If no shared total has been entered yet for this
+ * week+court, there's nothing to check against, so any valid games_won is
+ * accepted — the shared total can be entered before or after any
+ * individual player's games_won with no ordering requirement.
  */
 function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null }) {
   const parsed = parseGamesWon(gamesWon);
@@ -227,14 +305,23 @@ function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null
 
   const row = db
     .prepare(
-      `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id, s.games_won_enabled AS session_games_won_enabled
+      `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id, s.games_won_enabled AS session_games_won_enabled,
+              wcg.games_played AS shared_games_played
        FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN sessions s ON s.id = w.session_id
+       LEFT JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
        WHERE wa.id = ?`
     )
     .get(assignmentId);
   if (!row) throw new ScoreError('not_found', 'That match assignment could not be found.');
+
+  if (row.shared_games_played != null && parsed > row.shared_games_played) {
+    throw new ScoreError(
+      'invalid_value',
+      `Games won can't be more than the ${row.shared_games_played} total games played already entered for this match.`
+    );
+  }
 
   if (!isAdmin) {
     if (playerId != null && row.player_id !== Number(playerId)) {
@@ -274,6 +361,83 @@ function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null
 }
 
 /**
+ * Validates and saves the shared "games played" total for one week+court
+ * (see this file's top doc comment for why it's shared rather than
+ * per-player). `isAdmin: true` skips the "week must be locked" gate and the
+ * 24h self-service window, same unrestricted latitude as setGameScore()'s
+ * own isAdmin flag. No ownership concept to check — anyone who can reach
+ * either public entry point for this week+court may set or, within the
+ * window, correct this value, same "no accounts, just a public page" trust
+ * level as the group entry grid's per-player boxes.
+ *
+ * Cross-checked the same way setGameScore() checks the other direction: if
+ * any player has already recorded a games_won higher than the total being
+ * saved here, that's refused as invalid_value — applied unconditionally,
+ * same data-integrity reasoning as setGameScore()'s own cross-check.
+ *
+ * `games_played_entered_at` is set only the first time (an INSERT ... ON
+ * CONFLICT DO UPDATE that never touches it on the conflict path — same
+ * COALESCE-once spirit as games_won_entered_at, just expressed as "don't
+ * list it in the UPDATE SET clause" since this is an upsert rather than a
+ * plain UPDATE); `games_played_updated_at` is stamped on every save.
+ * Returns `{ weekId, court, gamesPlayed, wasFirstEntry }`.
+ */
+function setGamesPlayedForWeekCourt({ weekId, court, gamesPlayed, isAdmin = false }) {
+  const parsed = parseGamesPlayed(gamesPlayed);
+  if (parsed === null) {
+    throw new ScoreError('invalid_value', `Enter a whole number of games played from 0 to ${MAX_GAMES}.`);
+  }
+
+  const week = db
+    .prepare(
+      `SELECT w.*, s.games_won_enabled AS session_games_won_enabled
+       FROM weeks w JOIN sessions s ON s.id = w.session_id WHERE w.id = ?`
+    )
+    .get(weekId);
+  if (!week) throw new ScoreError('not_found', 'That week could not be found.');
+
+  // A real match actually has to exist on this court this week — guards
+  // against a crafted POST naming a court nobody was ever assigned to.
+  const hasCourt = db.prepare('SELECT 1 FROM week_assignments WHERE week_id = ? AND court = ? LIMIT 1').get(weekId, court);
+  if (!hasCourt) throw new ScoreError('not_found', 'No match was found on that court for that week.');
+
+  const maxAlreadyWon = db
+    .prepare("SELECT MAX(games_won) as m FROM week_assignments WHERE week_id = ? AND court = ? AND games_won IS NOT NULL")
+    .get(weekId, court).m;
+  if (maxAlreadyWon !== null && maxAlreadyWon > parsed) {
+    throw new ScoreError(
+      'invalid_value',
+      `Games played can't be less than the ${maxAlreadyWon} games won already entered for this match.`
+    );
+  }
+
+  const gpRow = gamesPlayedRowForWeekCourt(weekId, court);
+
+  if (!isAdmin) {
+    if (!week.session_games_won_enabled) {
+      throw new ScoreError('session_disabled', "Games-won tracking isn't turned on for this session.");
+    }
+    if (!week.locked) {
+      throw new ScoreError('not_scoreable', "Games played can only be entered once a match has happened, for a week that was actually played.");
+    }
+    if (!canEditGamesPlayed(week.locked, gpRow)) {
+      throw new ScoreError('locked', 'The 24-hour window to enter or fix games played has closed — ask an admin to change it.');
+    }
+  }
+
+  const wasFirstEntry = !gpRow || gpRow.games_played === null;
+  db.prepare(
+    `INSERT INTO week_court_games (week_id, court, games_played, games_played_entered_at, games_played_updated_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(week_id, court) DO UPDATE SET
+       games_played = excluded.games_played,
+       games_played_updated_at = datetime('now')`
+  ).run(weekId, court, parsed);
+
+  return { weekId, court, gamesPlayed: parsed, wasFirstEntry };
+}
+
+/**
  * "Who's on top" for one session: every player (roster regular or a sub who
  * picked up a real game) with at least one scored assignment in this
  * session, ranked by total games won. Ties break by average games per
@@ -310,17 +474,138 @@ function sessionLeaderboard(sessionId) {
   }));
 }
 
+/**
+ * Win %-based leaderboard (Kyle, 2026-09-10) — a second ranking alongside
+ * sessionLeaderboard() above, meant to fix that one's known bias toward
+ * attendance: someone who's played every week of the season will always
+ * out-total someone who's missed half of it, even if the second player wins
+ * a much higher share of the games they actually play. This ranks by
+ * win % = total games won / total games played instead, so attendance no
+ * longer matters except as a tiebreaker (more weeks scored, then name).
+ *
+ * Joins each player's own games_won against the SHARED games-played total
+ * for that same week+court (week_court_games — see this file's top doc
+ * comment), not a per-player value. Only counts a week toward a player's
+ * percentage once both their own games_won AND that week+court's shared
+ * total have been entered — a week with just games_won (nobody's gotten
+ * around to entering the shared total yet) can't contribute a denominator,
+ * so it's left out of this leaderboard entirely rather than guessed at.
+ * That's a real gap for a still-in-progress week: a player's win % here can
+ * quietly be based on fewer weeks than their total-games number on the
+ * other leaderboard. games_played > 0 additionally guards the division
+ * itself (a stray 0 would otherwise produce a divide-by-zero player at the
+ * top of the board).
+ *
+ * No minimum-attendance qualification floor (Kyle, 2026-09-10: "no minimum
+ * for now") — every player with at least one qualifying week appears, so a
+ * single great week can currently outrank a fuller season on win % alone.
+ * Add a HAVING weeks >= n clause here (and surface the threshold in the
+ * view) if that turns out to matter in practice.
+ */
+function sessionWinPercentLeaderboard(sessionId) {
+  const rows = db
+    .prepare(
+      `SELECT wa.player_id, p.name, p.full_name, p.slug,
+              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as weeks
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
+       WHERE w.session_id = ? AND wa.games_won IS NOT NULL AND wcg.games_played IS NOT NULL AND wcg.games_played > 0
+       GROUP BY wa.player_id
+       ORDER BY (gw * 1.0 / gp) DESC, weeks DESC, p.name ASC`
+    )
+    .all(sessionId);
+
+  return rows.map((r) => ({
+    player: { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug },
+    gamesWon: r.gw,
+    gamesPlayed: r.gp,
+    weeksScored: r.weeks,
+    winPct: r.gp ? r.gw / r.gp : 0,
+  }));
+}
+
+/**
+ * All-time, all-sessions version of sessionLeaderboard() (Kyle, 2026-09-10:
+ * "we should have a total leaderboard for all of the players entered into
+ * the system... broken out into each session, but also have a total
+ * players leaderboard"). Identical shape and tie-break rule, just without
+ * the `WHERE w.session_id = ?` scoping — sums every scored week across
+ * every session a player has ever played in, archived sessions included
+ * (an all-time board that quietly dropped a player's history the moment a
+ * session got archived would be a strange "all-time" board).
+ */
+function overallLeaderboard() {
+  const rows = db
+    .prepare(
+      `SELECT wa.player_id, p.name, p.full_name, p.slug,
+              SUM(wa.games_won) as total, COUNT(*) as matches
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       WHERE wa.games_won IS NOT NULL
+       GROUP BY wa.player_id
+       ORDER BY total DESC, (total * 1.0 / matches) DESC, p.name ASC`
+    )
+    .all();
+
+  return rows.map((r) => ({
+    player: { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug },
+    totalGames: r.total,
+    matchesScored: r.matches,
+    avgPerMatch: r.matches ? r.total / r.matches : 0,
+  }));
+}
+
+/** All-time, all-sessions version of sessionWinPercentLeaderboard() — same
+ * relationship to overallLeaderboard() above as the per-session win% board
+ * has to the per-session total-games board. See overallLeaderboard()'s doc
+ * comment for why archived sessions are included. */
+function overallWinPercentLeaderboard() {
+  const rows = db
+    .prepare(
+      `SELECT wa.player_id, p.name, p.full_name, p.slug,
+              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as weeks
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
+       WHERE wa.games_won IS NOT NULL AND wcg.games_played IS NOT NULL AND wcg.games_played > 0
+       GROUP BY wa.player_id
+       ORDER BY (gw * 1.0 / gp) DESC, weeks DESC, p.name ASC`
+    )
+    .all();
+
+  return rows.map((r) => ({
+    player: { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug },
+    gamesWon: r.gw,
+    gamesPlayed: r.gp,
+    weeksScored: r.weeks,
+    winPct: r.gp ? r.gw / r.gp : 0,
+  }));
+}
+
 module.exports = {
   MAX_GAMES,
   ScoreError,
   parseGamesWon,
+  parseGamesPlayed,
   isScoreable,
   lockInfo,
   canPlayerEdit,
+  lockInfoGamesPlayed,
+  canEditGamesPlayed,
+  gamesPlayedRowForWeekCourt,
+  gamesPlayedRowsForWeek,
   scoreRowsForPlayer,
   sessionsWithScoresForPlayer,
   scoreEntryWeeksForSession,
   scoreRowsForWeek,
   setGameScore,
+  setGamesPlayedForWeekCourt,
   sessionLeaderboard,
+  sessionWinPercentLeaderboard,
+  overallLeaderboard,
+  overallWinPercentLeaderboard,
 };

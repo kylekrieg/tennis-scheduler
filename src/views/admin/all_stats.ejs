@@ -37,6 +37,47 @@
     </tbody>
   </table>
 
+  <div class="card wide" style="margin-top:16px;">
+    <h2 style="margin-top:0;">All-Time Leaderboard (all sessions combined)</h2>
+    <p class="muted">Every scored week across every session, summed into one board — archived sessions included. Broken out per-session further down.</p>
+    <% if (overallLeaderboard.length === 0) { %>
+      <p class="muted">No scores entered yet.</p>
+    <% } else { %>
+      <table class="wide">
+        <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+        <tbody>
+          <% overallLeaderboard.forEach(function(row, i) { %>
+            <tr>
+              <td><%= i + 1 %></td>
+              <td><%= fullName(row.player) %></td>
+              <td><strong><%= row.totalGames %></strong></td>
+              <td><%= row.matchesScored %></td>
+              <td><%= row.avgPerMatch.toFixed(1) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+    <% if (overallWinLeaderboard.length) { %>
+      <h3>All-Time Win % Leaderboard</h3>
+      <table class="wide">
+        <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+        <tbody>
+          <% overallWinLeaderboard.forEach(function(row, i) { %>
+            <tr>
+              <td><%= i + 1 %></td>
+              <td><%= fullName(row.player) %></td>
+              <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
+              <td><%= row.gamesWon %></td>
+              <td><%= row.gamesPlayed %></td>
+              <td><%= row.weeksScored %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
   <% rows.forEach(function(r) { %>
     <div class="card wide" style="border-left:6px solid <%= sessionColor(r.session) %>;margin-top:16px;">
       <h2 style="margin-top:0;">
@@ -89,6 +130,24 @@
                 <td><strong><%= row.totalGames %></strong></td>
                 <td><%= row.matchesScored %></td>
                 <td><%= row.avgPerMatch.toFixed(1) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
+      <% if (r.winLeaderboard.length) { %>
+        <h3>Win % leaderboard</h3>
+        <table>
+          <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+          <tbody>
+            <% r.winLeaderboard.forEach(function(row, i) { %>
+              <tr>
+                <td><%= i + 1 %></td>
+                <td><%= fullName(row.player) %></td>
+                <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
+                <td><%= row.gamesWon %></td>
+                <td><%= row.gamesPlayed %></td>
+                <td><%= row.weeksScored %></td>
               </tr>
             <% }) %>
           </tbody>

@@ -176,7 +176,29 @@ CREATE TABLE IF NOT EXISTS week_assignments (
   games_won             INTEGER, -- Kyle, 2026-09-09: self-reported "games won" for a player's own week — see src/services/gameScores.js. NULL = never entered. Each player enters their own number (not a single shared team score), so this lives on the per-player assignment row rather than a per-team/week table.
   games_won_entered_at  TEXT, -- set once, the first time a score is saved for this row — never touched again on later edits. The player's 24-hour self-service edit window (gameScores.js's canPlayerEdit()) is measured from this, not from match time or week-lock time.
   games_won_updated_at  TEXT, -- stamped on every save (including the first) — "last updated" display, no separate history table.
+  games_played          INTEGER, -- VESTIGIAL (Kyle, 2026-09-10, superseded same day) — the very first cut of the games-played denominator lived here, per-player. Kyle then clarified games played is really a property of the WHOLE match (one shared number for all 4 players on a court that week, entered once), not something each player reports separately — see week_court_games below, which replaced this. Left in place, never dropped, per this app's additive-only migration philosophy (same as the token column's own vestigial note above); no longer read or written by any route.
   UNIQUE(week_id, player_id)
+);
+
+-- Shared "games played" total for one match (Kyle, 2026-09-10, replacing the
+-- short-lived per-player week_assignments.games_played above): all 4 players
+-- on a given court in a given week play the same match, so there's exactly
+-- ONE real "games played" number for that week+court, not four individually-
+-- reported ones — entered once (by any player, via either scores entry
+-- page, or by an admin) and shared by everyone who played that match when
+-- computing win % (games_won / games_played) in gameScores.js's
+-- sessionWinPercentLeaderboard()/overallWinPercentLeaderboard(). Keyed by
+-- (week_id, court) rather than week_id alone so multi-court sessions
+-- (players_per_week > 4) still get a correct, independent total per court —
+-- this collapses to "once per week" for the common single-court case.
+CREATE TABLE IF NOT EXISTS week_court_games (
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_id                  INTEGER NOT NULL REFERENCES weeks(id) ON DELETE CASCADE,
+  court                    INTEGER NOT NULL DEFAULT 1,
+  games_played             INTEGER, -- NULL = never entered yet
+  games_played_entered_at  TEXT, -- set once, the first time this is saved — same 24h-self-service-window pattern as week_assignments.games_won_entered_at, via gameScores.js's canEditGamesPlayed()
+  games_played_updated_at  TEXT, -- stamped on every save, including the first
+  UNIQUE(week_id, court)
 );
 
 -- Replaces the single week_assignments.token column. Multiple tokens can be

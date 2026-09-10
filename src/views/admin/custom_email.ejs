@@ -11,6 +11,14 @@
     <label for="type_session" style="margin:0;font-weight:400;">Whole session roster</label>
   </div>
   <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="all_players" id="type_all_players">
+    <label for="type_all_players" style="margin:0;font-weight:400;">All players</label>
+  </div>
+  <div class="checkbox-row">
+    <input type="radio" name="recipient_type" value="all_players_subs" id="type_all_players_subs">
+    <label for="type_all_players_subs" style="margin:0;font-weight:400;">All players + broader sub list</label>
+  </div>
+  <div class="checkbox-row">
     <input type="radio" name="recipient_type" value="week" id="type_week">
     <label for="type_week" style="margin:0;font-weight:400;">This week's players (one session)</label>
   </div>
@@ -32,6 +40,17 @@
       <% sessions.forEach(function(s) { %><option value="<%= s.id %>"><%= sessionFullTitle(s) %><%= s.archived_at ? ' (archived)' : '' %></option><% }) %>
     </select>
     <p class="muted" style="margin-top:4px;">Goes to every active player currently on this session's roster — the same list "Notify roster" or ad-hoc invites would use.</p>
+  </div>
+
+  <div id="all-players-picker" style="display:none;">
+    <p class="muted" style="margin-top:4px;">One email per person (not one email with everyone in the To: field) to all <strong><%= players.length %> active player(s)</strong>:</p>
+    <p class="muted" style="margin-top:4px;"><%= players.map(fullName).join(', ') || '— no active players —' %></p>
+  </div>
+
+  <div id="all-players-subs-picker" style="display:none;">
+    <p class="muted" style="margin-top:4px;">One email per person (not one email with everyone in the To: field) to all <strong><%= players.length %> active player(s)</strong> plus everyone on the <strong>broader sub list (<%= broaderSubList.length %>)</strong>:</p>
+    <p class="muted" style="margin-top:4px;"><strong>Players:</strong> <%= players.map(fullName).join(', ') || '— no active players —' %></p>
+    <p class="muted" style="margin-top:4px;"><strong>Broader sub list:</strong> <%= broaderSubList.map(fullName).join(', ') || '— empty —' %></p>
   </div>
 
   <div id="week-picker" style="display:none;">
@@ -67,6 +86,8 @@
   (function () {
     var playerPicker = document.getElementById('player-picker');
     var sessionPicker = document.getElementById('session-picker');
+    var allPlayersPicker = document.getElementById('all-players-picker');
+    var allPlayersSubsPicker = document.getElementById('all-players-subs-picker');
     var weekPicker = document.getElementById('week-picker');
     var templatePicker = document.getElementById('template-picker');
     var subjectBody = document.getElementById('subject-body-fields');
@@ -74,11 +95,16 @@
     var body = document.getElementById('body');
     document.querySelectorAll('input[name="recipient_type"]').forEach(function (r) {
       r.addEventListener('change', function () {
+        var toPlayer = this.value === 'player';
         var toSession = this.value === 'session';
+        var toAllPlayers = this.value === 'all_players';
+        var toAllPlayersSubs = this.value === 'all_players_subs';
         var toWeek = this.value === 'week';
         var toTemplate = this.value === 'template_test';
-        playerPicker.style.display = toSession || toWeek || toTemplate ? 'none' : '';
+        playerPicker.style.display = toPlayer ? '' : 'none';
         sessionPicker.style.display = toSession ? '' : 'none';
+        allPlayersPicker.style.display = toAllPlayers ? '' : 'none';
+        allPlayersSubsPicker.style.display = toAllPlayersSubs ? '' : 'none';
         weekPicker.style.display = toWeek ? '' : 'none';
         templatePicker.style.display = toTemplate ? '' : 'none';
         subjectBody.style.display = toTemplate ? 'none' : '';

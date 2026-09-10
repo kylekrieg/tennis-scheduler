@@ -21,6 +21,71 @@
     </tbody>
   </table>
 <% } %>
+
+<h2 style="margin-top:28px;">Win % Leaderboard</h2>
+<p class="muted">Ranked by games won ÷ games played instead of a raw total, so someone who's made every week doesn't automatically outrank someone who's missed a few but wins a higher share of the games they actually play. Only counts weeks where both games won AND games played were entered — a week scored before games-played tracking started won't count here even if it's on the total-games board above. No minimum number of weeks required to appear.</p>
+<% if (winBoard.length === 0) { %>
+  <p class="muted">No weeks with both games won and games played entered yet for this session.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+    <tbody>
+      <% winBoard.forEach(function(row, i) { %>
+        <tr>
+          <td><%= i + 1 %></td>
+          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+          <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
+          <td><%= row.gamesWon %></td>
+          <td><%= row.gamesPlayed %></td>
+          <td><%= row.weeksScored %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+
+<h2 style="margin-top:36px;">All-Time Leaderboard (all sessions)</h2>
+<p class="muted">Every scored week across every session anyone's ever played, combined into one board — not just this session.</p>
+<% if (overallBoard.length === 0) { %>
+  <p class="muted">No scores entered yet.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+    <tbody>
+      <% overallBoard.forEach(function(row, i) { %>
+        <tr>
+          <td><%= i + 1 %></td>
+          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+          <td><strong><%= row.totalGames %></strong></td>
+          <td><%= row.matchesScored %></td>
+          <td><%= row.avgPerMatch.toFixed(1) %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+
+<h3 style="margin-top:20px;">All-Time Win % Leaderboard</h3>
+<% if (overallWinBoard.length === 0) { %>
+  <p class="muted">No weeks with both games won and games played entered yet.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+    <tbody>
+      <% overallWinBoard.forEach(function(row, i) { %>
+        <tr>
+          <td><%= i + 1 %></td>
+          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+          <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
+          <td><%= row.gamesWon %></td>
+          <td><%= row.gamesPlayed %></td>
+          <td><%= row.weeksScored %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+
 <p class="actions" style="margin-top:16px;">
   <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
 </p>

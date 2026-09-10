@@ -1,22 +1,23 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <h1><%= player.name %>'s Scores</h1>
-<p class="muted">Bookmark this page — enter how many games you won each week here, once that week's match has actually happened. You can fix an entry for 24 hours after you first save it; after that, ask an admin to change it. Filling in scores for the whole group at once instead? <a href="/scores">Go to the group entry page</a>.</p>
-<p class="muted">Counting games: each regular game you win counts as 1. If a set ends in a 7-point or 10-point tiebreaker instead of being played out, that tiebreaker is worth 1 game too — credit it to whoever won it, not point-by-point.</p>
+<p class="muted">Bookmark this page — enter how many games you won each week here, once that week's match has actually happened. Total games played is one shared number for the whole match (not just your own) — if nobody's entered it yet for a week, you can fill that in too, but it's optional; either way it's what powers the Win % leaderboard. You can fix your own games-won entry for 24 hours after you first save it; after that, ask an admin to change it. Filling in scores for the whole group at once instead? <a href="/scores">Go to the group entry page</a>.</p>
 
 <% if (saved) { %>
-  <div class="flag">Saved.</div>
+  <div class="flag">Saved.<% if (playedErrorCode) { %> (Games played wasn't saved — <%= playedErrorCode === 'locked' ? "its 24-hour edit window has already closed" : playedErrorCode === 'invalid_value' ? "enter a whole number of games played, at least as many as games won" : "something went wrong" %>.)<% } %></div>
 <% } else if (errorCode) { %>
   <div class="flag error">
     <% if (errorCode === 'locked') { %>The 24-hour window to enter or fix that score has closed — ask an admin to change it.
     <% } else if (errorCode === 'not_scoreable') { %>That match isn't open for scores yet — it has to have actually happened first.
     <% } else if (errorCode === 'not_yours') { %>That match isn't on your own page.
-    <% } else if (errorCode === 'invalid_value') { %>Enter a whole number of games from 0 to <%= maxGames %>.
+    <% } else if (errorCode === 'invalid_value') { %>Enter a whole number of games won from 0 to <%= maxGames %> (and no more than the total games played for that match, if it's been entered).
     <% } else { %>Something went wrong saving that score — try again.<% } %>
   </div>
 <% } %>
 
 <% if (sessionCards.length === 0) { %>
   <p class="muted">Nothing to score yet — this fills in after your first match actually happens.</p>
+<% } else { %>
+  <p><strong>Counting games:</strong> each regular game you win counts as 1. All tiebreaker games won count as 1 if played at the end of a set or as a one-off — credit it to whoever won it, not point-by-point. If games or tiebreakers are not completed, do not count them.</p>
 <% } %>
 
 <% sessionCards.forEach(function(card) { %>
@@ -29,7 +30,7 @@
       <p class="muted">No played weeks yet in this session.</p>
     <% } else { %>
       <table class="wide">
-        <thead><tr><th style="white-space:nowrap;">Date</th><th>Your games won</th><th></th></tr></thead>
+        <thead><tr><th style="white-space:nowrap;">Date</th><th>Your games won</th><th>Total games played (whole match)</th><th></th></tr></thead>
         <tbody>
           <% card.rows.forEach(function(r) { %>
             <tr>
@@ -39,11 +40,24 @@
                   <form method="post" action="/scores/<%= player.slug || player.id %>" style="display:flex;align-items:center;gap:6px;">
                     <input type="hidden" name="assignment_id" value="<%= r.assignment.id %>">
                     <input type="number" name="games_won" min="0" max="<%= maxGames %>" step="1" value="<%= r.assignment.games_won !== null ? r.assignment.games_won : '' %>" required style="width:70px;">
+                    <% if (r.canEditGamesPlayed) { %>
+                      <span class="muted" style="font-size:11px;">played:</span>
+                      <input type="number" name="games_played" min="0" max="<%= maxGames %>" step="1" value="<%= r.gamesPlayed !== null ? r.gamesPlayed : '' %>" style="width:70px;" title="Total games played for the whole match — optional, leave blank to skip">
+                    <% } %>
                     <button class="btn small green" type="submit"><%= r.alreadyEntered ? 'Update' : 'Save' %></button>
                   </form>
                   <% if (r.alreadyEntered) { %><div class="muted" style="font-size:11px;margin-top:4px;">Editable until <%= fmtDate(r.lockAtDate) %>, <%= fmtTime(r.lockAtTime) %></div><% } %>
                 <% } else if (r.alreadyEntered) { %>
                   <strong><%= r.assignment.games_won %></strong> <span class="muted" style="font-size:11px;">— locked, ask an admin to change it</span>
+                <% } %>
+              </td>
+              <td>
+                <% if (r.gamesPlayed !== null) { %>
+                  <%= r.gamesPlayed %>
+                <% } else if (!r.canEdit && !r.canEditGamesPlayed) { %>
+                  <span class="muted">—</span>
+                <% } else { %>
+                  <span class="muted">not entered yet</span>
                 <% } %>
               </td>
               <td class="muted" style="font-size:11px;"><%= r.assignment.is_sub ? 'as a sub' : '' %></td>

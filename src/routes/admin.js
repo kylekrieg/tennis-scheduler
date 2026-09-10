@@ -363,6 +363,9 @@ router.get('/stats', (req, res) => {
     // /leaderboard page and this session's own Stats page use, so all three
     // never disagree. See gameScores.js's sessionLeaderboard() doc comment.
     const leaderboard = gameScores.sessionLeaderboard(s.id);
+    // Win %-based leaderboard (Kyle, 2026-09-10) — same helper/reasoning as
+    // the public /leaderboard page's second table.
+    const winLeaderboard = gameScores.sessionWinPercentLeaderboard(s.id);
 
     return {
       session: s,
@@ -377,10 +380,18 @@ router.get('/stats', (req, res) => {
       playerStats,
       subStats,
       leaderboard,
+      winLeaderboard,
     };
   });
 
-  res.render('admin/all_stats', { title: 'Stats Summary', rows, flashMsg: popFlash(req) });
+  // All-time, all-sessions leaderboards (Kyle, 2026-09-10) — this page
+  // already aggregates across every active session, so it's the natural
+  // admin-side home for the combined "total players leaderboard" alongside
+  // the public /leaderboard page's own copy of the same two boards.
+  const overallLeaderboard = gameScores.overallLeaderboard();
+  const overallWinLeaderboard = gameScores.overallWinPercentLeaderboard();
+
+  res.render('admin/all_stats', { title: 'Stats Summary', rows, overallLeaderboard, overallWinLeaderboard, flashMsg: popFlash(req) });
 });
 
 router.post('/sessions/:id/archive', (req, res) => {
@@ -1648,6 +1659,16 @@ router.get('/sessions/:id', (req, res) => {
     // (doubleBooked, reminded, followedUp) survives, since this reorders in
     // place rather than cloning.
     const orderedAssignments = orderAssignmentsWithSubGroups(assignments);
+    // One shared "games played" total per court present this week (Kyle,
+    // 2026-09-10 — see gameScores.js's top doc comment for why this is a
+    // per-court value, not per player), for the admin override control
+    // rendered once per court alongside the per-player "games won" fields.
+    const courtsGamesPlayed = [...new Set(assignments.map((a) => a.court))]
+      .sort((a, b) => a - b)
+      .map((court) => {
+        const gpRow = gameScores.gamesPlayedRowForWeekCourt(w.id, court);
+        return { court, gamesPlayed: gpRow ? gpRow.games_played : null };
+      });
     return {
       week: w,
       assignments: orderedAssignments,
@@ -1657,6 +1678,7 @@ router.get('/sessions/:id', (req, res) => {
       openSwapRequest,
       blackedOutNames: blackedOutByDate.get(w.match_date) || [],
       weather: weather.getCachedWeather(w.id),
+      courtsGamesPlayed,
     };
   });
 
@@ -2232,10 +2254,13 @@ router.post('/sessions/:id/weeks/:weekId/correct-player', asyncHandler(async (re
   const hadScore = assignment.games_won !== null;
 
   db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
-  // Clear any games-won value already entered against the wrong player — see
-  // the doc comment above this route for why (sessionLeaderboard() doesn't
-  // filter by status, so an uncleared value would keep counting toward
-  // whoever was wrongly on record here).
+  // Clear any games-won value already entered against the wrong player —
+  // see the doc comment above this route for why (sessionLeaderboard()
+  // doesn't filter by status, so an uncleared value would keep counting
+  // toward whoever was wrongly on record here). Games PLAYED is untouched —
+  // it's the shared total for the whole match (week_court_games), not tied
+  // to any one player, so correcting who's on record for one slot has
+  // nothing to do with it.
   if (hadScore) {
     db.prepare(
       'UPDATE week_assignments SET games_won = NULL, games_won_entered_at = NULL, games_won_updated_at = NULL WHERE id = ?'
@@ -2669,6 +2694,40 @@ router.post('/sessions/:id/weeks/:weekId/score/:assignmentId', (req, res) => {
       sessionId: Number(req.params.id),
     });
     flash(req, 'Games won saved.');
+  } catch (err) {
+    if (err instanceof gameScores.ScoreError) {
+      flash(req, err.message, 'error');
+    } else {
+      throw err;
+    }
+  }
+  res.redirect(`/admin/sessions/${req.params.id}`);
+});
+
+// Admin override for the shared "games played" total on one court for one
+// week (Kyle, 2026-09-10 — see gameScores.js's top doc comment for why this
+// is one number per week+court rather than per player, unlike the
+// per-assignment "games won" override just above). Same unrestricted
+// "admin can always fix it" latitude as every other override in this file —
+// isAdmin: true bypasses both the week-must-be-locked gate and the 24h
+// self-service window.
+router.post('/sessions/:id/weeks/:weekId/court/:court/games-played', (req, res) => {
+  const week = db.prepare('SELECT match_date FROM weeks WHERE id = ?').get(req.params.weekId);
+  if (!week) return res.status(404).send('Not found');
+
+  try {
+    const { gamesPlayed, wasFirstEntry } = gameScores.setGamesPlayedForWeekCourt({
+      weekId: Number(req.params.weekId),
+      court: Number(req.params.court),
+      gamesPlayed: req.body.games_played,
+      isAdmin: true,
+    });
+    logActivity(req, {
+      action: wasFirstEntry ? 'week.games_played_set' : 'week.games_played_edit',
+      description: `${wasFirstEntry ? 'Set' : 'Changed'} total games played (court ${req.params.court}) for ${email.fmtDate(week.match_date)} to ${gamesPlayed}`,
+      sessionId: Number(req.params.id),
+    });
+    flash(req, 'Games played saved.');
   } catch (err) {
     if (err instanceof gameScores.ScoreError) {
       flash(req, err.message, 'error');
@@ -3122,8 +3181,9 @@ router.get('/sessions/:id/stats', (req, res) => {
   });
 
   const leaderboard = gameScores.sessionLeaderboard(session.id);
+  const winLeaderboard = gameScores.sessionWinPercentLeaderboard(session.id);
 
-  res.render('admin/stats', { title: 'Stats', session, stats, subStats, roster, partnerCounts, subHistory, leaderboard });
+  res.render('admin/stats', { title: 'Stats', session, stats, subStats, roster, partnerCounts, subHistory, leaderboard, winLeaderboard });
 });
 
 // --- Players (global roster) ------------------------------------------
@@ -3500,7 +3560,11 @@ router.get('/email', (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
   const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
   const templates = testEmail.listTemplates();
-  res.render('admin/custom_email', { title: 'Send Email', players, sessions, templates, flashMsg: popFlash(req) });
+  // Broader sub list (Kyle, 2026-09-10) — for the "All players + broader
+  // sub list" recipient option below, and so the picker can show exactly
+  // who's on it before sending.
+  const broaderSubList = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
+  res.render('admin/custom_email', { title: 'Send Email', players, sessions, templates, broaderSubList, flashMsg: popFlash(req) });
 });
 
 // recipient_type='session' fans the same message out to every active
@@ -3627,6 +3691,38 @@ router.post('/email', asyncHandler(async (req, res) => {
       await email.sendCustomEmail({ to: player.email, subject, body, session });
     }
     flash(req, `Email sent to ${roster.length} player(s) in "${session.name}".`);
+    return res.redirect('/admin/email');
+  }
+
+  // recipient_type='all_players' / 'all_players_subs' (Kyle, 2026-09-10):
+  // two more fan-out options alongside 'session' above — same shape (one
+  // sendCustomEmail() call per recipient, not one email with everyone in
+  // the To: field), just a different pool. 'all_players' is every active
+  // players row; 'all_players_subs' adds everyone on the global
+  // broader_sub_list (the master sub pool managed at Admin -> Sub List —
+  // see schema.sql's doc comment on that table) on top of that, since
+  // that's a separate pool of people (not necessarily active players
+  // themselves) who've opted into being subs.
+  if (req.body.recipient_type === 'all_players' || req.body.recipient_type === 'all_players_subs') {
+    const roster = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
+    const broaderList =
+      req.body.recipient_type === 'all_players_subs'
+        ? db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all()
+        : [];
+    if (roster.length === 0 && broaderList.length === 0) {
+      flash(req, 'No active players (or sub-list entries) — nothing sent.', 'error');
+      return res.redirect('/admin/email');
+    }
+    for (const player of roster) {
+      await email.sendCustomEmail({ to: player.email, subject, body });
+    }
+    for (const entry of broaderList) {
+      await email.sendCustomEmail({ to: entry.email, subject, body });
+    }
+    const summary = broaderList.length
+      ? `${roster.length} active player(s) + ${broaderList.length} broader sub list entr${broaderList.length === 1 ? 'y' : 'ies'}`
+      : `${roster.length} active player(s)`;
+    flash(req, `Email sent to ${summary}.`);
     return res.redirect('/admin/email');
   }
 

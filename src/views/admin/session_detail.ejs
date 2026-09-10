@@ -167,6 +167,18 @@
       <div class="muted" style="margin-top:6px;font-size:12px;">Blacked out this week: <%= r.blackedOutNames.join(', ') %></div>
     <% } %>
 
+    <% if (r.week.locked && r.courtsGamesPlayed && r.courtsGamesPlayed.length) { %>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:16px;">
+        <% r.courtsGamesPlayed.forEach(function(cg) { %>
+          <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/court/<%= cg.court %>/games-played" style="display:inline-flex;align-items:center;gap:4px;">
+            <span class="muted" style="font-size:11px;"><% if (multiCourt) { %>Court <%= cg.court %> — <% } %>Total games played:</span>
+            <input type="number" name="games_played" min="0" max="<%= maxGames %>" step="1" value="<%= cg.gamesPlayed !== null ? cg.gamesPlayed : '' %>" style="width:56px;padding:2px 4px;font-size:12px;">
+            <button class="btn small neutral" type="submit">Save</button>
+          </form>
+        <% }) %>
+      </div>
+    <% } %>
+
     <div style="margin-top:8px;">
       <% if (r.assignments.length === 0) { %>
         <p class="muted">No players scheduled this week — use Add a player below once the roster's sorted out.</p>
