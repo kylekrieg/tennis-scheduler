@@ -544,12 +544,12 @@ router.post('/admins', (req, res) => {
     flash(req, 'Name is required and password must be at least 8 characters.', 'error');
     return res.redirect('/admin/admins');
   }
-  const usernameError = invalidUsernameField(req.body.username, null);
+  const usernameError = invalidUsernameField(req.body.admin_username, null);
   if (usernameError) {
     flash(req, usernameError, 'error');
     return res.redirect('/admin/admins');
   }
-  const submittedUsername = (req.body.username || '').trim().toLowerCase();
+  const submittedUsername = (req.body.admin_username || '').trim().toLowerCase();
   const username = submittedUsername || generateUniqueUsername(db, name, null);
   db.prepare('INSERT INTO admins (name, email, username, password_hash, active) VALUES (?, ?, ?, ?, 1)').run(
     name,
@@ -571,6 +571,16 @@ router.post('/admins', (req, res) => {
 // regenerated when the name changes (same reasoning as players.slug) — an
 // admin who already knows their username shouldn't have it silently change
 // out from under them because their display name got corrected.
+//
+// The field is posted as `admin_username`, not `username` (admins.ejs
+// matches) — Chrome/Edge treat any <input name="username"> on this origin
+// as the same field as the one on the /admin/login form and will silently
+// re-fill it with a saved login (e.g. "kylek") right before submit, so
+// whatever the admin actually typed here (like "admin") never reaches the
+// server at all: the request round-trips fine, "Admin updated" flashes,
+// and the box shows the old value again because nothing really changed.
+// Renaming this field away from the login form's `username` breaks that
+// false match without touching the real login autofill.
 router.post('/admins/:id/edit', (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) {
@@ -582,7 +592,7 @@ router.post('/admins/:id/edit', (req, res) => {
     flash(req, 'That admin no longer exists.', 'error');
     return res.redirect('/admin/admins');
   }
-  const submittedUsername = (req.body.username || '').trim().toLowerCase();
+  const submittedUsername = (req.body.admin_username || '').trim().toLowerCase();
   let newUsername = before.username;
   if (submittedUsername && submittedUsername !== before.username) {
     const usernameError = invalidUsernameField(submittedUsername, req.params.id);
@@ -1825,10 +1835,15 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
   if (new_player_id === 'needs_sub') {
     const result = subFlow.adminFlagNeedsSub(assignment.id);
     if (result.blocked) {
+      // Kyle, 2026-09-10: 'not_locked' added alongside the existing two —
+      // sub tracking doesn't start until the season's schedule is locked
+      // (see subFlow.js's adminFlagNeedsSub() doc comment).
       const reasonText =
         result.reason === 'locked'
           ? "Can't flag — this week is already locked (already played)."
-          : 'Another sub request is already open for this week — resolve that one first.';
+          : result.reason === 'not_locked'
+            ? "Can't flag a sub yet — lock this session's schedule first (see \"Lock this schedule\" above). Sub tracking only starts once the schedule is locked, so reworking the schedule beforehand doesn't leave behind fake sub history."
+            : 'Another sub request is already open for this week — resolve that one first.';
       flash(req, reasonText, 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
@@ -1901,6 +1916,14 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
 
     const subWasResolvedOneTime = subFlow.closeActiveSubRequestForAssignment(assignment.id);
     const swapWasCancelledOneTime = swapFlow.adminCancelSwap(assignment.id);
+    // Kyle, 2026-09-10: log this as a real sub in Sub History too — but only
+    // when there wasn't already an open request on this slot (closed just
+    // above), which would already be logged there via the resolved_manually
+    // status it just got. See subFlow.js's recordAdminReassignAsSub() doc
+    // comment.
+    if (!subWasResolvedOneTime) {
+      subFlow.recordAdminReassignAsSub(assignment.id, assignment.player_id);
+    }
 
     logActivity(req, {
       action: 'week.one_time_sub',
@@ -2012,6 +2035,12 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
 
     const subWasResolvedSub = subFlow.closeActiveSubRequestForAssignment(assignment.id);
     const swapWasCancelledSub = swapFlow.adminCancelSwap(assignment.id);
+    // Kyle, 2026-09-10: same Sub History logging as the one-time-sub branch
+    // above — only when this reassign is what created the "sub" event (no
+    // pre-existing open request already logging it via resolved_manually).
+    if (!subWasResolvedSub) {
+      subFlow.recordAdminReassignAsSub(assignment.id, assignment.player_id);
+    }
 
     logActivity(req, {
       action: 'week.reassign_from_sub_list',
@@ -2270,6 +2299,19 @@ router.post('/sessions/:id/weeks/:weekId/correct-player', asyncHandler(async (re
     `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at, replaces_assignment_id)
      VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
   ).run(assignment.week_id, newPlayer.id, assignment.team, assignment.court, assignment.id);
+
+  // Kyle, 2026-09-10: this is just as much a real sub as the pre-lock
+  // Reassign branches above — log it to Sub History the same way. A locked
+  // week shouldn't normally still have an open/escalated/unfilled request
+  // sitting on it (flagStillUnfilled() already resolves those to 'unfilled'
+  // once match time passes), but the same defensive
+  // close-then-only-log-if-nothing-was-there pattern is used regardless, so
+  // a stray leftover request is closed rather than left dangling alongside
+  // a brand-new duplicate row.
+  const subWasResolvedCorrect = subFlow.closeActiveSubRequestForAssignment(assignment.id);
+  if (!subWasResolvedCorrect) {
+    subFlow.recordAdminReassignAsSub(assignment.id, assignment.player_id);
+  }
 
   logActivity(req, {
     action: 'week.correct_player',
@@ -3148,17 +3190,93 @@ router.get('/sessions/:id/stats', (req, res) => {
   // under the new person's name. COALESCE falls back to wa.player_id only
   // for the edge case of a pre-migration row that somehow still has no
   // snapshot (shouldn't happen post-backfill, but defensive regardless).
+  // Excludes 'resolved_double_booking' (Kyle, 2026-09-10): those rows are the
+  // joint conflict resolver closing out a sub_requests row as a side effect
+  // of moving players between weeks to fix a real cross-session
+  // double-booking — a schedule correction, not a substitution — so they
+  // shouldn't read as a sub in this table at all. Left in the database
+  // (never deleted, same additive-only philosophy as everywhere else in this
+  // app) so the record is still there if it's ever needed, just not surfaced
+  // here. See subFlow.js's closeActiveSubRequestForAssignment() doc comment
+  // and jointSolver.js's applyResolutions().
   const rawSubHistory = db
     .prepare(
-      `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date, p.name, p.full_name
+      `SELECT sr.id, sr.status, sr.created_at, sr.escalated_at, w.match_date,
+              wa.id AS assignment_id, wa.week_id, wa.team, wa.court, wa.player_id AS current_player_id,
+              p.id AS original_player_id, p.name, p.full_name
        FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = COALESCE(sr.requesting_player_id, wa.player_id)
-       WHERE w.session_id = ? ORDER BY w.match_date DESC`
+       WHERE w.session_id = ? AND sr.status != 'resolved_double_booking' ORDER BY w.match_date DESC`
     )
     .all(session.id)
     // Admin-facing Stats page — full name (Kyle, 2026-09-07).
     .map((r) => ({ ...r, original_player: fullName(r) }));
+
+  // "Filled by" (Kyle, 2026-09-10): who actually took this slot, resolved in
+  // three tiers of decreasing certainty -- same idea as sessionHelper.js's
+  // orderAssignmentsWithSubGroups() but run in the opposite (parent -> child)
+  // direction, so reimplemented locally rather than reused directly:
+  //   1. Real link: another week_assignments row whose replaces_assignment_id
+  //      points straight at this one. Set by claimSub() for every
+  //      self-service/escalation/self-arranged claim, and by admin Reassign's
+  //      sub-list/one-time-sub branches (see recordAdminReassignAsSub() and
+  //      its call sites) -- exact, no guessing involved.
+  //   2. In-place reassign: a plain numeric Reassign swaps wa.player_id
+  //      directly on the same row with no new row and no
+  //      replaces_assignment_id, so if the assignment's *current* occupant
+  //      differs from the *original* occupant snapshotted on the
+  //      sub_requests row, that current occupant is who filled it.
+  //   3. Legacy heuristic fallback: pre-dates both of the above -- same
+  //      week/team/court, an is_sub row with no replaces_assignment_id of its
+  //      own, and exactly one such candidate (each candidate can only be
+  //      claimed by one original row, so two ambiguous rows sharing one
+  //      candidate both fall back to "—" rather than guessing).
+  // Anything that still doesn't resolve renders as "—" in the view -- never
+  // blocks the rest of the row.
+  const findFillerByLink = db.prepare(
+    `SELECT player_id FROM week_assignments WHERE replaces_assignment_id = ? ORDER BY id DESC LIMIT 1`
+  );
+  const findPlayerById = db.prepare('SELECT id, name, full_name FROM players WHERE id = ?');
+  const weekAssignmentsForFillerCache = new Map();
+  function weekAssignmentsForFiller(weekId) {
+    if (!weekAssignmentsForFillerCache.has(weekId)) {
+      weekAssignmentsForFillerCache.set(
+        weekId,
+        db
+          .prepare(
+            'SELECT id, player_id, team, court, is_sub, replaces_assignment_id FROM week_assignments WHERE week_id = ?'
+          )
+          .all(weekId)
+      );
+    }
+    return weekAssignmentsForFillerCache.get(weekId);
+  }
+  const heuristicallyClaimedFillerIds = new Set();
+  for (const r of rawSubHistory) {
+    let fillerId = null;
+    const linked = findFillerByLink.get(r.assignment_id);
+    if (linked) {
+      fillerId = linked.player_id;
+    } else if (r.current_player_id !== r.original_player_id) {
+      fillerId = r.current_player_id;
+    } else {
+      const candidates = weekAssignmentsForFiller(r.week_id).filter(
+        (x) =>
+          x.is_sub &&
+          !x.replaces_assignment_id &&
+          x.team === r.team &&
+          x.court === r.court &&
+          !heuristicallyClaimedFillerIds.has(x.id)
+      );
+      if (candidates.length === 1) {
+        fillerId = candidates[0].player_id;
+        heuristicallyClaimedFillerIds.add(candidates[0].id);
+      }
+    }
+    r.filled_by = fillerId != null ? fullName(findPlayerById.get(fillerId)) : null;
+  }
+
   // created_at/escalated_at are plain SQLite datetime('now') -- UTC, same
   // shape as email_log.sent_at/admin_activity_log.created_at -- converted
   // the same way per Kyle's "no UTC anywhere" rule. escalated_at is

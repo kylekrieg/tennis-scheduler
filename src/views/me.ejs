@@ -36,6 +36,20 @@
       &nbsp;&middot;&nbsp; Played: <strong><%= card.stats.played %></strong>
       &nbsp;&middot;&nbsp; Sub bonus games: <strong><%= card.stats.subBonus %></strong>
       &nbsp;&middot;&nbsp; Ball duty: <strong><%= card.stats.ballDuty %></strong>
+      <% if (card.gamesWonStats) { %>
+        &nbsp;&middot;&nbsp; Games won:
+        <% if (card.gamesWonStats.totalGames != null) { %>
+          <strong><%= card.gamesWonStats.totalGames %></strong> <span class="muted">(#<%= card.gamesWonStats.gamesRank %> of <%= card.gamesWonStats.gamesRankOf %>)</span>
+        <% } else { %>
+          <span class="muted">not yet entered</span>
+        <% } %>
+        &nbsp;&middot;&nbsp; Win %:
+        <% if (card.gamesWonStats.winPct != null) { %>
+          <strong><%= (card.gamesWonStats.winPct * 100).toFixed(1) %>%</strong> <span class="muted">(#<%= card.gamesWonStats.winRank %> of <%= card.gamesWonStats.winRankOf %>)</span>
+        <% } else { %>
+          <span class="muted">not yet available</span>
+        <% } %>
+      <% } %>
     </p>
 
     <% if (card.upcoming.length === 0) { %>
@@ -72,15 +86,25 @@
               <td>
                 <% if (card.session.session_type !== 'adhoc' && !a.locked && (a.status === 'scheduled' || a.status === 'confirmed')) { %>
                   <div class="row-actions">
-                    <form method="post" action="/request-sub/start" style="display:inline;">
-                      <input type="hidden" name="assignment_id" value="<%= a.id %>">
-                      <button class="btn small red" type="submit">Need a sub</button>
-                    </form>
+                    <% /* Sub tracking only starts once the season's schedule is locked
+                          (Kyle, 2026-09-10) — see subFlow.js's createSubRequest() doc
+                          comment. Hiding "Need a sub"/"I found a sub" pre-lock avoids
+                          sending a player through the form only to hit a "not open yet"
+                          message at the end. "Propose a swap" is a separate feature and
+                          isn't gated by this. */ %>
+                    <% if (card.session.schedule_locked_at) { %>
+                      <form method="post" action="/request-sub/start" style="display:inline;">
+                        <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                        <button class="btn small red" type="submit">Need a sub</button>
+                      </form>
+                    <% } %>
                     <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>&assignment=<%= a.id %>">Propose a swap</a>
-                    <form method="post" action="/found-sub/start" style="display:inline;">
-                      <input type="hidden" name="assignment_id" value="<%= a.id %>">
-                      <button class="btn small neutral" type="submit">I found a sub</button>
-                    </form>
+                    <% if (card.session.schedule_locked_at) { %>
+                      <form method="post" action="/found-sub/start" style="display:inline;">
+                        <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                        <button class="btn small neutral" type="submit">I found a sub</button>
+                      </form>
+                    <% } %>
                   </div>
                 <% } %>
               </td>
@@ -94,7 +118,9 @@
       <a class="btn small neutral" href="/schedule?session=<%= card.session.id %>">Full schedule</a>
       <a class="btn small neutral" href="/lookahead?session=<%= card.session.id %>">Next 4 weeks</a>
       <a class="btn small neutral" href="/pdf?session=<%= card.session.id %>">Print Schedule</a>
-      <a class="btn small neutral" href="/request-sub?session=<%= card.session.id %>&player=<%= player.id %>">Request a sub</a>
+      <% if (card.session.schedule_locked_at) { %>
+        <a class="btn small neutral" href="/request-sub?session=<%= card.session.id %>&player=<%= player.id %>">Request a sub</a>
+      <% } %>
       <a class="btn small neutral" href="/swap?session=<%= card.session.id %>&player=<%= player.id %>">Swap a week</a>
       <% if (card.session.games_won_enabled) { %>
         <a class="btn small neutral" href="/scores/<%= player.slug || player.id %>">Enter your scores</a>

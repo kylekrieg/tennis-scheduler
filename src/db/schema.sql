@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS week_assignment_tokens (
 CREATE TABLE IF NOT EXISTS sub_requests (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
   week_assignment_id    INTEGER NOT NULL REFERENCES week_assignments(id) ON DELETE CASCADE,
-  status                TEXT NOT NULL DEFAULT 'open', -- open | filled | escalated | unfilled
+  status                TEXT NOT NULL DEFAULT 'open', -- open | filled | escalated | unfilled | resolved_manually | resolved_double_booking (see subFlow.js's closeActiveSubRequestForAssignment() — the latter, added Kyle 2026-09-10, is the joint conflict resolver closing this out by moving players between weeks rather than an admin finding a real substitute; excluded from the Stats page's Sub History table for that reason)
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   escalated_at          TEXT,
   initiated_by          TEXT NOT NULL DEFAULT 'player', -- 'player' | 'admin' — see subFlow.js's adminFlagNeedsSub()

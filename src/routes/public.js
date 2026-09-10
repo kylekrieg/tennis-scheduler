@@ -1229,10 +1229,16 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
 
   const result = await subFlow.createSubRequest(assignment.id);
   if (result.blocked) {
+    // Kyle, 2026-09-10: 'not_locked' is the season's schedule not being
+    // locked yet — see subFlow.js's createSubRequest() doc comment. Every
+    // other current reason is 'concurrent'.
     return res.render('message', {
       title: 'Need a sub',
       heading: 'Please contact the admin',
-      body: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
+      body:
+        result.reason === 'not_locked'
+          ? "The schedule for this season isn't finalized yet, so sub requests aren't open — reach out to the admin directly and they'll sort it out."
+          : 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
       tone: 'error',
       myPageId: assignment.slug || assignment.player_id,
       sessionId,
@@ -1322,6 +1328,9 @@ router.post('/found-sub/:token', asyncHandler(async (req, res) => {
   if (!result.ok) {
     const messages = {
       locked: "This week's schedule is locked — contact the admin directly.",
+      // Kyle, 2026-09-10: the season's schedule isn't locked yet — see
+      // subFlow.js's arrangeSelfSub() doc comment.
+      not_locked: "The schedule for this season isn't finalized yet, so sub requests aren't open — reach out to the admin directly and they'll sort it out.",
       concurrent: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
       invalid_new_person: 'Enter a valid name and email address for the new person.',
       invalid_candidate: 'That pick is no longer available — they may have been scheduled elsewhere since this page loaded. Please go back and try again.',
@@ -1619,7 +1628,36 @@ router.get('/me/:idOrSlug', (req, res) => {
       ballDuty: ballDutyCount,
     };
 
-    return { session, upcoming, ballDutyDates, blackoutDates, stats };
+    // Games-won/win% stats folded into the same stats line (Kyle,
+    // 2026-09-10: "Can we incorporate some of these stats into each of the
+    // players 'my page'?" — following up on the games-won leaderboard he'd
+    // just asked about). Reuses sessionLeaderboard()/
+    // sessionWinPercentLeaderboard() rather than duplicating their SQL, so
+    // "your rank" here can never drift from what /leaderboard itself shows
+    // — same list, this player's row plus its index. Both come back empty
+    // (not null) once nobody in the session has scored anything yet, which
+    // findIndex handles the same as "not present" — gamesWonStats is only
+    // computed at all when the session's own toggle is on (see
+    // sessions.games_won_enabled / CLAUDE.md's per-session games-won
+    // toggle), matching the gate the "Enter your scores"/"Leaderboard"
+    // buttons below already use.
+    let gamesWonStats = null;
+    if (session.games_won_enabled) {
+      const lb = gameScores.sessionLeaderboard(session.id);
+      const lbIdx = lb.findIndex((r) => r.player.id === playerId);
+      const wlb = gameScores.sessionWinPercentLeaderboard(session.id);
+      const wlbIdx = wlb.findIndex((r) => r.player.id === playerId);
+      gamesWonStats = {
+        totalGames: lbIdx >= 0 ? lb[lbIdx].totalGames : null,
+        gamesRank: lbIdx >= 0 ? lbIdx + 1 : null,
+        gamesRankOf: lb.length,
+        winPct: wlbIdx >= 0 ? wlb[wlbIdx].winPct : null,
+        winRank: wlbIdx >= 0 ? wlbIdx + 1 : null,
+        winRankOf: wlb.length,
+      };
+    }
+
+    return { session, upcoming, ballDutyDates, blackoutDates, stats, gamesWonStats };
   });
 
   // Draft sessions this player's enrolled in aren't in getViewableSessions

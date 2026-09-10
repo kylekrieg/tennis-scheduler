@@ -61,7 +61,11 @@ function sessionSubList(sessionId) {
 function getWeekWithSession(weekId) {
   return db
     .prepare(
-      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours
+      // schedule_locked_at (Kyle, 2026-09-10) added so every caller that
+      // already has a week-with-session row on hand can check the season-lock
+      // gate below without a second query — see createSubRequest()/
+      // adminFlagNeedsSub()/arrangeSelfSub()'s "not_locked" checks.
+      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours, s.schedule_locked_at
        FROM weeks w JOIN sessions s ON s.id = w.session_id WHERE w.id = ?`
     )
     .get(weekId);
@@ -325,11 +329,23 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
  * Player-initiated (self-service "Need a sub", or the emailed reminder link)
  * — fans out immediately. Compare adminFlagNeedsSub() below, which does the
  * same status transition but deliberately sends nothing right away.
+ *
+ * Gated on `sessions.schedule_locked_at` (Kyle, 2026-09-10): while a season's
+ * schedule is still being built, an admin will typically rework weeks
+ * directly (Reassign, the joint cross-session conflict resolver) to fix
+ * things like a double-booking — that's schedule construction, not a real
+ * substitution, and it shouldn't be able to produce a sub_requests row that
+ * shows up in the Stats page's Sub History table looking like one. See
+ * CLAUDE.md's "Lock this schedule" note, which flagged this exact gate as a
+ * planned use of the lock before it existed. Once the admin locks the
+ * schedule, this and the other two sub-creating entry points below
+ * (adminFlagNeedsSub, arrangeSelfSub) work exactly as before.
  */
 async function createSubRequest(weekAssignmentId) {
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
   if (!assignment) throw new Error('Assignment not found');
   const week = getWeekWithSession(assignment.week_id);
+  if (!week.schedule_locked_at) return { blocked: true, reason: 'not_locked' };
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
   if (hasActiveConcurrentSubRequest(week.id)) {
@@ -408,12 +424,21 @@ async function createSubRequest(weekAssignmentId) {
  * arrives — same email, same recipients, just later. Every action here is
  * still logged via activityLog.js at the call site (admin.js), same as every
  * other admin mutation.
+ *
+ * Also gated on `sessions.schedule_locked_at`, same reasoning as
+ * createSubRequest() above (Kyle, 2026-09-10) — this is actually the more
+ * important of the two to gate: this admin-flag path is exactly what got
+ * used, pre-lock, to mark a slot needing attention while working out a
+ * cross-session double-booking, leaving behind sub_requests rows that later
+ * read as real sub history once the underlying conflict was fixed by
+ * reworking the schedule instead of finding an actual substitute.
  */
 function adminFlagNeedsSub(weekAssignmentId) {
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
   if (!assignment) throw new Error('Assignment not found');
   const week = getWeekWithSession(assignment.week_id);
   if (week.locked) return { blocked: true, reason: 'locked' };
+  if (!week.schedule_locked_at) return { blocked: true, reason: 'not_locked' };
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
   if (hasActiveConcurrentSubRequest(week.id)) {
@@ -486,12 +511,19 @@ async function claimSub(rawToken) {
 
   const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
   // 'resolved_manually' covers an admin having reassigned or manually
-  // confirmed this slot directly (see closeActiveSubRequestForAssignment) —
-  // treated the same as 'filled' here as defense in depth. In practice that
-  // path also closes every pending offer, so the offer.status check above
-  // would already catch it; this just means correctness here doesn't depend
-  // on that other cleanup having also run.
-  if (!subRequest || subRequest.status === 'filled' || subRequest.status === 'resolved_manually') {
+  // confirmed this slot directly, and 'resolved_double_booking' covers the
+  // joint conflict resolver having moved this player to a different week
+  // entirely (both via closeActiveSubRequestForAssignment) — both treated
+  // the same as 'filled' here as defense in depth. In practice that path
+  // also closes every pending offer, so the offer.status check above would
+  // already catch it; this just means correctness here doesn't depend on
+  // that other cleanup having also run.
+  if (
+    !subRequest ||
+    subRequest.status === 'filled' ||
+    subRequest.status === 'resolved_manually' ||
+    subRequest.status === 'resolved_double_booking'
+  ) {
     return { ok: false, reason: 'already_filled' };
   }
 
@@ -623,12 +655,16 @@ async function claimSub(rawToken) {
  *     counts is treated as "new" for the purposes of Kyle's points 3-5
  *     (add to the sub list, alert the admin). A match against either table
  *     is treated exactly like picking that person from the list.
+ *
+ * Also gated on `sessions.schedule_locked_at`, same reasoning as
+ * createSubRequest()/adminFlagNeedsSub() above (Kyle, 2026-09-10).
  */
 async function arrangeSelfSub(weekAssignmentId, selection = {}) {
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(weekAssignmentId);
   if (!assignment) return { ok: false, reason: 'not_found' };
   const week = getWeekWithSession(assignment.week_id);
   if (week.locked) return { ok: false, reason: 'locked' };
+  if (!week.schedule_locked_at) return { ok: false, reason: 'not_locked' };
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
@@ -801,15 +837,68 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
  * filled" message instead. Uses a distinct 'resolved_manually' status rather
  * than reusing 'filled' so the stats page's sub history can still tell
  * self-serve sub fills apart from admin interventions.
+ *
+ * `opts.resolution` (Kyle, 2026-09-10): pass `'double_booking'` when this
+ * close is a side effect of the joint cross-session conflict resolver fixing
+ * a real double-booking by moving players between weeks (jointSolver.js's
+ * applyResolutions()) rather than an admin manually reassigning/confirming a
+ * slot. That's a schedule correction, not a substitution — the two players
+ * involved are still each playing their own week, just possibly a different
+ * one than before — so it's recorded as 'resolved_double_booking' instead of
+ * 'resolved_manually'. The Stats page's Sub History query filters that status
+ * out entirely rather than showing it as a sub. Left as a plain optional
+ * param (not a new function) so every other call site keeps working
+ * unchanged. See CLAUDE.md's "Sub History vs. double-booking reworks" note
+ * for the real incident this fixed (Jim Newell/Kyle Krieg, week of 10/7/26).
  */
-function closeActiveSubRequestForAssignment(weekAssignmentId) {
+function closeActiveSubRequestForAssignment(weekAssignmentId, opts = {}) {
   const active = db
     .prepare(`SELECT id FROM sub_requests WHERE week_assignment_id = ? AND status IN ('open', 'escalated', 'unfilled')`)
     .get(weekAssignmentId);
   if (!active) return false;
-  db.prepare(`UPDATE sub_requests SET status = 'resolved_manually' WHERE id = ?`).run(active.id);
+  const status = opts.resolution === 'double_booking' ? 'resolved_double_booking' : 'resolved_manually';
+  db.prepare(`UPDATE sub_requests SET status = ? WHERE id = ?`).run(status, active.id);
   db.prepare(`UPDATE sub_offers SET status = 'closed' WHERE sub_request_id = ? AND status = 'pending'`).run(active.id);
   return true;
+}
+
+/**
+ * Kyle, 2026-09-10: a direct admin Reassign that pulls from this session's
+ * sub list, or slots in a one-time sub (and, on a locked week, the
+ * equivalent "Correct player" action — see admin.js), is a real
+ * substitution — someone who was scheduled didn't play, someone else did
+ * instead — but until now it left no trace in sub_requests at all, so it
+ * never showed up on the Stats page's Sub History table (built entirely
+ * from that table, see admin.js's rawSubHistory query). Kyle confirmed he
+ * wants these logged there too, after noticing a real case (Ed Bourneuf
+ * subbing for Jon Deuchler via a sub-list Reassign, 2026-09-07) missing from
+ * Sub History despite being a genuine sub. Deliberately does NOT extend to
+ * a plain roster-to-roster Reassign (swapping who occupies a still-upcoming
+ * slot before anyone's played) — that's correcting who's on the roster, not
+ * "someone needed a sub," so it stays outside Sub History same as before.
+ *
+ * Call this ONLY when the reassign branch itself is what created the "sub"
+ * event — i.e. closeActiveSubRequestForAssignment() on the same assignment
+ * just returned false (there was no pre-existing open/escalated/unfilled
+ * request on it to close). If one *was* there, that call already marked it
+ * resolved_manually and it's already a real Sub History row — inserting a
+ * second one here would double-count the same event.
+ *
+ * weekAssignmentId is the OLD (now subbed_out) assignment's id, matching
+ * every other sub_requests row (always keyed off the original slot, not the
+ * incoming sub's new row). requestingPlayerId is snapshotted into
+ * requesting_player_id the same way createSubRequest()/adminFlagNeedsSub()
+ * already do, so this row's "Original player" column never drifts if the
+ * slot changes hands again later (see the rawSubHistory query's own doc
+ * comment on why that snapshot matters). status starts straight at
+ * 'resolved_manually' — an admin already decided the outcome by picking
+ * this exact replacement, so there's no open/escalating window to model.
+ */
+function recordAdminReassignAsSub(weekAssignmentId, requestingPlayerId) {
+  db.prepare(
+    `INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id)
+     VALUES (?, 'resolved_manually', 'admin', ?)`
+  ).run(weekAssignmentId, requestingPlayerId);
 }
 
 /** Cron entry point: for any sub_request still open once we're within this
@@ -941,6 +1030,7 @@ module.exports = {
   fanOutPendingAdminFlagsForWeek,
   claimSub,
   closeActiveSubRequestForAssignment,
+  recordAdminReassignAsSub,
   escalateOverdueRequests,
   flagStillUnfilled,
   upcomingWeeksPreview,

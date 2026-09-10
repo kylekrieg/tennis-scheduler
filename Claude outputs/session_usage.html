@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Session token usage</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #83817a;
+    --grid:           #e4e2db;
+    --series-1:       #2a78d6; /* Claude's instructions */
+    --series-2:       #eb6834; /* Everything else */
+    --series-3:       #1baf7a; /* Device bridge */
+    --series-4:       #eda100; /* File operations */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8d84;
+      --grid:           #33322e;
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --series-4:       #c98500;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8d84;
+    --grid:           #33322e;
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+    --series-4:       #c98500;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: transparent; }
+  .viz-root {
+    background: var(--surface-1);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 22px 24px 20px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .viz-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 2px;
+  }
+  .viz-sub {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    margin: 0 0 20px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 200px 1fr 52px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .row:last-child { margin-bottom: 0; }
+  .label {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: right;
+    line-height: 1.25;
+  }
+  .track {
+    position: relative;
+    height: 20px;
+    background: var(--grid);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    border-radius: 4px;
+  }
+  .pct {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .foot {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--grid);
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+  <div class="viz-root">
+    <p class="viz-title">Where this session's effort went</p>
+    <p class="viz-sub">Share of total effective usage, weighted so replies and fresh reading cost more than re-reading cached context</p>
+
+    <div class="row">
+      <div class="label">Claude's own instructions</div>
+      <div class="track"><div class="fill" style="width:61%;background:var(--series-1);"></div></div>
+      <div class="pct">61%</div>
+    </div>
+    <div class="row">
+      <div class="label">Everything else<br><span style="font-weight:400;color:var(--text-secondary);font-size:11.5px;">(thinking, replies, questions)</span></div>
+      <div class="track"><div class="fill" style="width:23%;background:var(--series-2);"></div></div>
+      <div class="pct">23%</div>
+    </div>
+    <div class="row">
+      <div class="label">Working on your computer<br><span style="font-weight:400;color:var(--text-secondary);font-size:11.5px;">(the device bridge)</span></div>
+      <div class="track"><div class="fill" style="width:14%;background:var(--series-3);"></div></div>
+      <div class="pct">14%</div>
+    </div>
+    <div class="row">
+      <div class="label">Scratch file work<br><span style="font-weight:400;color:var(--text-secondary);font-size:11.5px;">(cloud workspace)</span></div>
+      <div class="track"><div class="fill" style="width:2%;background:var(--series-4);"></div></div>
+      <div class="pct">2%</div>
+    </div>
+
+    <p class="foot">Covers the most recent portion of this session (since the last conversation reset). Numbers are approximate.</p>
+  </div>
+</body>
+</html>

@@ -363,8 +363,16 @@ function applyResolutions(sessionAId, sessionBId) {
 
       tokenStore.invalidateTokensForAssignment(assignmentIdLeave);
       tokenStore.invalidateTokensForAssignment(assignmentIdPartner);
-      subFlow.closeActiveSubRequestForAssignment(assignmentIdLeave);
-      subFlow.closeActiveSubRequestForAssignment(assignmentIdPartner);
+      // resolution: 'double_booking' (Kyle, 2026-09-10) — this is "the
+      // program" resolving a double-booking, not an admin finding a real
+      // substitute, so any sub_requests row this closes out (most often one
+      // an admin flagged via adminFlagNeedsSub while working out the
+      // conflict, or that fanned out before it was caught) is recorded as
+      // resolved_double_booking rather than resolved_manually, and excluded
+      // from the Stats page's Sub History table. See subFlow.js's
+      // closeActiveSubRequestForAssignment() doc comment.
+      subFlow.closeActiveSubRequestForAssignment(assignmentIdLeave, { resolution: 'double_booking' });
+      subFlow.closeActiveSubRequestForAssignment(assignmentIdPartner, { resolution: 'double_booking' });
       swapFlow.adminCancelSwap(assignmentIdLeave);
       swapFlow.adminCancelSwap(assignmentIdPartner);
       appliedCount++;

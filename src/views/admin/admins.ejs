@@ -6,8 +6,8 @@
 <form method="post" action="/admin/admins" class="card">
   <label for="name">Name</label>
   <input type="text" name="name" id="name" required>
-  <label for="username">Username (optional)</label>
-  <input type="text" name="username" id="username" placeholder="auto-generated from name if left blank">
+  <label for="admin_username">Username (optional)</label>
+  <input type="text" name="admin_username" id="admin_username" autocomplete="off" placeholder="auto-generated from name if left blank">
   <p class="muted">Lowercase letters, numbers, and single . _ - separators (e.g. "kyle.krieg"). Leave blank to generate one from the name automatically.</p>
   <label for="email">Email (optional)</label>
   <input type="email" name="email" id="email">
@@ -29,7 +29,7 @@
           </form>
           <% if (a.id === currentAdminId) { %> <span class="muted">(you)</span><% } %>
         </td>
-        <td><input type="text" name="username" value="<%= a.username %>" form="edit-<%= a.id %>" style="width:130px;"></td>
+        <td><input type="text" name="admin_username" value="<%= a.username %>" form="edit-<%= a.id %>" autocomplete="off" style="width:130px;"></td>
         <td><input type="email" name="email" value="<%= a.email || '' %>" form="edit-<%= a.id %>" style="width:180px;"></td>
         <td><%= a.active ? 'active' : 'inactive' %></td>
         <td>

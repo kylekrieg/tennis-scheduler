@@ -6,14 +6,42 @@ const { utcToZonedParts } = require('./tz');
 const weather = require('./weather');
 const { fullName } = require('./playerName');
 
+// Two ways to configure real sending, checked in this order. SMTP_HOST set
+// at all means "use generic SMTP" — the GMAIL_* vars are only a fallback
+// shortcut for a plain Gmail account, and are ignored once SMTP_HOST is
+// present. Neither configured means dev mode (console logging only), same
+// as before. See .env.example for the full var list and provider notes.
 let transport = null;
 function getTransport() {
   if (transport) return transport;
+
+  const smtpHost = process.env.SMTP_HOST;
+  if (smtpHost) {
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+    if (!user || !pass) {
+      console.warn(
+        '[email] SMTP_HOST is set but SMTP_USER / SMTP_PASS are missing — emails will be logged to the console instead of sent.'
+      );
+      transport = null;
+      return null;
+    }
+    const port = parseInt(process.env.SMTP_PORT, 10) || 587;
+    // Implicit TLS on 465, STARTTLS on everything else — SMTP_SECURE can
+    // force either way for a provider that doesn't follow that convention.
+    const secure =
+      process.env.SMTP_SECURE !== undefined && process.env.SMTP_SECURE !== ''
+        ? process.env.SMTP_SECURE === 'true'
+        : port === 465;
+    transport = nodemailer.createTransport({ host: smtpHost, port, secure, auth: { user, pass } });
+    return transport;
+  }
+
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) {
     console.warn(
-      '[email] GMAIL_USER / GMAIL_APP_PASSWORD not set — emails will be logged to the console instead of sent.'
+      '[email] No email sending configured (set SMTP_HOST/SMTP_USER/SMTP_PASS, or GMAIL_USER/GMAIL_APP_PASSWORD as a shortcut) — emails will be logged to the console instead of sent.'
     );
     transport = null;
     return null;
@@ -23,6 +51,18 @@ function getTransport() {
     auth: { user, pass },
   });
   return transport;
+}
+
+// The "From" address/name recipients see. Independent of which account
+// authenticates to SMTP (FROM_EMAIL overrides), since some providers issue
+// credentials — an API key, a relay-only account — that aren't themselves a
+// deliverable mailbox. Falls back to whichever account is actually
+// authenticating, matching the pre-SMTP-support behavior when FROM_EMAIL
+// isn't set.
+function fromAddress() {
+  const email = process.env.FROM_EMAIL || process.env.SMTP_USER || process.env.GMAIL_USER;
+  const name = process.env.FROM_NAME;
+  return name && email ? `"${name}" <${email}>` : email;
 }
 
 function siteUrl() {
@@ -113,7 +153,7 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
   try {
     if (t) {
       await t.sendMail({
-        from: process.env.GMAIL_USER,
+        from: fromAddress(),
         to,
         subject: finalSubject,
         html: wrapEmailHtml(html),
