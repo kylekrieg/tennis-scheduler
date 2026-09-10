@@ -188,6 +188,26 @@
               <input type="number" name="games_won" min="0" max="<%= maxGames %>" step="1" value="<%= a.games_won !== null ? a.games_won : '' %>" style="width:56px;padding:2px 4px;font-size:12px;">
               <button class="btn small neutral" type="submit">Save</button>
             </form>
+            <details class="inline" style="display:inline-block;">
+              <summary class="muted" style="display:inline;font-size:11px;cursor:pointer;">Wrong person listed?</summary>
+              <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/correct-player" style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;">
+                <input type="hidden" name="assignment_id" value="<%= a.id %>">
+                <select name="new_player_id" onchange="this.nextElementSibling.style.display = this.value === 'one_time_sub' ? 'inline-block' : 'none';">
+                  <optgroup label="Roster">
+                    <% roster.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === a.player_id ? 'selected' : '' %>><%= fullName(p) %></option><% }) %>
+                  </optgroup>
+                  <% if (subListCandidates.length > 0) { %>
+                    <optgroup label="Sub list">
+                      <% subListCandidates.forEach(function(c) { %><option value="<%= c.candidateType %>:<%= c.id %>"><%= c.fullName %><%= c.candidateType === 'broader' ? ' (sub list)' : '' %></option><% }) %>
+                    </optgroup>
+                  <% } %>
+                  <option value="one_time_sub">— One-time sub (not on roster) —</option>
+                </select>
+                <input type="text" name="one_time_sub_name" placeholder="Who actually played" style="display:none;width:130px;">
+                <button class="btn small neutral" type="submit">Correct</button>
+              </form>
+              <p class="muted" style="font-size:11px;margin:2px 0 0;">Fixes the record after the fact — no email is sent, since the match already happened. Any games-won score already entered for this slot is cleared.</p>
+            </details>
           <% } %>
           <% if (!r.week.locked) { %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/reassign">

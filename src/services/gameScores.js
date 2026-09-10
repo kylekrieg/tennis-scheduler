@@ -27,6 +27,19 @@ const { SESSION_DISPLAY_ORDER } = require('./sessionHelper');
  * session-detail "Games won" field in admin.js/session_detail.ejs, which
  * bypasses this window entirely — same "admin can always override" pattern
  * as everywhere else in this app).
+ *
+ * Two public entry points share all of the above (isScoreable/canPlayerEdit
+ * gating never differs between them): the original per-player page
+ * (GET/POST /scores/:idOrSlug, scoreRowsForPlayer below) where a player
+ * looks up their own name and can only ever touch their own row, and a
+ * group entry grid added 2026-09-10 (GET/POST /scores,
+ * scoreEntryWeeksForSession/scoreRowsForWeek below) that lists everybody
+ * confirmed for one week at once so a single person can fill in some or all
+ * of the group's scores in one sitting — Kyle's explicit call there is that
+ * the group page has no "is this your own row" check at all, same "no
+ * accounts, just a public page" trust level the rest of the app already
+ * runs on (see setGameScore's playerId doc comment for exactly how that's
+ * wired).
  */
 
 const MAX_GAMES = 50; // sane sanity cap, not a real tennis rule — just guards against fat-fingered/garbage input
@@ -126,6 +139,52 @@ function sessionsWithScoresForPlayer(playerId) {
     .all(playerId);
 }
 
+/**
+ * Group entry (Kyle, 2026-09-10): "instead of a dropdown and everybody
+ * entering their own score, show everybody confirmed for that week with
+ * input boxes, so one person can fill in the whole group's scores." This is
+ * the week-picking half of that: every locked week in a session that has at
+ * least one actually-played (scoreable) row, most recent first, each
+ * flagged with how many of those rows are still missing a score. The public
+ * /scores page defaults to the newest one (`weeks[0]`) and offers any other
+ * week with `missing_count > 0` as a "still needs scores" pick-list, so a
+ * week nobody got to right after it happened doesn't just fall off the page
+ * once a newer week locks.
+ */
+function scoreEntryWeeksForSession(sessionId) {
+  return db
+    .prepare(
+      `SELECT w.*,
+              SUM(CASE WHEN wa.status IN ('scheduled','confirmed') THEN 1 ELSE 0 END) AS scoreable_count,
+              SUM(CASE WHEN wa.status IN ('scheduled','confirmed') AND wa.games_won IS NULL THEN 1 ELSE 0 END) AS missing_count
+       FROM weeks w
+       JOIN week_assignments wa ON wa.week_id = w.id
+       WHERE w.session_id = ? AND w.locked = 1
+       GROUP BY w.id
+       HAVING scoreable_count > 0
+       ORDER BY w.match_date DESC`
+    )
+    .all(sessionId);
+}
+
+/** Every actually-played (scoreable) assignment row for ONE week, in name
+ * order — the group entry grid's data source. Deliberately not scoped to a
+ * player, unlike scoreRowsForPlayer above: this is "who actually played
+ * this week," full stop, since anyone landing on the group page may fill in
+ * any or all of the boxes. */
+function scoreRowsForWeek(weekId) {
+  return db
+    .prepare(
+      `SELECT wa.*, w.match_date, w.locked AS week_locked, w.session_id, p.name, p.slug
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       WHERE wa.week_id = ? AND wa.status IN ('scheduled', 'confirmed')
+       ORDER BY p.name`
+    )
+    .all(weekId);
+}
+
 /** Result codes setGameScore() can throw as `err.code`, for the routes to
  * turn into a plain-language message rather than a raw 500. */
 const ScoreError = class extends Error {
@@ -139,9 +198,19 @@ const ScoreError = class extends Error {
  * Validates and saves one player's games-won value for one assignment.
  * `isAdmin: true` skips both the scoreable gate and the 24h self-service
  * window (an admin can set/fix a score on any row, any time — same
- * unrestricted override latitude the rest of the admin panel has); the
- * self-service caller must also pass `playerId` so this can confirm the
- * assignment is actually theirs, not just any guessable id.
+ * unrestricted override latitude the rest of the admin panel has).
+ *
+ * `playerId` is optional and only ever used as an ownership check: the
+ * per-player page (POST /scores/:idOrSlug) passes the resolved player so a
+ * guessable assignment id can't be used to write onto someone else's row
+ * from that page. The group entry page (POST /scores) calls this with
+ * `playerId` left null on purpose — Kyle's explicit call (2026-09-10) is
+ * that anyone on the group page can fill in anyone's box, same "no
+ * accounts, just a public page" trust level the rest of this app already
+ * runs on — so when it's omitted the ownership check is simply skipped
+ * rather than failing closed. Either caller still goes through the
+ * scoreable gate and the 24h self-service edit window below; only the
+ * "is this actually your row" check is conditional on `playerId`.
  *
  * `games_won_entered_at` is only ever set the FIRST time (COALESCE keeps it
  * fixed after that — see schema.sql's doc comment); `games_won_updated_at`
@@ -164,11 +233,11 @@ function setGameScore({ assignmentId, gamesWon, isAdmin = false, playerId = null
   if (!row) throw new ScoreError('not_found', 'That match assignment could not be found.');
 
   if (!isAdmin) {
-    if (playerId == null || row.player_id !== Number(playerId)) {
+    if (playerId != null && row.player_id !== Number(playerId)) {
       throw new ScoreError('not_yours', "That match isn't on your own page.");
     }
     if (!isScoreable(row)) {
-      throw new ScoreError('not_scoreable', "Scores can only be entered once a match has happened, for a week you actually played.");
+      throw new ScoreError('not_scoreable', "Scores can only be entered once a match has happened, for a week that was actually played.");
     }
     if (!canPlayerEdit(row)) {
       throw new ScoreError('locked', 'The 24-hour window to enter or fix this score has closed — ask an admin to change it.');
@@ -234,6 +303,8 @@ module.exports = {
   canPlayerEdit,
   scoreRowsForPlayer,
   sessionsWithScoresForPlayer,
+  scoreEntryWeeksForSession,
+  scoreRowsForWeek,
   setGameScore,
   sessionLeaderboard,
 };

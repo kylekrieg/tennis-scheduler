@@ -40,6 +40,23 @@ function logPlayerActivity({ playerName, action, description, sessionId = null }
 }
 
 /**
+ * Same log again, for a score saved through the group entry grid
+ * (GET/POST /scores, added 2026-09-10 — see gameScores.js's module doc
+ * comment) rather than a player editing their own row. Deliberately NOT
+ * logPlayerActivity's "(player self-service)" label: on the group page
+ * whoever is physically typing may not be the player the box belongs to
+ * (that's the whole point — one person can fill in the group's scores), so
+ * stamping it "self-service" would misattribute it. "(group entry)" says
+ * plainly that this score exists but doesn't claim who entered it.
+ */
+function logGroupScoreActivity({ playerName, action, description, sessionId = null }) {
+  db.prepare(
+    `INSERT INTO admin_activity_log (admin_id, admin_name, action, description, session_id)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(null, `${playerName} (group entry)`, action, description, sessionId);
+}
+
+/**
  * Same log, same table, for an action triggered by a cron job / standalone
  * script rather than through the Express app — currently just the nightly
  * backup scripts (src/scripts/backup-db.js, backup-offsite.js), which run
@@ -57,4 +74,4 @@ function logSystemActivity({ action, description, sessionId = null }) {
   ).run(null, 'System (automatic)', action, description, sessionId);
 }
 
-module.exports = { logActivity, logPlayerActivity, logSystemActivity };
+module.exports = { logActivity, logPlayerActivity, logGroupScoreActivity, logSystemActivity };

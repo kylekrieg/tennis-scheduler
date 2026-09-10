@@ -1,8 +1,8 @@
 <%- include('partials/header', {title}) %>
-<h1>Enter Scores</h1>
-<p class="muted">Pick your name to enter how many games you won each week — it only asks for weeks you've actually already played. Once you're on your page, bookmark it for next time.</p>
+<h1>Look Up Your Scores</h1>
+<p class="muted">Pick your name to see or fix just your own games-won entries, week by week. Once you're on your page, bookmark it for next time.</p>
 
-<form method="get" action="/scores" class="card" style="max-width:320px;">
+<form method="get" action="/scores/lookup" class="card" style="max-width:320px;">
   <label for="player">Your name</label>
   <select name="player" id="player" onchange="this.form.submit()">
     <option value="">Select…</option>
@@ -11,5 +11,5 @@
     <% }) %>
   </select>
 </form>
-<p class="muted">Looking for the standings instead? <a href="/leaderboard">See the leaderboard</a>.</p>
+<p class="muted">Filling in scores for the whole group at once? <a href="/scores">Go to the group entry page</a>. Looking for the standings instead? <a href="/leaderboard">See the leaderboard</a>.</p>
 <%- include('partials/footer') %>

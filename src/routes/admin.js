@@ -2110,6 +2110,149 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
   res.redirect(`/admin/sessions/${req.params.id}`);
 }));
 
+// "Correct who played" (Kyle, 2026-09-09): the Reassign form above is
+// deliberately hidden — and, for its sub-list/one-time-sub branches,
+// independently refused server-side too — once a week locks, because
+// "locked" means "this already happened, treat it as historical record."
+// But Kyle's real scenario: a player arranges their own sub entirely
+// outside the app and never tells the admin, so the week locks with the
+// wrong person still on record. This route is the deliberate, narrow
+// exception: admin-only, only reachable once the week IS locked, and it
+// exists purely to fix the historical record after the fact — so unlike
+// Reassign it sends no email and issues no confirm token (there's no one
+// left to notify; the match already happened), and it writes the new row
+// straight to status='confirmed' (no pending-confirmation step makes sense
+// for a match that's already over).
+//
+// Same "preserve history, don't overwrite" shape as every other sub path in
+// this file (one_time_sub / sub-list branches above): the original row is
+// kept as subbed_out rather than mutated in place, and a fresh is_sub=1 row
+// is inserted — so Stats, Sub History, and the games-won leaderboard all
+// treat this exactly like a sub who came in through the normal flow, not a
+// special case they need to know about.
+//
+// Whoever was wrongly on record might have already entered a games-won
+// score before the mix-up was caught — Kyle confirmed (2026-09-09) that
+// score should be cleared automatically on the old row rather than left
+// sitting there or carried over, since sessionLeaderboard() sums games_won
+// across ALL statuses (it doesn't filter subbed_out out), so an uncleared
+// value would keep counting toward the wrong player's total forever.
+router.post('/sessions/:id/weeks/:weekId/correct-player', asyncHandler(async (req, res) => {
+  const { assignment_id, new_player_id } = req.body;
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(assignment_id);
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(req.params.weekId);
+  if (!assignment || !week) return res.status(404).send('Not found');
+
+  // The inverse of every check in the Reassign route above: this action only
+  // makes sense once the match has already happened. For an unlocked week,
+  // the normal Reassign form already does this (with the emails/tokens a
+  // still-upcoming match actually needs) — sending them here would be a
+  // silent, unannounced player swap for a match that hasn't been played yet.
+  if (!week.locked) {
+    flash(req, "Use Reassign for a week that hasn't happened yet — Correct player is only for fixing the record after the fact.", 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
+  let newPlayer; // { id, name, full_name }
+  let oneTimeName = null; // set only for the not-on-roster branch, for logging/flash text
+
+  if (new_player_id === 'one_time_sub') {
+    oneTimeName = (req.body.one_time_sub_name || '').trim();
+    if (!oneTimeName) {
+      flash(req, "Enter the name of who actually played.", 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    // Same placeholder-email/short-name derivation as the pre-lock one-time-sub
+    // branch above — a real players row is still the only way Stats/the
+    // games-won leaderboard/everything else downstream knows how to represent
+    // someone who actually played.
+    const placeholderEmail = `onetime-${crypto.randomBytes(6).toString('hex')}@${email.NO_EMAIL_DOMAIN}`;
+    const oneTimeShortName = deriveShortName(oneTimeName);
+    const oneTimeSlug = generateUniqueSlug(db, oneTimeShortName, null);
+    const info = db
+      .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
+      .run(oneTimeShortName, placeholderEmail, oneTimeSlug, oneTimeName);
+    newPlayer = { id: info.lastInsertRowid, name: oneTimeShortName, full_name: oneTimeName };
+  } else if (typeof new_player_id === 'string' && (new_player_id.startsWith('player:') || new_player_id.startsWith('broader:'))) {
+    const [kind, rawId] = new_player_id.split(':');
+    const candidateId = Number(rawId);
+    if (kind === 'player') {
+      newPlayer = db.prepare('SELECT id, name, full_name FROM players WHERE id = ? AND active = 1').get(candidateId);
+      if (!newPlayer) {
+        flash(req, 'That player is no longer available — pick someone else.', 'error');
+        return res.redirect(`/admin/sessions/${req.params.id}`);
+      }
+    } else {
+      const bl = db.prepare('SELECT * FROM broader_sub_list WHERE id = ?').get(candidateId);
+      if (!bl) {
+        flash(req, "That sub-list entry no longer exists — pick someone else, or use 'One-time sub' below.", 'error');
+        return res.redirect(`/admin/sessions/${req.params.id}`);
+      }
+      let existing = db.prepare('SELECT id, name, email, full_name FROM players WHERE email = ?').get(bl.email);
+      if (!existing) {
+        const shortName = bl.public_name || deriveShortName(bl.name);
+        const slug = bl.slug || generateUniqueSlug(db, shortName, null);
+        const info = db
+          .prepare('INSERT INTO players (name, email, slug, full_name) VALUES (?, ?, ?, ?)')
+          .run(shortName, bl.email, slug, bl.name);
+        existing = { id: info.lastInsertRowid, name: shortName, email: bl.email, full_name: bl.name };
+      }
+      newPlayer = existing;
+    }
+  } else {
+    const newPlayerId = Number(new_player_id);
+    newPlayer = newPlayerId ? db.prepare('SELECT id, name, full_name FROM players WHERE id = ?').get(newPlayerId) : null;
+    if (!newPlayer) {
+      flash(req, 'Pick who actually played.', 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+  }
+
+  // Same UNIQUE(week_id, player_id) guard every other branch in this file
+  // uses — the corrected player could already be recorded elsewhere this
+  // week (e.g. they're also covering a different court).
+  const alreadyInWeek = db
+    .prepare('SELECT 1 FROM week_assignments WHERE week_id = ? AND player_id = ? AND id != ?')
+    .get(week.id, newPlayer.id, assignment.id);
+  if (alreadyInWeek) {
+    flash(req, "Can't correct — that player is already on record elsewhere this week.", 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
+  const oldPlayer = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(assignment.player_id);
+  const hadScore = assignment.games_won !== null;
+
+  db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
+  // Clear any games-won value already entered against the wrong player — see
+  // the doc comment above this route for why (sessionLeaderboard() doesn't
+  // filter by status, so an uncleared value would keep counting toward
+  // whoever was wrongly on record here).
+  if (hadScore) {
+    db.prepare(
+      'UPDATE week_assignments SET games_won = NULL, games_won_entered_at = NULL, games_won_updated_at = NULL WHERE id = ?'
+    ).run(assignment.id);
+  }
+  db.prepare(
+    `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at, replaces_assignment_id)
+     VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
+  ).run(assignment.week_id, newPlayer.id, assignment.team, assignment.court, assignment.id);
+
+  logActivity(req, {
+    action: 'week.correct_player',
+    description:
+      `Corrected who played ${email.fmtDate(week.match_date)} — record changed from ${oldPlayer ? fullName(oldPlayer) : `player #${assignment.player_id}`} to ${fullName(newPlayer)} after the fact (week already locked). No email sent.` +
+      (hadScore ? ` ${oldPlayer ? fullName(oldPlayer) : 'The previous player'}'s already-entered games-won score for this match was cleared.` : ''),
+    sessionId: Number(req.params.id),
+  });
+
+  flash(
+    req,
+    `Corrected — ${fullName(newPlayer)} is now on record as having played that slot instead of ${oldPlayer ? fullName(oldPlayer) : 'the previous player'}. No email was sent (the match already happened).` +
+      (hadScore ? ` The games-won score previously entered for that slot was cleared — ${fullName(newPlayer)} can enter the real one from their Scores page.` : '')
+  );
+  res.redirect(`/admin/sessions/${req.params.id}`);
+}));
+
 router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   // Reassign and Mark confirmed both close out an active sub request as a
   // side effect of resolving the underlying assignment to a *different*

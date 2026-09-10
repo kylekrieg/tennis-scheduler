@@ -16,7 +16,7 @@ const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const honeypot = require('../services/honeypot');
-const { logPlayerActivity } = require('../services/activityLog');
+const { logPlayerActivity, logGroupScoreActivity } = require('../services/activityLog');
 const { fullName } = require('../services/playerName');
 const gameScores = require('../services/gameScores');
 const { getTimezone } = require('../services/settings');
@@ -170,13 +170,117 @@ router.get('/leaderboard', (req, res) => {
   res.render('leaderboard', { title: 'Leaderboard', session, sessions, board });
 });
 
-// Player lookup for the Scores page, same shape as GET /me above: ?player=
-// redirects to the nice bookmarkable /scores/<slug> URL; with nothing
-// selected yet, shows a name picker. Kept as its own separate lookup rather
-// than folded into /me itself, since a player arriving from a link on
-// /schedule or /lookahead (which don't know who's looking) needs somewhere
-// to land that isn't already player-scoped.
+// Group score entry (Kyle, 2026-09-10): "instead of a dropdown and everybody
+// entering their own score, show everybody confirmed for that week with
+// input boxes, so one person can fill in the whole group's scores." Session-
+// scoped like /schedule and /lookahead (resolveSession + session_picker),
+// defaulting to that session's most recently played week and offering any
+// other still-not-fully-scored week as a pick-list (?week=<id>) so a week
+// nobody got to right after it happened doesn't just fall off the page once
+// a newer one locks. The old per-player page (look up your name, see/edit
+// just your own scores across every week you've played) still lives at
+// /scores/lookup and /scores/:idOrSlug below, for anyone who'd rather do it
+// that way.
 router.get('/scores', (req, res) => {
+  const { session, sessions } = resolveSession(req);
+  if (!session) return res.render('no_session', { title: 'Enter Scores' });
+
+  const weeks = gameScores.scoreEntryWeeksForSession(session.id);
+  const requestedId = Number(req.query.week);
+  const selectedWeek = weeks.length ? weeks.find((w) => w.id === requestedId) || weeks[0] : null;
+  const rows = selectedWeek
+    ? gameScores.scoreRowsForWeek(selectedWeek.id).map((r) => ({ assignment: r, canEdit: gameScores.canPlayerEdit(r) }))
+    : [];
+
+  res.render('scores_week', {
+    title: 'Enter Scores',
+    session,
+    sessions,
+    weeks,
+    selectedWeek,
+    rows,
+    saved: Number(req.query.saved) || 0,
+    errorCode: req.query.error || null,
+    maxGames: gameScores.MAX_GAMES,
+  });
+});
+
+// Batch save for the group entry grid above — one form post carries any
+// number of boxes as two position-paired arrays, assignment_id[] and
+// games_won[] (see the array-vs-bracket-object comment below for why it's
+// shaped this way instead of games_won[<assignmentId>]); a blank box is left
+// untouched rather than treated as "clear this score," so someone filling in
+// just their own box on an otherwise-empty week doesn't wipe anyone else's.
+// Each box still goes through gameScores.setGameScore()'s normal scoreable +
+// 24h-window gate — playerId is deliberately omitted (see that function's
+// doc comment for why the group page skips the ownership check on purpose)
+// — and one bad or locked box doesn't stop the rest of the grid from saving.
+router.post('/scores', scoreEntryLimiter, (req, res) => {
+  const weekId = Number(req.body.week_id);
+  const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(weekId);
+  if (!week) {
+    return res.render('message', {
+      title: 'Enter Scores',
+      heading: 'Week not found',
+      body: "That week couldn't be found.",
+      tone: 'error',
+    });
+  }
+
+  // Two parallel arrays (assignment_id[], games_won[]) rather than a single
+  // bracket-keyed object (games_won[<assignmentId>]) — assignment ids are
+  // plain autoincrement integers, and qs (the parser behind
+  // express.urlencoded({extended:true})) treats a purely-numeric bracket key
+  // as an array index and silently compacts/reorders the result, which
+  // scrambled real assignment ids onto the wrong rows in testing. Position-
+  // paired arrays sidestep that entirely: qs only ever appends to them in
+  // submission order. Array.isArray guards the single-row case, where some
+  // parsers hand back a bare string instead of a one-element array.
+  const toArray = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
+  const assignmentIds = toArray(req.body.assignment_id);
+  const gamesWonValues = toArray(req.body.games_won);
+  let savedCount = 0;
+  let lastErrorCode = null;
+  for (let i = 0; i < assignmentIds.length; i++) {
+    const assignmentIdRaw = assignmentIds[i];
+    const rawValue = gamesWonValues[i];
+    if (rawValue === '' || rawValue === undefined || rawValue === null) continue; // blank box = leave it alone
+    try {
+      const { row, wasFirstEntry } = gameScores.setGameScore({
+        assignmentId: Number(assignmentIdRaw),
+        gamesWon: rawValue,
+      });
+      const player = db.prepare('SELECT * FROM players WHERE id = ?').get(row.player_id);
+      // logGroupScoreActivity, not logPlayerActivity — whoever is filling in
+      // this box on the group page may not be `player` themselves (see that
+      // function's doc comment), so the log shouldn't claim "self-service".
+      logGroupScoreActivity({
+        playerName: fullName(player),
+        action: wasFirstEntry ? 'score.enter' : 'score.update',
+        description: `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} via the group entry page`,
+        sessionId: row.session_id,
+      });
+      savedCount++;
+    } catch (err) {
+      if (err instanceof gameScores.ScoreError) {
+        lastErrorCode = err.code;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const qs = new URLSearchParams({ session: String(week.session_id), week: String(weekId) });
+  if (savedCount > 0) qs.set('saved', String(savedCount));
+  if (lastErrorCode) qs.set('error', lastErrorCode);
+  return res.redirect(`/scores?${qs.toString()}`);
+});
+
+// Old per-player lookup, kept alongside the new group entry page above for
+// anyone who'd rather look up just their own name (Kyle, 2026-09-10) — same
+// shape as GET /me: ?player= redirects to the nice bookmarkable /scores/<slug>
+// URL; with nothing selected yet, shows a name picker.
+router.get('/scores/lookup', (req, res) => {
   const playerId = Number(req.query.player);
   if (playerId) {
     const p = db.prepare('SELECT slug FROM players WHERE id = ?').get(playerId);

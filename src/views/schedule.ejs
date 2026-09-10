@@ -1,7 +1,7 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <%- include('partials/session_picker', {sessions, session}) %>
 <p class="actions" style="margin-top:-8px;margin-bottom:16px;">
-  <a class="btn small neutral" href="/scores">Enter your scores</a>
+  <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
   <a class="btn small neutral" href="/leaderboard?session=<%= session.id %>">Leaderboard</a>
 </p>
 

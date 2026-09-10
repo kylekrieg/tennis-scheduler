@@ -1,6 +1,7 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <h1><%= player.name %>'s Scores</h1>
-<p class="muted">Bookmark this page — enter how many games you won each week here, once that week's match has actually happened. You can fix an entry for 24 hours after you first save it; after that, ask an admin to change it.</p>
+<p class="muted">Bookmark this page — enter how many games you won each week here, once that week's match has actually happened. You can fix an entry for 24 hours after you first save it; after that, ask an admin to change it. Filling in scores for the whole group at once instead? <a href="/scores">Go to the group entry page</a>.</p>
+<p class="muted">Counting games: each regular game you win counts as 1. If a set ends in a 7-point or 10-point tiebreaker instead of being played out, that tiebreaker is worth 1 game too — credit it to whoever won it, not point-by-point.</p>
 
 <% if (saved) { %>
   <div class="flag">Saved.</div>

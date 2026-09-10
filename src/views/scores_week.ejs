@@ -1,0 +1,68 @@
+<%- include('partials/header', {title, wideMain: true}) %>
+<h1>Enter Scores</h1>
+<p class="muted">Everybody confirmed to have actually played the week below is listed here — fill in as many games-won boxes as you know, whether that's just your own or the whole group's. Each box stays editable for 24 hours after it's first saved; after that, ask an admin to fix it.</p>
+<p class="muted">Counting games: each regular game you win counts as 1. If a set ends in a 7-point or 10-point tiebreaker instead of being played out, that tiebreaker is worth 1 game too — credit it to whoever won it, not point-by-point.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<% if (saved > 0) { %>
+  <div class="flag"><%= saved %> score<%= saved === 1 ? '' : 's' %> saved.</div>
+<% } else if (errorCode) { %>
+  <div class="flag error">
+    <% if (errorCode === 'locked') { %>One of those boxes' 24-hour edit window has already closed — ask an admin to change it.
+    <% } else if (errorCode === 'not_scoreable') { %>One of those matches isn't open for scores yet — it has to have actually happened first.
+    <% } else if (errorCode === 'invalid_value') { %>Enter a whole number of games from 0 to <%= maxGames %> in every box you fill in.
+    <% } else { %>Something went wrong saving one of those scores — try again.<% } %>
+  </div>
+<% } %>
+
+<% if (!selectedWeek) { %>
+  <p class="muted">Nothing to score yet — this fills in once a match actually happens.</p>
+<% } else { %>
+  <h2 style="margin-bottom:4px;"><%= fmtDate(selectedWeek.match_date) %></h2>
+
+  <% var otherWeeks = weeks.filter(function(w) { return w.id !== selectedWeek.id && w.missing_count > 0; }); %>
+  <% if (otherWeeks.length > 0) { %>
+    <p class="muted" style="font-size:12px;">
+      Still needs scores:
+      <% otherWeeks.forEach(function(w, i) { %><a href="?session=<%= session.id %>&week=<%= w.id %>"><%= fmtDate(w.match_date) %></a><%= i < otherWeeks.length - 1 ? ', ' : '' %><% }) %>
+    </p>
+  <% } %>
+
+  <% if (rows.length === 0) { %>
+    <p class="muted">Nobody was confirmed to actually play that week.</p>
+  <% } else { %>
+    <form method="post" action="/scores">
+      <input type="hidden" name="week_id" value="<%= selectedWeek.id %>">
+      <table class="wide">
+        <thead><tr><th>Player</th><th>Games won</th><th></th></tr></thead>
+        <tbody>
+          <% rows.forEach(function(r) { %>
+            <tr>
+              <td><%= r.assignment.name %><% if (r.assignment.is_sub) { %> <span class="muted">(sub)</span><% } %></td>
+              <td>
+                <% if (r.canEdit) { %>
+                  <input type="hidden" name="assignment_id[]" value="<%= r.assignment.id %>">
+                  <input type="number" name="games_won[]" min="0" max="<%= maxGames %>" step="1" value="<%= r.assignment.games_won !== null ? r.assignment.games_won : '' %>" style="width:70px;">
+                <% } else if (r.assignment.games_won !== null) { %>
+                  <strong><%= r.assignment.games_won %></strong>
+                <% } else { %>
+                  <span class="muted">—</span>
+                <% } %>
+              </td>
+              <td class="muted" style="font-size:11px;"><%= (!r.canEdit && r.assignment.games_won !== null) ? 'locked' : '' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn green" type="submit">Save scores</button>
+      </div>
+    </form>
+  <% } %>
+<% } %>
+
+<p class="actions" style="margin-top:16px;">
+  <a class="btn small neutral" href="/scores/lookup">Look up just your own page</a>
+  <a class="btn small neutral" href="/leaderboard?session=<%= session.id %>">Leaderboard</a>
+</p>
+<%- include('partials/footer') %>
