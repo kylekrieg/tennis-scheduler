@@ -748,10 +748,15 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     db.prepare("UPDATE week_assignments SET status = 'needs_sub' WHERE id = ?").run(weekAssignmentId);
     tokenStore.invalidateTokensForAssignment(weekAssignmentId);
 
+    // self_arranged = 1 unconditionally: this whole function IS the
+    // self-arranged ("I found a sub") path, as opposed to createSubRequest()'s
+    // normal fan-out or adminFlagNeedsSub() — see schema.sql's comment on
+    // this column for why it has to be stamped here rather than re-derived
+    // later from sub_offers row counts.
     const reqInfo = db
       .prepare(
-        `INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id, fanout_sent_at)
-         VALUES (?, 'open', 'player', ?, datetime('now'))`
+        `INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id, fanout_sent_at, self_arranged)
+         VALUES (?, 'open', 'player', ?, datetime('now'), 1)`
       )
       .run(weekAssignmentId, player.id);
     const subRequestId = reqInfo.lastInsertRowid;
@@ -762,15 +767,21 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
       ).run(`Ball duty needs reassignment (was ${fullName(player)}, now needs a sub)`, week.id);
     }
 
+    // was_new_person mirrors `isNewPerson` computed above — see schema.sql's
+    // comment on sub_offers.was_new_person. Only ever 1 in the
+    // candidateType === 'broader' branch (a brand-new person can only ever
+    // be added to the broader sub list, never directly onto the roster), but
+    // stamped from the actual flag either way rather than assumed from branch
+    // shape, so this stays correct if that ever changes.
     const raw = generateRawToken();
     if (candidate.candidateType === 'player') {
       db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
-      ).run(subRequestId, candidate.id, hashToken(raw), 'pending');
+        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, was_new_person) VALUES (?, ?, ?, ?, ?)'
+      ).run(subRequestId, candidate.id, hashToken(raw), 'pending', isNewPerson ? 1 : 0);
     } else {
       db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
-      ).run(subRequestId, candidate.id, hashToken(raw), 'pending');
+        'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, was_new_person) VALUES (?, ?, ?, ?, ?)'
+      ).run(subRequestId, candidate.id, hashToken(raw), 'pending', isNewPerson ? 1 : 0);
     }
 
     return { subRequestId, rawToken: raw };
@@ -1024,6 +1035,60 @@ function flagStillUnfilled() {
   return count;
 }
 
+/**
+ * "Who actually filled this sub request" — three tiers of decreasing
+ * certainty, originally built for the Stats page's Sub History "Filled by"
+ * column (Kyle, 2026-09-10) and pulled out here (2026-09-15) so
+ * playerBehaviorStats.js's subRequestStats() can use the exact same
+ * resolution instead of risking a second heuristic that quietly drifts from
+ * the Sub History table's own answer. Needed at all because a
+ * `resolved_manually` (admin-placed) sub_requests row has no sub_offers
+ * winner to read, and — per Kyle, 2026-09-15: "count a sub as a sub, no
+ * matter if it got a sub_offers record tied to it or an admin did the
+ * coordination" — should still be counted:
+ *
+ *   1. Real link: another week_assignments row whose replaces_assignment_id
+ *      points straight at this one — set by claimSub() for every
+ *      self-service/escalation/self-arranged claim, and by admin Reassign's
+ *      sub-list/one-time-sub/Correct-player branches (see
+ *      recordAdminReassignAsSub()'s call sites). Exact, no guessing.
+ *   2. In-place reassign: a plain numeric Reassign swaps wa.player_id
+ *      directly on the SAME row (no new row, no replaces_assignment_id) — if
+ *      the assignment's current occupant differs from who was originally on
+ *      it when the request was opened, that current occupant filled it.
+ *   3. Legacy heuristic fallback: pre-dates both mechanisms above (e.g. the
+ *      real Ed Bourneuf/Jon Deuchler case from 2026-09-07 that motivated
+ *      logging admin placements to Sub History at all — see CLAUDE.md's "Sub
+ *      History gap" entry) — same week/team/court, an is_sub row with no
+ *      replaces_assignment_id of its own, and exactly one such
+ *      still-unclaimed candidate. Each candidate can only fill one original
+ *      slot, so an ambiguous multi-candidate week resolves to "unknown"
+ *      (null) rather than guessing.
+ *
+ * `weekAssignments` is every week_assignments row for that one week
+ * (id, player_id, team, court, is_sub, replaces_assignment_id) — callers
+ * fetch/cache this once per week rather than this function re-querying it on
+ * every call. `claimedFillerIds` is a Set this function both reads and adds
+ * to, shared across every call in one resolution pass, so two ambiguous
+ * requests that share a tier-3 candidate don't both claim the same row.
+ * Returns a player_id, or null if nothing resolves.
+ */
+function resolveSubRequestFiller({ assignmentId, team, court, currentPlayerId, originalPlayerId, weekAssignments, claimedFillerIds }) {
+  const linked = weekAssignments
+    .filter((x) => x.replaces_assignment_id === assignmentId)
+    .sort((a, b) => b.id - a.id)[0];
+  if (linked) return linked.player_id;
+  if (currentPlayerId !== originalPlayerId) return currentPlayerId;
+  const candidates = weekAssignments.filter(
+    (x) => x.is_sub && !x.replaces_assignment_id && x.team === team && x.court === court && !claimedFillerIds.has(x.id)
+  );
+  if (candidates.length === 1) {
+    claimedFillerIds.add(candidates[0].id);
+    return candidates[0].player_id;
+  }
+  return null;
+}
+
 module.exports = {
   createSubRequest,
   adminFlagNeedsSub,
@@ -1039,4 +1104,5 @@ module.exports = {
   sessionSubList,
   eligibleSelfArrangedCandidates,
   arrangeSelfSub,
+  resolveSubRequestFiller,
 };

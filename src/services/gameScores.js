@@ -481,7 +481,7 @@ function sessionLeaderboard(sessionId) {
  * out-total someone who's missed half of it, even if the second player wins
  * a much higher share of the games they actually play. This ranks by
  * win % = total games won / total games played instead, so attendance no
- * longer matters except as a tiebreaker (more weeks scored, then name).
+ * longer matters except as a tiebreaker (more matches scored, then name).
  *
  * Joins each player's own games_won against the SHARED games-played total
  * for that same week+court (week_court_games — see this file's top doc
@@ -506,14 +506,14 @@ function sessionWinPercentLeaderboard(sessionId) {
   const rows = db
     .prepare(
       `SELECT wa.player_id, p.name, p.full_name, p.slug,
-              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as weeks
+              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as matches
        FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
        WHERE w.session_id = ? AND wa.games_won IS NOT NULL AND wcg.games_played IS NOT NULL AND wcg.games_played > 0
        GROUP BY wa.player_id
-       ORDER BY (gw * 1.0 / gp) DESC, weeks DESC, p.name ASC`
+       ORDER BY (gw * 1.0 / gp) DESC, matches DESC, p.name ASC`
     )
     .all(sessionId);
 
@@ -521,7 +521,14 @@ function sessionWinPercentLeaderboard(sessionId) {
     player: { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug },
     gamesWon: r.gw,
     gamesPlayed: r.gp,
-    weeksScored: r.weeks,
+    // "matches", not "weeks" (Kyle, 2026-09-15): COUNT(*) here is really
+    // counting qualifying week_assignments rows, one per scored match — this
+    // leaderboard is per-session so today that's the same number either way
+    // (a player has at most one row per week_id within a single session),
+    // but the label itself was just wrong, and overallWinPercentLeaderboard()
+    // below genuinely can have a player scoring twice in the same calendar
+    // week across two different sessions (e.g. a resolved double-booking).
+    matchesScored: r.matches,
     winPct: r.gp ? r.gw / r.gp : 0,
   }));
 }
@@ -566,14 +573,14 @@ function overallWinPercentLeaderboard() {
   const rows = db
     .prepare(
       `SELECT wa.player_id, p.name, p.full_name, p.slug,
-              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as weeks
+              SUM(wa.games_won) as gw, SUM(wcg.games_played) as gp, COUNT(*) as matches
        FROM week_assignments wa
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
        WHERE wa.games_won IS NOT NULL AND wcg.games_played IS NOT NULL AND wcg.games_played > 0
        GROUP BY wa.player_id
-       ORDER BY (gw * 1.0 / gp) DESC, weeks DESC, p.name ASC`
+       ORDER BY (gw * 1.0 / gp) DESC, matches DESC, p.name ASC`
     )
     .all();
 
@@ -581,7 +588,11 @@ function overallWinPercentLeaderboard() {
     player: { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug },
     gamesWon: r.gw,
     gamesPlayed: r.gp,
-    weeksScored: r.weeks,
+    // See sessionWinPercentLeaderboard()'s matching comment — this is the
+    // all-time, cross-session board, where a player really can score twice
+    // in the same calendar week (two different sessions' matches landing in
+    // the same week), so "matches" is the only accurate label here.
+    matchesScored: r.matches,
     winPct: r.gp ? r.gw / r.gp : 0,
   }));
 }

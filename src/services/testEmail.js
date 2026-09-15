@@ -155,6 +155,9 @@ const NEEDS_SESSION_WEEK = new Set([
   'sendSelfArrangedSubInvite',
   'sendSelfArrangedSubConfirmation',
   'sendNewSubListEntryAlert',
+  // Ball-duty scores-still-needed reminder (Kyle, 2026-09-15) — new template,
+  // needs a real week/session the same as the other per-week reminders above.
+  'sendScoreReminder',
 ]);
 
 /**
@@ -434,6 +437,23 @@ const TEMPLATES = {
       week: ctx.week,
       session: ctx.session,
       report: adminReport.buildWeekReport(ctx.week.id),
+      test: true,
+    }),
+  },
+  score_reminder: {
+    // Ball duty scores-still-needed reminder (Kyle, 2026-09-15, added to the
+    // test-email list per his follow-up: "make sure #2 email gets added to
+    // the templates for sending a test email"). missingCount is synthetic —
+    // same spirit as adhoc_reminder's stillNeeded above — since a real count
+    // only ever comes from gameScores.scoreEntryWeeksForSession() at send
+    // time in cron.js, not from anything worth re-deriving just for a preview.
+    label: 'Ball duty — scores still needed reminder',
+    fn: 'sendScoreReminder',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      missingCount: 2,
       test: true,
     }),
   },

@@ -28,7 +28,7 @@
   <p class="muted">No weeks with both games won and games played entered yet for this session.</p>
 <% } else { %>
   <table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
     <tbody>
       <% winBoard.forEach(function(row, i) { %>
         <tr>
@@ -37,7 +37,7 @@
           <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
           <td><%= row.gamesWon %></td>
           <td><%= row.gamesPlayed %></td>
-          <td><%= row.weeksScored %></td>
+          <td><%= row.matchesScored %></td>
         </tr>
       <% }) %>
     </tbody>
@@ -70,7 +70,7 @@
   <p class="muted">No weeks with both games won and games played entered yet.</p>
 <% } else { %>
   <table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
     <tbody>
       <% overallWinBoard.forEach(function(row, i) { %>
         <tr>
@@ -79,7 +79,7 @@
           <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
           <td><%= row.gamesWon %></td>
           <td><%= row.gamesPlayed %></td>
-          <td><%= row.weeksScored %></td>
+          <td><%= row.matchesScored %></td>
         </tr>
       <% }) %>
     </tbody>

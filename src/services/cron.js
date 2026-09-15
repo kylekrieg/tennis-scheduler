@@ -8,6 +8,7 @@ const subFlow = require('./subFlow');
 const swapFlow = require('./swapFlow');
 const adhocFlow = require('./adhocFlow');
 const adminReport = require('./adminReport');
+const gameScores = require('./gameScores');
 const weather = require('./weather');
 const { ensureWeeksExist } = require('./scheduleRun');
 
@@ -381,6 +382,80 @@ async function processAdminReports() {
   }
 }
 
+/**
+ * Ball duty games-won reminder (Kyle, 2026-09-15): "if the # of games won is
+ * not entered within X amount of hours, the person that was scheduled to
+ * bring balls should get a reminder email to enter in scores for the week."
+ * `X` is `sessions.games_won_reminder_lead_hours` (default 24) — checked the
+ * same way as every other lead-hours pass in this file: once `matchAt + X`
+ * has arrived, and not before.
+ *
+ * Scoped to `session_type = 'regular'` and `games_won_enabled = 1` — same
+ * two gates processAdminReports() and the player-facing games-won surfaces
+ * already use (see games_won_enabled's schema.sql comment): an ad-hoc
+ * session has no ball duty concept, and a session that's opted out of
+ * games-won tracking entirely shouldn't get nagged about it.
+ *
+ * Reuses gameScores.scoreEntryWeeksForSession() — the exact same
+ * scoreable/missing computation the group entry grid itself is built from
+ * (`status IN ('scheduled','confirmed')` = expected to have a score) —
+ * rather than re-deriving "who still needs to enter a score" here, so this
+ * can never drift out of sync with what the Scores page actually shows.
+ * That function already scopes to locked weeks, which every week reaching
+ * `matchAt + X` will be by the time this runs (processWeekLocking flips it
+ * the moment match time passes, well before any reasonable X).
+ *
+ * Dedup is by email_log (category 'score_reminder', per week, per the
+ * ball-duty player's own email) — same pattern as every other reminder pass
+ * — so this fires at most once per week even though it's checked on every
+ * tick. No ball_duty_player_id on a week (never assigned, or cleared out
+ * when that player themselves ended up needing a sub — see subFlow.js's
+ * `wasBallDuty` handling in createSubRequest()/adminFlagNeedsSub()/
+ * arrangeSelfSub()) means there's nobody to email, so that week is silently
+ * skipped rather than erroring.
+ */
+async function processScoreReminders() {
+  const tz = getTimezone();
+  const now = new Date();
+  const sessions = db
+    .prepare(
+      `SELECT * FROM sessions
+       WHERE status IN ('scheduled', 'active') AND archived_at IS NULL
+         AND session_type = 'regular' AND games_won_enabled = 1`
+    )
+    .all();
+
+  for (const session of sessions) {
+    try {
+      const weeks = gameScores.scoreEntryWeeksForSession(session.id);
+      for (const week of weeks) {
+        if (!week.missing_count || !week.ball_duty_player_id) continue;
+
+        const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+        const reminderAt = new Date(matchAt.getTime() + session.games_won_reminder_lead_hours * 60 * 60 * 1000);
+        if (now < reminderAt) continue;
+
+        const ballDutyPlayer = db.prepare('SELECT * FROM players WHERE id = ?').get(week.ball_duty_player_id);
+        if (!ballDutyPlayer) continue;
+
+        const already = db
+          .prepare(`SELECT id FROM email_log WHERE category = 'score_reminder' AND related_week_id = ? AND to_email = ?`)
+          .get(week.id, ballDutyPlayer.email);
+        if (already) continue;
+
+        await email.sendScoreReminder({
+          recipient: ballDutyPlayer,
+          week,
+          session,
+          missingCount: week.missing_count,
+        });
+      }
+    } catch (err) {
+      console.error(`[cron] processScoreReminders failed for session ${session.id} (${session.name}):`, err.message);
+    }
+  }
+}
+
 async function processEscalations() {
   await subFlow.escalateOverdueRequests();
   subFlow.flagStillUnfilled();
@@ -450,6 +525,7 @@ async function tick() {
     await processReminders();
     await processFollowUps();
     await processAdminReports();
+    await processScoreReminders();
     await processEscalations();
     await processAdhocInvites();
     await processAdhocReminders();
@@ -482,6 +558,7 @@ module.exports = {
   processReminders,
   processFollowUps,
   processAdminReports,
+  processScoreReminders,
   processEscalations,
   processAdhocInvites,
   processAdhocReminders,

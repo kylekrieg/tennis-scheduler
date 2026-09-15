@@ -1,6 +1,94 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>Activity Log</h1>
-<p class="muted">Every change made by an admin, most recent first (last 300). Any admin can do anything in this app (no permission tiers) — this is the record of who did what.</p>
+
+<%
+  var behaviorScopeNote = filters.session
+    ? 'Scoped to the Session selected in the filter below — clear it to see every session, all time.'
+    : 'Across every session, all time. Pick a Session in the filter below to narrow this to just one.';
+%>
+<details class="card wide" style="margin-top:16px;">
+  <summary style="cursor:pointer;font-weight:600;">Player Behavior <span class="muted" style="font-weight:normal;">— how players use the app: confirmation timing, sub reliance, swaps, blackouts</span></summary>
+  <p class="muted"><%= behaviorScopeNote %> Separate from the tennis-performance numbers on the Stats page.</p>
+
+  <h3>League-wide: how a filled sub request got covered</h3>
+  <p>
+    Roster: <strong><%= playerBehavior.subSourceTotals.roster %></strong>
+    &nbsp;·&nbsp; Broader sub list: <strong><%= playerBehavior.subSourceTotals.broader %></strong>
+    &nbsp;·&nbsp; Unknown player (brand new, never on file before): <strong><%= playerBehavior.subSourceTotals.unknown %></strong>
+  </p>
+  <p class="muted">Counts every sub, however it was covered: the regular roster fan-out, an escalation to the broader list, a player-arranged "I found a sub," or an admin placing someone directly (Reassign/one-time sub/Correct player). "Unknown player" means someone genuinely new — not already on the roster or broader sub list before this.</p>
+
+  <h3>Confirmation &amp; subs, by player</h3>
+  <p class="muted">"Confirmed after 2nd reminder" means the player didn't click Confirm until after the automatic follow-up nudge had already gone out for that week. "Admin confirmed" means an admin confirmed the player directly from this session's page (the "Mark confirmed" button) instead of the player clicking their own Confirm link — not counted under either reminder column, since that's an admin's action, not the player's own response. "Never confirmed" is a week that reached match time with the player still sitting unconfirmed — no Confirm click, no sub request, nothing.</p>
+  <% if (playerBehavior.confirmAndSubRows.length === 0) { %>
+    <p class="muted">No confirmation or sub-request activity yet.</p>
+  <% } else { %>
+  <table class="wide">
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Confirmed on 1st reminder</th>
+        <th>Confirmed after 2nd reminder</th>
+        <th>Admin confirmed</th>
+        <th>Never confirmed</th>
+        <th>Subs needed</th>
+        <th>Filled: roster</th>
+        <th>Filled: broader list</th>
+        <th>Filled: unknown player</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% playerBehavior.confirmAndSubRows.forEach(function(r) { %>
+        <tr>
+          <td><%= fullName(r.player) %></td>
+          <td><%= r.confirmedOnFirstReminder %></td>
+          <td><%= r.confirmedAfterFollowup %></td>
+          <td><%= r.adminConfirmed %></td>
+          <td><%= r.neverConfirmed %></td>
+          <td><%= r.subsNeeded %></td>
+          <td><%= r.filledFromRoster %></td>
+          <td><%= r.filledFromBroaderList %></td>
+          <td><%= r.filledByUnknownPlayer %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+
+  <h3>Other activity, by player</h3>
+  <% if (playerBehavior.otherActivityRows.length === 0) { %>
+    <p class="muted">No self-arranged subs, subs claimed for others, swaps, or self-reported blackouts yet.</p>
+  <% } else { %>
+  <table class="wide">
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Self-arranged subs found</th>
+        <th>Subbed in for others</th>
+        <th>Swaps proposed</th>
+        <th>Swaps accepted</th>
+        <th>Swaps declined</th>
+        <th>Blackout self-reports</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% playerBehavior.otherActivityRows.forEach(function(r) { %>
+        <tr>
+          <td><%= fullName(r.player) %></td>
+          <td><%= r.selfArranged %></td>
+          <td><%= r.subsClaimedForOthers %></td>
+          <td><%= r.swapProposed %></td>
+          <td><%= r.swapAccepted %></td>
+          <td><%= r.swapDeclined %></td>
+          <td><%= r.blackoutSelfReported %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</details>
+
+<p class="muted" style="margin-top:16px;">Every change made by an admin, most recent first (last 300). Any admin can do anything in this app (no permission tiers) — this is the record of who did what.</p>
 
 <form method="get" class="card wide" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
   <div style="flex:1;min-width:160px;">

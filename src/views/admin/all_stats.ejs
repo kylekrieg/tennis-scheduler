@@ -61,7 +61,7 @@
     <% if (overallWinLeaderboard.length) { %>
       <h3>All-Time Win % Leaderboard</h3>
       <table class="wide">
-        <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+        <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
         <tbody>
           <% overallWinLeaderboard.forEach(function(row, i) { %>
             <tr>
@@ -70,7 +70,7 @@
               <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
               <td><%= row.gamesWon %></td>
               <td><%= row.gamesPlayed %></td>
-              <td><%= row.weeksScored %></td>
+              <td><%= row.matchesScored %></td>
             </tr>
           <% }) %>
         </tbody>
@@ -138,7 +138,7 @@
       <% if (r.winLeaderboard.length) { %>
         <h3>Win % leaderboard</h3>
         <table>
-          <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Weeks scored</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
           <tbody>
             <% r.winLeaderboard.forEach(function(row, i) { %>
               <tr>
@@ -147,7 +147,7 @@
                 <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
                 <td><%= row.gamesWon %></td>
                 <td><%= row.gamesPlayed %></td>
-                <td><%= row.weeksScored %></td>
+                <td><%= row.matchesScored %></td>
               </tr>
             <% }) %>
           </tbody>

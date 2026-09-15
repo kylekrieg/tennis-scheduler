@@ -153,6 +153,10 @@
   </div>
   <p class="muted">On by default. Uncheck for a group that doesn't want to bother with it — this removes the "Enter your scores" and "Leaderboard" links from this session's schedule, look-ahead, and My Page cards, and takes this session out of the public Scores/Leaderboard pages entirely. You (the admin) can still see and set games-won scores for this session from its session detail page and the admin Stats pages either way — this only turns off the player-facing side. Unchecking never deletes any scores already entered; they're just hidden until you turn it back on.</p>
 
+  <label for="games_won_reminder_lead_hours">Ball duty scores reminder — hours after match time</label>
+  <input type="number" name="games_won_reminder_lead_hours" id="games_won_reminder_lead_hours" value="<%= session ? session.games_won_reminder_lead_hours : 24 %>" min="1">
+  <p class="muted">If any player who was scheduled that week still hasn't entered games won by this many hours after match time, that week's ball-duty person gets a one-time reminder email with a link to the Scores page. Defaults to 24. Only applies while the checkbox above is on.</p>
+
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
     <p class="muted">Only currently-enrolled players are shown below. Search by name to find and add someone else — search reveals everyone in the system, not just this roster. A target &gt; 0 is what actually enrolls a player this session; the "Remove" button is a shortcut that zeroes a player's target and hides the row again (structural change either way — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>

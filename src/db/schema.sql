@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
   weather_lon         REAL,
   games_won_enabled  INTEGER NOT NULL DEFAULT 1, -- per-session opt-out (Kyle, 2026-09-10) for the games-won leaderboard feature — defaults ON since it's a fun extra some groups won't want. Gates only the PLAYER-facing surfaces (schedule/lookahead/My Page links, the group entry grid, the per-player Scores page, the public leaderboard); the admin session-detail "Games won" field and both admin Stats leaderboard tables are never gated by this, same "admin isn't restricted by a player-facing toggle" pattern as reminders_enabled/weather_enabled. See db/index.js's ensureColumn() doc comment for why the default must be 1, not 0.
+  games_won_reminder_lead_hours INTEGER NOT NULL DEFAULT 24, -- per-session (Kyle, 2026-09-15): hours after match_time cron.js's processScoreReminders() waits before emailing that week's ball-duty player, if any player who was scheduled to play still has no games_won entered by then. Same "configurable, not hardcoded" pattern as follow_up_lead_hours/admin_report_lead_hours/escalation_lead_hours above. Only relevant while games_won_enabled is on for this session — see that column's own comment for what it gates.
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -172,6 +173,7 @@ CREATE TABLE IF NOT EXISTS week_assignments (
   token_used_at   TEXT, -- last time ANY token for this assignment was used (any row in week_assignment_tokens)
   confirmed_at    TEXT,
   manually_placed INTEGER NOT NULL DEFAULT 0, -- set by the plain Reassign-to-roster-player action (Kyle, 2026-09-07) — an admin manually picked this player for this slot, as opposed to the scheduler generating it. Suppresses the Need-a-sub button / "I found a sub" line on this assignment's reminder+follow-up emails (see email.js) since an admin-arranged placement shouldn't invite a player to self-service out of it the same way a normal scheduled slot does.
+  admin_confirmed INTEGER NOT NULL DEFAULT 0, -- set only by the admin session-detail page's "Mark confirmed" button (Kyle, 2026-09-15: "add an 'admin confirmed' column where the admin confirms a player by the admin panel") — distinguishes an admin vouching for a player directly (they told the admin some other way, e.g. a phone call) from the player actually clicking their own Confirm link. Both set status='confirmed'/confirmed_at the same way; this flag is purely so playerBehaviorStats.js's confirmTimingStats() can report admin-confirmed separately from "confirmed on 1st/2nd reminder," which are meant to measure the PLAYER's own responsiveness. Not set by the one-time-sub/sub-list-reassign/Correct-player flows, which also write status='confirmed' directly — those are placing a substitute, not confirming an already-scheduled player, a different action Kyle didn't ask to track here.
   replaces_assignment_id INTEGER REFERENCES week_assignments(id), -- set on a sub's own new row at the moment they take over a slot (claimSub(), and the admin Reassign route's "one-time sub" and "sub list" branches) — points at the original, now-subbed_out row they replaced. Nullable/unset for every ordinary (non-sub) row. Lets the admin session-detail page show a sub indented directly under who they replaced instead of a flat, ambiguous list (Kyle, 2026-09-07) — see sessionHelper.js's orderAssignmentsWithSubGroups(). Never set retroactively for rows that predate this column; that display falls back to a same-team/court guess instead (see that function's doc comment).
   games_won             INTEGER, -- Kyle, 2026-09-09: self-reported "games won" for a player's own week — see src/services/gameScores.js. NULL = never entered. Each player enters their own number (not a single shared team score), so this lives on the per-player assignment row rather than a per-team/week table.
   games_won_entered_at  TEXT, -- set once, the first time a score is saved for this row — never touched again on later edits. The player's 24-hour self-service edit window (gameScores.js's canPlayerEdit()) is measured from this, not from match time or week-lock time.
@@ -223,7 +225,8 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   escalated_at          TEXT,
   initiated_by          TEXT NOT NULL DEFAULT 'player', -- 'player' | 'admin' — see subFlow.js's adminFlagNeedsSub()
   fanout_sent_at        TEXT, -- NULL until the candidate roster has actually been emailed. Self-service requests set this immediately (see fanOutSubRequest()); an admin-flagged request leaves it NULL until cron.js's processReminders() reaches that week's normal reminder time, so the flag itself never emails anyone by surprise.
-  requesting_player_id  INTEGER REFERENCES players(id) -- snapshot of who was on the assignment at request-creation time, same "capture identity before it can drift" reasoning as swap_requests.initiator_player_id. Without this, the Stats page's Sub History table would resolve "who this was about" via the assignment's *current* player_id, which silently relabels old history under a new name once that slot is later reassigned/swapped.
+  requesting_player_id  INTEGER REFERENCES players(id), -- snapshot of who was on the assignment at request-creation time, same "capture identity before it can drift" reasoning as swap_requests.initiator_player_id. Without this, the Stats page's Sub History table would resolve "who this was about" via the assignment's *current* player_id, which silently relabels old history under a new name once that slot is later reassigned/swapped.
+  self_arranged         INTEGER NOT NULL DEFAULT 0 -- set only by arrangeSelfSub() ("I found a sub" — one specific named candidate), never by createSubRequest()'s normal fan-out or adminFlagNeedsSub(). Lets the Activity Log's Player Behavior stats (Kyle, 2026-09-15) count "found their own sub" separately from "waited on the app's fan-out" without re-deriving it from sub_offers row counts, which stops being reliable once a self-arranged request later escalates (it can gain more offers, same as any other still-open request — see arrangeSelfSub()'s doc comment).
 );
 
 CREATE TABLE IF NOT EXISTS sub_offers (
@@ -233,7 +236,8 @@ CREATE TABLE IF NOT EXISTS sub_offers (
   broader_list_id       INTEGER REFERENCES broader_sub_list(id),
   token                 TEXT UNIQUE NOT NULL, -- SHA-256 hash of the raw token
   status                TEXT NOT NULL DEFAULT 'pending', -- pending | claimed | closed
-  responded_at          TEXT
+  responded_at          TEXT,
+  was_new_person        INTEGER NOT NULL DEFAULT 0 -- set only on the one offer arrangeSelfSub() creates for a genuinely-new person (selection.newPerson, matched against neither `players` nor `broader_sub_list` by email — see that function's "isNewPerson" branch and the resulting sub.self_arranged_new_person activity-log entry). Every other offer (the normal roster fan-out, an escalation to the broader list, or a self-arranged pick of someone already known) leaves this 0. Lets the Player Behavior stats (Kyle, 2026-09-15) bucket a filled sub_request's winning offer as "roster" / "broader sub list" / "unknown player" without guessing from timestamps.
 );
 
 -- Direct player-to-player swap proposals: a two-way trade between two
@@ -282,7 +286,7 @@ CREATE TABLE IF NOT EXISTS email_log (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   to_email        TEXT NOT NULL,
   subject         TEXT NOT NULL,
-  category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation | adhoc_invite | adhoc_reminder | adhoc_final | adhoc_not_enough
+  category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation | adhoc_invite | adhoc_reminder | adhoc_final | adhoc_not_enough | score_reminder (this list is not exhaustive — several categories added since have never been backfilled in here, e.g. admin_report/admin_report_manual, blackout_notice, sub_filled_original, the swap_* categories, test)
   status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only) | skipped_no_email (recipient has a @no-email.invalid placeholder address, e.g. a one-time sub added with no email on file — see email.js's NO_EMAIL_DOMAIN)
   sent_at         TEXT NOT NULL DEFAULT (datetime('now')),
   related_week_id INTEGER REFERENCES weeks(id)

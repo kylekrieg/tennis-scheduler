@@ -32,6 +32,7 @@ const testEmail = require('../services/testEmail');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const weather = require('../services/weather');
 const gameScores = require('../services/gameScores');
+const playerBehaviorStats = require('../services/playerBehaviorStats');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
 // abuse protection at all — bcrypt slows an individual guess but does
@@ -897,6 +898,18 @@ function invalidEscalationLeadHours(b) {
   return null;
 }
 
+// Ball duty games-won reminder lead time (Kyle, 2026-09-15) — same "plain
+// positive whole number of hours" shape as the three validators above, just
+// counting forward from match time instead of back from it (see
+// cron.js's processScoreReminders()).
+function invalidGamesWonReminderLeadHours(b) {
+  const hours = Number(b.games_won_reminder_lead_hours);
+  if (b.games_won_reminder_lead_hours !== undefined && (!Number.isInteger(hours) || hours <= 0)) {
+    return 'Ball duty scores reminder lead time must be a whole number of hours after match time, greater than 0.';
+  }
+  return null;
+}
+
 // Weather forecast (Kyle, 2026-09-05) — a per-session opt-in checkbox plus
 // lat/lon, shared by both regular and ad-hoc sessions (unlike the admin
 // report/ad-hoc-timing fields above, which are scoped to one session type
@@ -1013,6 +1026,11 @@ router.post('/sessions', (req, res) => {
     flash(req, escalationError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const scoreReminderError = invalidGamesWonReminderLeadHours(b);
+  if (scoreReminderError) {
+    flash(req, scoreReminderError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -1023,8 +1041,8 @@ router.post('/sessions', (req, res) => {
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
-        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, games_won_enabled, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, games_won_enabled, games_won_reminder_lead_hours, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -1059,6 +1077,7 @@ router.post('/sessions', (req, res) => {
       // column's own DEFAULT 1 — an admin has to actively uncheck it to
       // opt a session out, never the other way around.
       b.games_won_enabled ? 1 : 0,
+      Number(b.games_won_reminder_lead_hours || 24),
       // Ad-hoc has no "Schedule these players" step to promote it out of
       // draft — it's ready to start inviting the moment it's saved, so it
       // skips straight to 'active'. Regular sessions keep starting 'draft'.
@@ -1238,6 +1257,7 @@ const SESSION_FIELD_LABELS = [
   ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['games_won_enabled', 'games-won leaderboard', (v) => (Number(v) ? 'on' : 'off')],
+  ['games_won_reminder_lead_hours', 'ball duty scores reminder lead hours', (v) => v],
 ];
 
 function playerNamesForIds(ids) {
@@ -1312,6 +1332,11 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, escalationError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const scoreReminderError = invalidGamesWonReminderLeadHours(b);
+  if (scoreReminderError) {
+    flash(req, scoreReminderError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -1321,7 +1346,7 @@ router.post('/sessions/:id', (req, res) => {
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
-     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=?, games_won_enabled=? WHERE id=?`
+     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=?, games_won_enabled=?, games_won_reminder_lead_hours=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -1348,6 +1373,7 @@ router.post('/sessions/:id', (req, res) => {
     parseOptionalFloat(b.weather_lat),
     parseOptionalFloat(b.weather_lon),
     b.games_won_enabled ? 1 : 0,
+    Number(b.games_won_reminder_lead_hours || 24),
     req.params.id
   );
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
@@ -2692,9 +2718,13 @@ router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, re
        WHERE wa.id = ?`
     )
     .get(req.params.assignmentId);
-  db.prepare(`UPDATE week_assignments SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?`).run(
-    req.params.assignmentId
-  );
+  // admin_confirmed = 1 (Kyle, 2026-09-15) — see schema.sql's comment on
+  // that column: this is the one and only place it's ever set, so
+  // playerBehaviorStats.js's confirmTimingStats() can tell an admin's direct
+  // vouch apart from the player's own confirm click.
+  db.prepare(
+    `UPDATE week_assignments SET status = 'confirmed', confirmed_at = datetime('now'), admin_confirmed = 1 WHERE id = ?`
+  ).run(req.params.assignmentId);
   // Covers the "player asked for a sub, then told the admin directly they
   // can make it after all" case — same reasoning as the reassign route above.
   const subWasResolved = subFlow.closeActiveSubRequestForAssignment(req.params.assignmentId);
@@ -3213,30 +3243,13 @@ router.get('/sessions/:id/stats', (req, res) => {
     // Admin-facing Stats page — full name (Kyle, 2026-09-07).
     .map((r) => ({ ...r, original_player: fullName(r) }));
 
-  // "Filled by" (Kyle, 2026-09-10): who actually took this slot, resolved in
-  // three tiers of decreasing certainty -- same idea as sessionHelper.js's
-  // orderAssignmentsWithSubGroups() but run in the opposite (parent -> child)
-  // direction, so reimplemented locally rather than reused directly:
-  //   1. Real link: another week_assignments row whose replaces_assignment_id
-  //      points straight at this one. Set by claimSub() for every
-  //      self-service/escalation/self-arranged claim, and by admin Reassign's
-  //      sub-list/one-time-sub branches (see recordAdminReassignAsSub() and
-  //      its call sites) -- exact, no guessing involved.
-  //   2. In-place reassign: a plain numeric Reassign swaps wa.player_id
-  //      directly on the same row with no new row and no
-  //      replaces_assignment_id, so if the assignment's *current* occupant
-  //      differs from the *original* occupant snapshotted on the
-  //      sub_requests row, that current occupant is who filled it.
-  //   3. Legacy heuristic fallback: pre-dates both of the above -- same
-  //      week/team/court, an is_sub row with no replaces_assignment_id of its
-  //      own, and exactly one such candidate (each candidate can only be
-  //      claimed by one original row, so two ambiguous rows sharing one
-  //      candidate both fall back to "—" rather than guessing).
-  // Anything that still doesn't resolve renders as "—" in the view -- never
-  // blocks the rest of the row.
-  const findFillerByLink = db.prepare(
-    `SELECT player_id FROM week_assignments WHERE replaces_assignment_id = ? ORDER BY id DESC LIMIT 1`
-  );
+  // "Filled by" (Kyle, 2026-09-10): who actually took this slot. Resolution
+  // itself now lives in subFlow.js's resolveSubRequestFiller() (pulled out
+  // 2026-09-15 so playerBehaviorStats.js's subRequestStats() can share the
+  // exact same three-tier heuristic rather than risking a second one that
+  // quietly disagrees with this table) -- see that function's doc comment
+  // for the tiers. Anything that still doesn't resolve renders as "—" in the
+  // view -- never blocks the rest of the row.
   const findPlayerById = db.prepare('SELECT id, name, full_name FROM players WHERE id = ?');
   const weekAssignmentsForFillerCache = new Map();
   function weekAssignmentsForFiller(weekId) {
@@ -3254,26 +3267,15 @@ router.get('/sessions/:id/stats', (req, res) => {
   }
   const heuristicallyClaimedFillerIds = new Set();
   for (const r of rawSubHistory) {
-    let fillerId = null;
-    const linked = findFillerByLink.get(r.assignment_id);
-    if (linked) {
-      fillerId = linked.player_id;
-    } else if (r.current_player_id !== r.original_player_id) {
-      fillerId = r.current_player_id;
-    } else {
-      const candidates = weekAssignmentsForFiller(r.week_id).filter(
-        (x) =>
-          x.is_sub &&
-          !x.replaces_assignment_id &&
-          x.team === r.team &&
-          x.court === r.court &&
-          !heuristicallyClaimedFillerIds.has(x.id)
-      );
-      if (candidates.length === 1) {
-        fillerId = candidates[0].player_id;
-        heuristicallyClaimedFillerIds.add(candidates[0].id);
-      }
-    }
+    const fillerId = subFlow.resolveSubRequestFiller({
+      assignmentId: r.assignment_id,
+      team: r.team,
+      court: r.court,
+      currentPlayerId: r.current_player_id,
+      originalPlayerId: r.original_player_id,
+      weekAssignments: weekAssignmentsForFiller(r.week_id),
+      claimedFillerIds: heuristicallyClaimedFillerIds,
+    });
     r.filled_by = fillerId != null ? fullName(findPlayerById.get(fillerId)) : null;
   }
 
@@ -4017,6 +4019,13 @@ router.get('/activity-log', (req, res) => {
   // show the composed title, same reasoning as above.
   const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
 
+  // Player Behavior stats (Kyle, 2026-09-15): a collapsible section above the
+  // log itself — how players actually use the app (confirm timing, sub
+  // reliance, swaps, blackouts), not the raw who-did-what audit trail below
+  // it. Reuses this same page's own session filter (blank = every session,
+  // all time) rather than adding a second, separate filter control.
+  const playerBehavior = playerBehaviorStats.playerBehaviorSummary(sessionId || null);
+
   res.render('admin/activity_log', {
     title: 'Activity Log',
     wideMain: true,
@@ -4024,6 +4033,7 @@ router.get('/activity-log', (req, res) => {
     actions,
     admins,
     sessions,
+    playerBehavior,
     filters: { session: sessionId || '', action: action || '', admin: admin || '', q: q || '' },
   });
 });

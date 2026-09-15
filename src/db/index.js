@@ -46,6 +46,15 @@ ensureColumn('week_assignments', 'court', 'INTEGER NOT NULL DEFAULT 1');
 // backfill needed.
 ensureColumn('week_assignments', 'manually_placed', 'INTEGER NOT NULL DEFAULT 0');
 
+// admin_confirmed (Kyle, 2026-09-15) — set only by the admin session-detail
+// page's "Mark confirmed" button, so playerBehaviorStats.js's
+// confirmTimingStats() can report it apart from a player's own confirm
+// click. See schema.sql's comment on this column for the full reasoning.
+// Every existing confirmed row simply defaults to 0 (an admin-vouched
+// confirm before this column existed can't be told apart from a real
+// player click after the fact, and there's no reliable way to backfill it).
+ensureColumn('week_assignments', 'admin_confirmed', 'INTEGER NOT NULL DEFAULT 0');
+
 // replaces_assignment_id (Kyle, 2026-09-07): points a sub's own row at the
 // original, now-subbed_out row it replaced — see schema.sql's comment. Bare
 // nullable column, no default needed (every existing row is simply unset,
@@ -488,6 +497,26 @@ ensureColumn('week_assignments', 'games_played', 'INTEGER');
 // the player-facing entry points (schedule/lookahead/My Page links, the
 // group entry grid, the per-player Scores page, the public leaderboard) are.
 ensureColumn('sessions', 'games_won_enabled', 'INTEGER NOT NULL DEFAULT 1');
+
+// Player Behavior stats on the Activity Log page (Kyle, 2026-09-15): "how
+// many times a player needs a sub, and how many times we find a sub within
+// the roster vs. the broader sub list vs. an unknown player." Both columns
+// default to 0 for every existing row, which is exactly right — neither flag
+// could have been true before this migration existed, since the code that
+// sets them (subFlow.js's arrangeSelfSub()) is being changed in the same
+// pass. See schema.sql's own comments on these two columns for what each one
+// actually captures.
+ensureColumn('sub_requests', 'self_arranged', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('sub_offers', 'was_new_person', 'INTEGER NOT NULL DEFAULT 0');
+
+// Ball duty games-won reminder (Kyle, 2026-09-15) — see schema.sql's comment
+// on this column and cron.js's processScoreReminders(). Defaults to 24,
+// matching Kyle's own requested default, so every existing session picks up
+// the new reminder pass at the same 24h cadence rather than silently staying
+// off (there's no "0 = disabled" escape hatch here, same as
+// follow_up_lead_hours/admin_report_lead_hours before it — turning the whole
+// reminder off means turning games_won_enabled off for the session).
+ensureColumn('sessions', 'games_won_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of

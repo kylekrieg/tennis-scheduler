@@ -1173,6 +1173,38 @@ async function sendAdminWeekReport({ to, week, session, report, manual = false, 
   return sendMail({ to, subject, html, category: manual ? 'admin_report_manual' : 'admin_report', relatedWeekId: week.id, session, test });
 }
 
+/**
+ * Ball duty games-won reminder (Kyle, 2026-09-15): "if the # of games won is
+ * not entered within X amount of hours, the person that was scheduled to
+ * bring balls should get a reminder email to enter in scores for the week."
+ * Sent once per week by cron.js's processScoreReminders(), to whoever this
+ * week's `ball_duty_player_id` is — not to every player individually, since
+ * the group entry grid already lets any one person fill in everyone's box
+ * (see gameScores.js's `scoreRowsForWeek()` doc comment), so one nudge to
+ * the person already responsible for showing up with balls is enough to
+ * prompt someone to go fill the rest in.
+ *
+ * No token — same plain, unauthenticated link as sendBlackoutNotice() above:
+ * `/scores` is already a public page with no login, so there's nothing to
+ * gate here. `missingCount` is how many of that week's players still have no
+ * games-won entered (see gameScores.js's `scoreEntryWeeksForSession()`),
+ * shown so the recipient knows at a glance whether it's "just me" or "the
+ * whole group forgot."
+ */
+async function sendScoreReminder({ recipient, week, session, missingCount, test = false }) {
+  const scoresUrl = `${siteUrl()}/scores?session=${session.id}&week=${week.id}`;
+  const subject = `Scores still needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${fullName(recipient)},</p>
+    <p>You were on ball duty for <strong>${fmtDate(week.match_date)}</strong>, and ${missingCount === 1 ? 'one player still hasn’t' : `${missingCount} players still haven’t`} entered how many games they won for that match.</p>
+    <p><a href="${scoresUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Enter scores</a></p>
+    <p>That page shows the whole week's players — anyone can fill in any box, so this doesn't have to be you personally, just a nudge to whoever's around to get it done.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'score_reminder', relatedWeekId: week.id, session, test });
+}
+
 module.exports = {
   NO_EMAIL_DOMAIN,
   sendMail,
@@ -1203,6 +1235,7 @@ module.exports = {
   sendAdhocNotEnough,
   sendCustomEmail,
   sendAdminWeekReport,
+  sendScoreReminder,
   siteUrl,
   fmtDate,
   fmtTime,
