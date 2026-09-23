@@ -48,7 +48,8 @@
               <% } %>
             </label>
           </div>
-          <table class="wide">
+          <div class="table-scroll">
+<table class="wide">
             <thead><tr><th>Player</th><th>Games won</th><th></th></tr></thead>
             <tbody>
               <% c.rows.forEach(function(r) { %>
@@ -69,6 +70,7 @@
               <% }) %>
             </tbody>
           </table>
+</div>
         </div>
       <% }) %>
       <div class="actions" style="margin-top:12px;">

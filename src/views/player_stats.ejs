@@ -15,7 +15,8 @@
     <% if (r.playerStats.length === 0) { %>
       <p class="muted">No players enrolled yet.</p>
     <% } else { %>
-      <table class="wide">
+      <div class="table-scroll">
+<table class="wide">
         <thead><tr><th>Player</th><th>Target</th><th>Scheduled</th><th>Subbed out</th><th>Played</th><th>Sub bonus games</th><th>Ball duty</th></tr></thead>
         <tbody>
           <% r.playerStats.forEach(function(s) { %>
@@ -31,10 +32,12 @@
           <% }) %>
         </tbody>
       </table>
+</div>
     <% } %>
     <% if (r.subStats.length) { %>
       <h3>Subs who played this season</h3>
-      <table class="wide">
+      <div class="table-scroll">
+<table class="wide">
         <thead><tr><th>Player</th><th>Games played</th></tr></thead>
         <tbody>
           <% r.subStats.forEach(function(s) { %>
@@ -45,6 +48,7 @@
           <% }) %>
         </tbody>
       </table>
+</div>
     <% } %>
   </div>
 <% }) %>

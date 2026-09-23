@@ -180,6 +180,14 @@ h2 { font-size: calc(17px * var(--text-scale, 1)); margin-top: 28px; }
 .muted { color: var(--muted); font-size: calc(14px * var(--text-scale, 1)); }
 table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: calc(14px * var(--text-scale, 1)); }
 th, td { text-align: left; padding: 8px 10px; border-bottom: var(--border-width, 1px) solid var(--border); vertical-align: top; }
+/* Wrap wide/data tables in .table-scroll (see src/views/*.ejs) so on a
+   narrow phone screen anything that can't shrink further — several action
+   buttons in one cell, a long status + note, nested "also playing" rows —
+   scrolls horizontally within the table itself instead of stretching the
+   whole page past the viewport and spilling out past the surrounding
+   .card's border. */
+.table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 12px; }
+.table-scroll table { margin-top: 0; }
 th { background: var(--bg-soft); font-weight: 600; }
 tr.flagged, .session-card.flagged { background: var(--flagged-bg); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; }
@@ -287,6 +295,7 @@ input[type="checkbox"]:disabled {
   cursor: default;
 }
 .notice { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--bg-soft); font-size: calc(14px * var(--text-scale, 1)); }
+code { overflow-wrap: anywhere; word-break: break-word; }
 /* Honeypot field on public forms that trigger email (Request a Sub, Propose
    a Swap) — see src/services/honeypot.js. Hidden via CSS, not type="hidden",
    so a bot that blindly fills every <input> it finds in the raw HTML still
@@ -310,6 +319,9 @@ input[type="checkbox"]:disabled {
    room without needing the wider .actions class's margin-top, which isn't
    appropriate inside a table row. */
 .row-actions { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; white-space: nowrap; }
+@media (max-width: 820px) {
+  .row-actions { flex-wrap: wrap; white-space: normal; }
+}
 table.compact th, table.compact td { padding: 6px 10px; font-size: calc(13px * var(--text-scale, 1)); }
 table.compact td { vertical-align: middle; }
 .player-row {

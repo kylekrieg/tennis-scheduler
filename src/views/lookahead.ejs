@@ -11,6 +11,7 @@
 <% if (rows.length === 0) { %>
   <p class="muted">No upcoming weeks in this window.</p>
 <% } %>
+<div class="table-scroll">
 <table>
   <thead><tr><th style="white-space:nowrap;">Date</th><% if (multiCourt) { %><th>Court</th><% } %><th>Team A</th><th>Team B</th><th>Ball duty</th></tr></thead>
   <tbody>
@@ -50,6 +51,7 @@
     <% }) %>
   </tbody>
 </table>
+</div>
 <% if (rows.some(r => r.assignments.some(a => a.doubleBooked && (a.status === 'scheduled' || a.status === 'confirmed')))) { %>
   <p class="muted" style="margin-top:8px;">"Double booked" means you're scheduled to play in two different sessions on the same date — sort it out ahead of time by reassigning yourself in one of them or finding a sub, rather than the week of.</p>
 <% } %>

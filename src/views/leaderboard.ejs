@@ -6,7 +6,8 @@
 <% if (board.length === 0) { %>
   <p class="muted">No scores entered yet for this session.</p>
 <% } else { %>
-  <table>
+  <div class="table-scroll">
+<table>
     <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
     <tbody>
       <% board.forEach(function(row, i) { %>
@@ -20,6 +21,7 @@
       <% }) %>
     </tbody>
   </table>
+</div>
 <% } %>
 
 <h2 style="margin-top:28px;">Win % Leaderboard</h2>
@@ -27,7 +29,8 @@
 <% if (winBoard.length === 0) { %>
   <p class="muted">No weeks with both games won and games played entered yet for this session.</p>
 <% } else { %>
-  <table>
+  <div class="table-scroll">
+<table>
     <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
     <tbody>
       <% winBoard.forEach(function(row, i) { %>
@@ -42,6 +45,7 @@
       <% }) %>
     </tbody>
   </table>
+</div>
 <% } %>
 
 <h2 style="margin-top:36px;">All-Time Leaderboard (all sessions)</h2>
@@ -49,7 +53,8 @@
 <% if (overallBoard.length === 0) { %>
   <p class="muted">No scores entered yet.</p>
 <% } else { %>
-  <table>
+  <div class="table-scroll">
+<table>
     <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
     <tbody>
       <% overallBoard.forEach(function(row, i) { %>
@@ -63,13 +68,15 @@
       <% }) %>
     </tbody>
   </table>
+</div>
 <% } %>
 
 <h3 style="margin-top:20px;">All-Time Win % Leaderboard</h3>
 <% if (overallWinBoard.length === 0) { %>
   <p class="muted">No weeks with both games won and games played entered yet.</p>
 <% } else { %>
-  <table>
+  <div class="table-scroll">
+<table>
     <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
     <tbody>
       <% overallWinBoard.forEach(function(row, i) { %>
@@ -84,6 +91,7 @@
       <% }) %>
     </tbody>
   </table>
+</div>
 <% } %>
 
 <p class="actions" style="margin-top:16px;">

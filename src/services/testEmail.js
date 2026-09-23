@@ -143,6 +143,7 @@ const NEEDS_SESSION_WEEK = new Set([
   'sendSubRequestVerification',
   'sendSubRequestOwnConfirmation',
   'sendSubFilledOriginalNotice',
+  'sendSignupNotice',
   'sendBlackoutNotice',
   'sendSubRequestFanout',
   'sendEscalationEmail',
@@ -227,6 +228,11 @@ const TEMPLATES = {
       subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
       test: true,
     }),
+  },
+  signup_notice: {
+    label: 'Season sign-ups open — notify candidates',
+    fn: 'sendSignupNotice',
+    build: (ctx) => ({ recipient: ctx.player, session: ctx.session, test: true }),
   },
   blackout_notice: {
     label: 'Blackout dates open — notify roster',

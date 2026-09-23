@@ -19,7 +19,8 @@
     <p class="notice">You don't have any upcoming weeks available to swap right now.</p>
   <% } else { %>
     <h2>Which week do you want to give up?</h2>
-    <table class="wide">
+    <div class="table-scroll">
+<table class="wide">
       <thead><tr><th>Date</th><th>Status</th><th></th></tr></thead>
       <tbody>
         <% ownAssignments.forEach(function(a) { %>
@@ -40,6 +41,7 @@
         <% }) %>
       </tbody>
     </table>
+</div>
     <% if (ownAssignments.some(a => a.doubleBooked)) { %>
       <p class="muted">"Double booked" means you're also scheduled to play in another session on that same date — that's usually the week worth trading away.</p>
     <% } %>
@@ -66,7 +68,8 @@
     <% if (targetAssignments.length === 0) { %>
       <p class="notice">No workable trade with that player right now — they may not have an upcoming week that's free for both of you (blackout dates, an already-locked week, or a slot already in flight all rule a week out).</p>
     <% } else { %>
-      <table class="wide">
+      <div class="table-scroll">
+<table class="wide">
         <thead><tr><th>Their date</th><th></th></tr></thead>
         <tbody>
           <% targetAssignments.forEach(function(a) { %>
@@ -84,6 +87,7 @@
           <% }) %>
         </tbody>
       </table>
+</div>
     <% } %>
   <% } %>
 <% } %>

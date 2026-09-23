@@ -18,7 +18,8 @@
   <% if (upcomingAssignments.length === 0) { %>
     <p class="notice">You're not currently down to play any upcoming week in this session.</p>
   <% } else { %>
-    <table class="wide">
+    <div class="table-scroll">
+<table class="wide">
       <thead><tr><th>Date</th><th>Status</th><th></th></tr></thead>
       <tbody>
         <% upcomingAssignments.forEach(function(a) { %>
@@ -49,6 +50,7 @@
         <% }) %>
       </tbody>
     </table>
+</div>
     <p class="muted">We'll email you a confirmation link first — nothing gets sent to the other players until you click it and confirm on that page.</p>
     <% if (upcomingAssignments.some(a => a.doubleBooked)) { %>
       <p class="muted">"Double booked" means you're also scheduled to play in another session on that same date — that's usually the week you'll want to request a sub for.</p>

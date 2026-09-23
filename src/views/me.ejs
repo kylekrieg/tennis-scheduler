@@ -55,7 +55,8 @@
     <% if (card.upcoming.length === 0) { %>
       <p class="muted">No upcoming matches scheduled for you in this session.</p>
     <% } else { %>
-      <table class="wide">
+      <div class="table-scroll">
+<table class="wide">
         <thead><tr><th style="white-space:nowrap;">Date</th><th>Status</th><th>Ball duty</th><th>Also playing this week</th><th></th></tr></thead>
         <tbody>
           <% card.upcoming.forEach(function(a) { %>
@@ -112,6 +113,7 @@
           <% }) %>
         </tbody>
       </table>
+</div>
     <% } %>
 
     <div class="actions" style="margin-top:12px;">

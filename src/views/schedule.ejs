@@ -7,6 +7,7 @@
 </p>
 <% } %>
 
+<div class="table-scroll">
 <table>
   <thead>
     <tr><th style="white-space:nowrap;">Date</th><% if (multiCourt) { %><th>Court</th><% } %><th>Team A</th><th>Team B</th><th>Ball duty</th></tr>
@@ -48,6 +49,7 @@
     <% }) %>
   </tbody>
 </table>
+</div>
 <% if (rows.some(r => r.week.needs_attention)) { %>
   <p class="muted" style="margin-top:12px;">⚠ Highlighted weeks need the admin's attention.</p>
 <% } %>
