@@ -13,6 +13,30 @@
 <h1>Dashboard</h1>
 <div class="actions"><a class="btn green" href="/admin/sessions/new">+ New session</a></div>
 
+<details class="card wide cheatsheet" id="cheatsheet-dashboard">
+  <summary>Before you set up a new session — order of operations</summary>
+  <p class="muted" style="margin-top:0;">Same walkthrough shown on the New Session form, repeated here so it's worth a look before you even click "+ New session" above.</p>
+  <p><strong>Regular session</strong></p>
+  <ol>
+    <li>Fill in the session details, then check off the roster and enter each player's target games (and priority, if they're also enrolled in another overlapping session).</li>
+    <li>Make sure everyone you want on the roster is already added on the <a href="/admin/players">Players</a> screen, and anyone willing to sub is in the master <a href="/admin/sub-list">Sub List</a> — add them there first if they're new to the system, then come back to check them off.</li>
+    <li>Optional: instead of typing every target by hand, save the session first, then use <strong>Sign-Ups</strong> on its detail page to let players declare full/half/quarter time themselves and apply the results to the roster.</li>
+    <li>Save the session, then use <strong>Manage subs</strong> on its detail page to pick which sub-list members apply here.</li>
+    <li>Save the roster, then click <strong>Notify roster</strong> on the Blackout Dates page (or enter dates yourself as admin).</li>
+    <li>Once blackout dates are in, click <strong>Schedule these players</strong> on the session form.</li>
+    <li>Check the session detail page and the <a href="/admin/status">Status page</a> for anything flagged — understaffed weeks, unreachable targets, overlapping-session warnings.</li>
+    <li>From there it mostly runs itself — reminders, follow-ups, and escalations fire automatically.</li>
+  </ol>
+  <p><strong>Ad-hoc session</strong></p>
+  <ol>
+    <li>Fill in the session details and sign-up email timing.</li>
+    <li>Make sure everyone you want to invite is already added on the <a href="/admin/players">Players</a> screen — add them there first if they're new to the system.</li>
+    <li>Check off the invite-list roster — no targets or priority needed, everyone checked gets invited every week.</li>
+    <li>Save. Invite, reminder, and final-roster emails fire automatically from here on, based on the timing you set.</li>
+  </ol>
+  <p class="muted" style="margin-bottom:0;">Full walkthrough with more detail: <a href="/admin/guide">Admin Guide</a>.</p>
+</details>
+
 <% flags.forEach(function(f) { %>
   <div class="session-card">
     <h3><a href="/admin/sessions/<%= f.session.id %>"><%= sessionTitle(f.session) %></a> <span class="badge scheduled"><%= f.session.status %></span></h3>

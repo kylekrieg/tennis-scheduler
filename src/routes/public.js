@@ -12,6 +12,7 @@ const subFlow = require('../services/subFlow');
 const swapFlow = require('../services/swapFlow');
 const email = require('../services/email');
 const { ensureWeeksExist } = require('../services/scheduleRun');
+const signup = require('../services/signup');
 const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { rateLimiter } = require('../middleware/rateLimiter');
@@ -41,6 +42,12 @@ const foundSubStartLimiter = rateLimiter({ name: 'found-sub-start', windowMs: 60
 // on the two routes above rather than reopening the confirmation-email
 // question.
 const blackoutLimiter = rateLimiter({ name: 'blackout-post', windowMs: 60 * 60 * 1000, max: 20 });
+// Same trust level/reasoning as blackoutLimiter above — POST /signup has no
+// email-confirmation step either, just a session_id/player_id pair taken
+// straight from the request body (submitSignup() does check the player is
+// actually on this session's candidate list, but that's a small, guessable
+// integer, same as blackout's enrollment check).
+const signupLimiter = rateLimiter({ name: 'signup-post', windowMs: 60 * 60 * 1000, max: 20 });
 // Same trust level as blackoutLimiter above — POST /scores/:idOrSlug has no
 // email-confirmation step either, just a guessable slug/numeric id and an
 // assignment id, and gameScores.setGameScore() itself already rejects an
@@ -716,6 +723,100 @@ router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
   });
 
   res.redirect(`/blackout?session=${session.id}&player=${playerId}&saved=1`);
+}));
+
+// --- Season sign-ups (Kyle, 2026-09-23) ------------------------------------
+//
+// Self-service, percentage-based alternative to the admin hand-typing every
+// player's target_games — see "Season sign-ups" in CLAUDE.md and
+// src/services/signup.js for the full design. Mirrors the /blackout route
+// pair above almost exactly: includeDraft so a never-yet-scheduled session
+// still renders, ensureWeeksExist so the "how many weeks is that" math has
+// real weeks to divide into, saves directly with no email-confirmation step,
+// and the same honeypot + rate limiter treatment. The one real difference:
+// the candidate list here is session_signup_candidates (who the admin picked
+// as "going to be on the roster"), not session_players (the real roster) —
+// at this point in the workflow the roster doesn't have real target numbers
+// yet, that's the whole point of this page existing.
+
+router.get('/signup', (req, res) => {
+  const { session, sessions } = resolveSession(req, { includeDraft: true, regularOnly: true });
+  if (!session) return res.render('no_session', { title: 'Sign Up' });
+
+  const { totalWeeks } = signup.seasonContext(session.id);
+  const candidates = signup.candidatesForSession(session.id);
+  const percents = signup.tierPercents(session);
+  const tierOptions = signup.TIERS.map((tier) =>
+    tier === 'sub'
+      ? { tier, label: signup.TIER_LABELS[tier], pct: null, weeks: null }
+      : {
+          tier,
+          label: signup.TIER_LABELS[tier],
+          pct: percents[tier],
+          weeks: signup.weeksForPercent(totalWeeks, percents[tier]),
+        }
+  );
+
+  const selectedPlayerId = Number(req.query.player) || null;
+  let currentSignup = null;
+  if (selectedPlayerId) {
+    currentSignup = db
+      .prepare('SELECT * FROM session_signups WHERE session_id = ? AND player_id = ?')
+      .get(session.id, selectedPlayerId) || null;
+  }
+
+  res.render('signup', {
+    title: 'Sign Up',
+    session,
+    sessions,
+    candidates,
+    tierOptions,
+    totalWeeks,
+    selectedPlayerId,
+    currentSignup,
+    schedulingLocked: session.status !== 'draft',
+    saved: req.query.saved === '1',
+    locked: req.query.locked === '1',
+  });
+});
+
+router.post('/signup', signupLimiter, asyncHandler(async (req, res) => {
+  // Honeypot check first, before any DB work — same pattern as /blackout.
+  if (honeypot.isBot(req)) {
+    return res.redirect(`/signup?session=${Number(req.body.session_id) || ''}&player=${Number(req.body.player_id) || ''}&saved=1`);
+  }
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.body.session_id));
+  const playerId = Number(req.body.player_id);
+  if (!session || !playerId) return res.redirect('/signup');
+
+  // Once a season's been scheduled, target_games is whatever the admin
+  // actually scheduled against — a sign-up saved after the fact wouldn't
+  // retroactively change anything, so this stays locked exactly like
+  // /blackout does once status leaves 'draft'.
+  if (session.status !== 'draft') {
+    return res.redirect(`/signup?session=${session.id}&player=${playerId}&locked=1`);
+  }
+
+  // Player must actually be on this session's sign-up candidate list — not
+  // just any player_id the form happens to submit.
+  if (!signup.isCandidate(session.id, playerId)) return res.redirect('/signup');
+
+  const player = db.prepare('SELECT * FROM players WHERE id = ? AND active = 1').get(playerId);
+  if (!player) return res.redirect('/signup');
+
+  const tier = req.body.tier;
+  if (!signup.isValidTier(tier)) return res.redirect(`/signup?session=${session.id}&player=${playerId}`);
+
+  const weeks = signup.submitSignup(session.id, playerId, tier);
+
+  logPlayerActivity({
+    playerName: fullName(player),
+    action: 'signup.self_report',
+    description: `${fullName(player)} signed up for ${signup.TIER_LABELS[tier].toLowerCase()} (${weeks} of ${signup.seasonContext(session.id).totalWeeks} weeks) in ${session.name}`,
+    sessionId: session.id,
+  });
+
+  res.redirect(`/signup?session=${session.id}&player=${playerId}&saved=1`);
 }));
 
 router.get('/calendar', (req, res) => {

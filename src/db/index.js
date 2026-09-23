@@ -518,6 +518,16 @@ ensureColumn('sub_offers', 'was_new_person', 'INTEGER NOT NULL DEFAULT 0');
 // reminder off means turning games_won_enabled off for the session).
 ensureColumn('sessions', 'games_won_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 
+// Season sign-ups (Kyle, 2026-09-23) — per-session tier percentages, admin-
+// editable on the new Sign-ups page (src/services/signup.js). Every existing
+// row predates this feature, so it defaults to exactly the numbers Kyle
+// described as typical ("full time = 75%, half time = 50% and quarter time
+// = 25% of the weeks") — a session nobody's touched this on yet behaves
+// exactly as if an admin had filled in those three numbers themselves.
+ensureColumn('sessions', 'signup_pct_full', 'INTEGER NOT NULL DEFAULT 75');
+ensureColumn('sessions', 'signup_pct_half', 'INTEGER NOT NULL DEFAULT 50');
+ensureColumn('sessions', 'signup_pct_quarter', 'INTEGER NOT NULL DEFAULT 25');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

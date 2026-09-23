@@ -1,0 +1,55 @@
+<%- include('partials/header', {title}) %>
+<h1>Sign Up</h1>
+<p class="muted">Pick your name, then choose how much of the season you want to play. We'll work out how many weeks that comes to based on the tier percentages the admin set for this session — you can change your answer any time before the schedule is generated.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<form method="get" class="card" style="max-width:320px;">
+  <input type="hidden" name="session" value="<%= session.id %>">
+  <label for="player">Your name</label>
+  <select name="player" id="player" onchange="this.form.submit()">
+    <option value="">Select…</option>
+    <% candidates.forEach(function(p) { %>
+      <option value="<%= p.id %>" <%= selectedPlayerId === p.id ? 'selected' : '' %>><%= p.name %></option>
+    <% }) %>
+  </select>
+  <% if (candidates.length === 0) { %>
+    <p class="muted" style="margin-top:8px;">No sign-up list has been set up for this session yet — check back once the admin's ready for sign-ups.</p>
+  <% } %>
+</form>
+
+<% if (saved) { %><p class="notice">Sign-up saved.</p><% } %>
+<% if (locked) { %><p class="flag error">This season's already been scheduled, so sign-ups can't be changed here anymore. Contact the admin if your availability has changed.</p><% } %>
+
+<% if (schedulingLocked && selectedPlayerId) { %>
+  <p class="flag" style="margin-top:16px;">This season has already been scheduled, so sign-ups are locked in and can't be changed on this page.</p>
+  <% if (currentSignup) { %>
+    <% if (currentSignup.tier === 'sub') { %>
+      <p class="notice">You opted to be a sub instead of a roster spot this season.</p>
+    <% } else { %>
+      <p class="notice">You signed up for <strong><%= currentSignup.tier %></strong> time (<%= currentSignup.weeks %> of <%= totalWeeks %> weeks).</p>
+    <% } %>
+  <% } %>
+<% } %>
+
+<% if (selectedPlayerId && !schedulingLocked) { %>
+  <form method="post" action="/signup" class="card wide">
+    <input type="hidden" name="session_id" value="<%= session.id %>">
+    <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
+    <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+    <% tierOptions.forEach(function(opt) { %>
+      <div class="checkbox-row"<%= opt.tier === 'sub' ? ' style="margin-top:12px;"' : '' %>>
+        <input type="radio" name="tier" value="<%= opt.tier %>" id="t<%= opt.tier %>"
+          <%= (currentSignup && currentSignup.tier === opt.tier) ? 'checked' : '' %>>
+        <label for="t<%= opt.tier %>" style="margin:0;font-weight:400;">
+          <% if (opt.tier === 'sub') { %>
+            <%= opt.label %> — don't put me on this season's roster, just add me to this session's sub list instead
+          <% } else { %>
+            <%= opt.label %> — <%= opt.pct %>% (<%= opt.weeks %> of <%= totalWeeks %> weeks)
+          <% } %>
+        </label>
+      </div>
+    <% }) %>
+    <div class="actions"><button class="btn green" type="submit">Save my sign-up</button></div>
+  </form>
+<% } %>
+<%- include('partials/footer') %>

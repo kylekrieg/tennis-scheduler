@@ -34,6 +34,7 @@ const weather = require('../services/weather');
 const gameScores = require('../services/gameScores');
 const playerBehaviorStats = require('../services/playerBehaviorStats');
 const playerConstraints = require('../services/playerConstraints');
+const signup = require('../services/signup');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
 // abuse protection at all — bcrypt slows an individual guess but does
@@ -1769,6 +1770,12 @@ router.get('/sessions/:id', (req, res) => {
     distinctOtherSessions.sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // Season sign-up capacity flag (Kyle, 2026-09-23) — only meaningful while
+  // still draft; once scheduled, the roster is whatever it is and the
+  // dedicated Sign-ups page (not this one) is where that gets reviewed.
+  const signupCapacity =
+    session.status === 'draft' ? signup.capacitySummary(session.id) : null;
+
   res.render('admin/session_detail', {
     title: session.name,
     session,
@@ -1779,6 +1786,7 @@ router.get('/sessions/:id', (req, res) => {
     overlapConflicts,
     doubleBookingRows,
     distinctOtherSessions,
+    signupCapacity,
     multiCourt: session.players_per_week > 4,
     maxGames: gameScores.MAX_GAMES,
     flashMsg: popFlash(req),
@@ -2809,6 +2817,201 @@ router.post('/sessions/:id/weeks/:weekId/court/:court/games-played', (req, res) 
     }
   }
   res.redirect(`/admin/sessions/${req.params.id}`);
+});
+
+// --- Season sign-ups (Kyle, 2026-09-23) ------------------------------------
+//
+// "Before blackout dates are sent out, a player who is going to be on the
+// roster can sign up for a session and declare how much they want to
+// play... The calculations also need to add up so if there are 10 players
+// and 17 weeks, not everybody can sign up for a full time slot. That needs
+// to be flagged on the admin side to ask players to slide up or down in
+// percentage so the numbers work out to the # of slots." See "Season
+// sign-ups" in CLAUDE.md and src/services/signup.js for the full design.
+// Regular sessions only — ad-hoc has no target_games/roster concept for
+// this to feed (every route below 404s for an ad-hoc session id, same
+// defense-in-depth as "Lock this schedule").
+
+function requireRegularSession(req, res) {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) {
+    res.status(404).send('Session not found');
+    return null;
+  }
+  if (session.session_type === 'adhoc') {
+    flash(req, 'Ad-hoc sessions have no season roster for sign-ups to feed — this only applies to regular sessions.', 'error');
+    res.redirect(`/admin/sessions/${session.id}`);
+    return null;
+  }
+  return session;
+}
+
+router.get('/sessions/:id/signups', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+
+  const allPlayers = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
+  const candidateIds = new Set(signup.candidatesForSession(session.id).map((p) => p.id));
+  const capacity = signup.capacitySummary(session.id);
+
+  res.render('admin/signups', {
+    title: 'Sign-Ups',
+    session,
+    allPlayers,
+    candidateIds,
+    percents: signup.tierPercents(session),
+    tiers: signup.TIERS,
+    tierLabels: signup.TIER_LABELS,
+    capacity,
+    flashMsg: popFlash(req),
+  });
+});
+
+router.post('/sessions/:id/signups/config', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  try {
+    signup.saveTierPercents(session.id, {
+      full: req.body.signup_pct_full,
+      half: req.body.signup_pct_half,
+      quarter: req.body.signup_pct_quarter,
+    });
+    logActivity(req, {
+      action: 'signup.config',
+      description: `Set sign-up tier percentages for ${session.name} to full ${req.body.signup_pct_full}% / half ${req.body.signup_pct_half}% / quarter ${req.body.signup_pct_quarter}%`,
+      sessionId: session.id,
+    });
+    flash(req, 'Tier percentages saved. Note: percentages only affect new or re-saved sign-ups, not ones already recorded — see the sign-up table below for anyone who signed up under the old numbers.');
+  } catch (err) {
+    if (err instanceof signup.SignupError) {
+      flash(req, err.message, 'error');
+    } else {
+      throw err;
+    }
+  }
+  res.redirect(`/admin/sessions/${session.id}/signups`);
+});
+
+router.post('/sessions/:id/signups/candidates', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  const playerIds = [].concat(req.body.candidate_player_id || []);
+  const { added, removed } = signup.saveCandidates(session.id, playerIds);
+  logActivity(req, {
+    action: 'signup.candidates',
+    description: `Updated the sign-up candidate list for ${session.name} (+${added}, -${removed})`,
+    sessionId: session.id,
+  });
+  flash(req, 'Sign-up candidate list saved.');
+  res.redirect(`/admin/sessions/${session.id}/signups`);
+});
+
+router.post('/sessions/:id/signups/notify', asyncHandler(async (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  if (session.status !== 'draft') {
+    flash(req, "This session's already been scheduled, so sign-ups are locked for players — notifying the roster now would just point them at a dead end.", 'error');
+    return res.redirect(`/admin/sessions/${session.id}/signups`);
+  }
+  const candidates = signup.candidatesForSession(session.id);
+  if (candidates.length === 0) {
+    flash(req, 'No sign-up candidates to notify yet — check the players you want to invite below first.', 'error');
+    return res.redirect(`/admin/sessions/${session.id}/signups`);
+  }
+  // "Resend to everyone" vs. the default of only nudging whoever hasn't
+  // signed up yet — same repeatable, non-destructive action as
+  // notify-blackouts, just narrowed by default since re-emailing someone
+  // who already answered is more likely to be noise than a favor.
+  const onlyUnanswered = req.body.only_unanswered === '1';
+  let recipients = candidates;
+  if (onlyUnanswered) {
+    const signedUpIds = new Set(signup.signupsForSession(session.id).map((s) => s.player_id));
+    recipients = candidates.filter((p) => !signedUpIds.has(p.id));
+  }
+  if (recipients.length === 0) {
+    flash(req, 'Everyone on the candidate list has already signed up.');
+    return res.redirect(`/admin/sessions/${session.id}/signups`);
+  }
+  for (const player of recipients) {
+    await email.sendSignupNotice({ recipient: player, session });
+  }
+  logActivity(req, {
+    action: 'signup.notify',
+    description: `Notified ${recipients.length} player(s) to sign up for ${session.name}`,
+    sessionId: session.id,
+  });
+  flash(req, `Notified ${recipients.length} player(s) to sign up.`);
+  res.redirect(`/admin/sessions/${session.id}/signups`);
+}));
+
+// Admin override — set or change one player's tier directly, same
+// "admin can always fix it by hand" latitude as every other override in
+// this file. Bypasses the candidate-list check submitSignup() otherwise
+// has no reason to apply for an admin acting on the player's behalf (e.g.
+// over the phone), but still goes through the same computation, so the
+// resulting weeks number is always derived from the session's current tier
+// percentages, never hand-entered.
+router.post('/sessions/:id/signups/:playerId/set', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  const playerId = Number(req.params.playerId);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(playerId);
+  if (!player) return res.status(404).send('Player not found');
+  try {
+    const weeks = signup.submitSignup(session.id, playerId, req.body.tier);
+    logActivity(req, {
+      action: 'signup.admin_set',
+      description: `Set ${fullName(player)}'s sign-up for ${session.name} to ${signup.TIER_LABELS[req.body.tier].toLowerCase()} (${weeks} weeks)`,
+      sessionId: session.id,
+    });
+    flash(req, `${fullName(player)}'s sign-up saved.`);
+  } catch (err) {
+    if (err instanceof signup.SignupError) {
+      flash(req, err.message, 'error');
+    } else {
+      throw err;
+    }
+  }
+  res.redirect(`/admin/sessions/${session.id}/signups`);
+});
+
+router.post('/sessions/:id/signups/:playerId/remove', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  const playerId = Number(req.params.playerId);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(playerId);
+  db.prepare('DELETE FROM session_signups WHERE session_id = ? AND player_id = ?').run(session.id, playerId);
+  logActivity(req, {
+    action: 'signup.remove',
+    description: `Removed ${player ? fullName(player) : `player #${playerId}`}'s sign-up for ${session.name}`,
+    sessionId: session.id,
+  });
+  flash(req, 'Sign-up removed.');
+  res.redirect(`/admin/sessions/${session.id}/signups`);
+});
+
+// Copies every recorded sign-up's computed weeks into session_players —
+// the admin's deliberate "yes, use these numbers" action. Does not
+// regenerate the schedule itself; "Schedule these players" on the Edit
+// session page is still a separate, deliberate step, same as when the
+// admin types targets in by hand.
+router.post('/sessions/:id/signups/apply', (req, res) => {
+  const session = requireRegularSession(req, res);
+  if (!session) return;
+  const { added, updated, movedToSubs, count } = signup.applySignupsToRoster(session.id);
+  if (count === 0) {
+    flash(req, 'No sign-ups recorded yet — nothing to apply.', 'error');
+    return res.redirect(`/admin/sessions/${session.id}/signups`);
+  }
+  logActivity(req, {
+    action: 'signup.apply',
+    description: `Applied ${count} sign-up(s) to ${session.name}'s roster (${added.length} newly enrolled: ${added.join(', ') || 'none'}; ${updated.length} target changed: ${updated.join(', ') || 'none'}; ${movedToSubs.length} moved to the sub list: ${movedToSubs.join(', ') || 'none'})`,
+    sessionId: session.id,
+  });
+  const parts = [`${added.length} newly enrolled`, `${updated.length} target(s) changed`];
+  if (movedToSubs.length) parts.push(`${movedToSubs.length} moved to the sub list`);
+  flash(req, `Applied ${count} sign-up(s) — ${parts.join(', ')}. Review targets on Edit session & roster before scheduling.`);
+  res.redirect(`/admin/sessions/${session.id}/edit`);
 });
 
 // --- Blackouts (admin, on behalf of a player) -----------------------------

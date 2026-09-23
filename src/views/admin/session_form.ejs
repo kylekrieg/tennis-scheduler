@@ -8,8 +8,9 @@
   <summary>Order of operations — regular session</summary>
   <ol>
     <li>Fill in the session details below, then check off the roster and enter each player's target games (and priority, if they're also enrolled in another overlapping session).</li>
-    <li>Make sure anyone willing to sub is in the master <a href="/admin/sub-list">Sub List</a> — skip if they're already on it.</li>
-    <li>Save this session, then use <strong>Manage subs</strong> on its detail page to pick which of them apply here.</li>
+    <li>Make sure everyone you want on the roster is already added on the <a href="/admin/players">Players</a> screen, and anyone willing to sub is in the master <a href="/admin/sub-list">Sub List</a> — add them there first if they're new to the system, then come back here to check them off.</li>
+    <li>Optional: instead of typing every target by hand, save this session first, then use <strong>Sign-Ups</strong> on its detail page to let players declare full/half/quarter time themselves and apply the results to the roster.</li>
+    <li>Save this session, then use <strong>Manage subs</strong> on its detail page to pick which sub-list members apply here.</li>
     <li>Save the roster, then click <strong>Notify roster</strong> on the Blackout Dates page (or enter dates yourself as admin).</li>
     <li>Once blackout dates are in, click <strong>Schedule these players</strong> below.</li>
     <li>Check the session detail page and the <a href="/admin/status">Status page</a> for anything flagged — understaffed weeks, unreachable targets, overlapping-session warnings.</li>
@@ -22,6 +23,7 @@
   <summary>Order of operations — ad-hoc session</summary>
   <ol>
     <li>Fill in the session details and sign-up email timing below.</li>
+    <li>Make sure everyone you want to invite is already added on the <a href="/admin/players">Players</a> screen — add them there first if they're new to the system.</li>
     <li>Check off the invite-list roster — no targets or priority needed, everyone checked gets invited every week.</li>
     <li>Save. Invite, reminder, and final-roster emails fire automatically from here on, based on the timing you set.</li>
   </ol>
@@ -65,13 +67,13 @@
   <input type="time" name="match_time" id="match_time" value="<%= session ? session.match_time : '17:30' %>" required>
 
   <div id="regular-only-fields">
-    <label for="reminder_time">Reminder email time-of-day</label>
+    <label for="reminder_time">Player reminder email time-of-day</label>
     <input type="time" name="reminder_time" id="reminder_time" value="<%= session ? session.reminder_time : '09:00' %>" required>
 
-    <label for="reminder_days_before">Reminder sent (days before match)</label>
+    <label for="reminder_days_before">Player reminder sent (days before match)</label>
     <input type="number" name="reminder_days_before" id="reminder_days_before" value="<%= session ? session.reminder_days_before : 2 %>" min="0">
 
-    <label for="follow_up_lead_hours">Follow-up email — hours before match time</label>
+    <label for="follow_up_lead_hours">Player follow-up email--hours before match time</label>
     <input type="number" name="follow_up_lead_hours" id="follow_up_lead_hours" value="<%= session ? session.follow_up_lead_hours : 27 %>" min="1">
     <p class="muted">A second, automatic nudge for anyone still unconfirmed, sent this many hours before match time (not a fixed time of day) — e.g. 27 hours before a 5:30 PM match lands around 2:30 PM the day before, while players still have work email open. Doesn't change anyone's status or trigger a sub request on its own.</p>
 
@@ -85,7 +87,7 @@
     <input type="text" name="admin_report_emails" id="admin_report_emails" value="<%= session ? (session.admin_report_emails || '') : '' %>" placeholder="you@example.com, other@example.com">
     <p class="muted">Comma-separated. Each week, a status report (who's confirmed, who hasn't, who needs a sub and whether it's filled, who swapped) goes out to these addresses before match time — see the lead time below. Leave blank to turn this off.</p>
 
-    <label for="admin_report_lead_hours">Send status report — hours before match time</label>
+    <label for="admin_report_lead_hours">Send admin status report--hours before match time</label>
     <input type="number" name="admin_report_lead_hours" id="admin_report_lead_hours" value="<%= session ? session.admin_report_lead_hours : 8 %>" min="1">
 
     <label for="escalation_lead_hours">Escalate to broader sub list — hours before match time</label>
@@ -159,6 +161,7 @@
 
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
+    <% if (session) { %><p class="muted">Prefer letting players declare their own commitment instead of typing every target by hand? Use <a href="/admin/sessions/<%= session.id %>/signups">Sign-Ups</a> first, then apply the results here.</p><% } %>
     <p class="muted">Only currently-enrolled players are shown below. Search by name to find and add someone else — search reveals everyone in the system, not just this roster. A target &gt; 0 is what actually enrolls a player this session; the "Remove" button is a shortcut that zeroes a player's target and hides the row again (structural change either way — click "Schedule these players" afterward to regenerate open weeks).<% if (lockedWeeksCount > 0) { %> This session already has <%= lockedWeeksCount %> completed week(s) locked in — those are untouched no matter what you change here. Targets below only need to cover the <strong>remaining</strong> open weeks, not the whole season.<% } %></p>
     <p class="muted">Priority is a note, not a rule — the scheduler <strong>does not</strong> use it to automatically prevent anything. It only matters for a player enrolled in another session that meets the <strong>same day of week</strong> with <strong>overlapping dates</strong> (e.g. two Wednesday sessions at the same club): if that player ends up scheduled in both on the same date, priority just records which session you'd expect to win, so whoever fixes it by hand (reassigning a slot, or the player finding their own sub) knows where to start. Lower number wins. Leave it blank for everyone else. A real double-booking is flagged everywhere once it happens — the schedule page, PDF, calendar, and the player's own upcoming matches — regardless of whether priority is set.</p>
 

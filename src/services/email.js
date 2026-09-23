@@ -692,6 +692,32 @@ async function sendBlackoutNotice({ recipient, session, test = false }) {
   return sendMail({ to: recipient.email, subject, html, category: 'blackout_notice', session, test });
 }
 
+/**
+ * Season sign-ups (Kyle, 2026-09-23) — same "nothing in the app prompts a
+ * player on its own" gap sendBlackoutNotice() above closes for blackout
+ * dates, one step earlier: nothing tells a player a sign-up link exists
+ * either. Sent to everyone on the session's sign-up candidate list (see
+ * signup.js's candidatesForSession()) — including anyone who's already
+ * signed up, since the admin's "Notify" button is a repeatable "here's the
+ * link again" action, not a one-shot invite (same reasoning as
+ * notify-blackouts in admin.js). Same plain, unauthenticated `?player=`
+ * pre-fill convenience as sendBlackoutNotice() — not a token, just a
+ * courtesy so the recipient's own name is already selected.
+ */
+async function sendSignupNotice({ recipient, session, test = false }) {
+  const signupUrl = `${siteUrl()}/signup?session=${session.id}&player=${recipient.id}`;
+  const subject = `Sign up for ${session.name} — ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, null)}
+    <p>Hi ${fullName(recipient)},</p>
+    <p><strong>${session.name}</strong> is putting its roster together. Let us know how much of the season you want to play:</p>
+    <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Choose how much you want to play</a></p>
+    <p>Pick full, half, or quarter time and we'll work out how many weeks that comes to. You can change your answer any time before the schedule is generated.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'signup_notice', session, test });
+}
+
 async function sendSubRequestFanout({ recipient, week, session, claimToken, requestingPlayerName, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `Sub needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
@@ -1214,6 +1240,7 @@ module.exports = {
   sendSubRequestVerification,
   sendSubRequestOwnConfirmation,
   sendBlackoutNotice,
+  sendSignupNotice,
   sendSubRequestFanout,
   sendEscalationEmail,
   sendSubFilledNotice,

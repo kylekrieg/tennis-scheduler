@@ -5,6 +5,7 @@
 <div class="actions">
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/blackouts">Manage blackout dates</a>
+  <a class="btn neutral" href="/admin/sessions/<%= session.id %>/signups">Manage sign-ups</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/constraints">Manage player constraints</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/subs">Manage subs</a>
   <a class="btn neutral" href="/admin/sessions/<%= session.id %>/stats">Stats</a>
@@ -28,6 +29,18 @@
   <% } %>
 </div>
 <p class="muted" style="margin-top:8px;">Need to (re)generate the schedule? That's on <a href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a> — kept off this page on purpose so it's not a click away from the buttons you'll use every week.</p>
+
+<% if (signupCapacity && signupCapacity.signups.length > 0 && signupCapacity.delta !== 0) { %>
+  <h2>Sign-up capacity</h2>
+  <div class="flag error">
+    <% if (signupCapacity.delta > 0) { %>
+      <%= signupCapacity.delta %> too many week(s) signed up for (<%= signupCapacity.signedUpWeeks %> signed up vs. <%= signupCapacity.totalSlots %> slots available) — some players need to slide down a tier before applying sign-ups to the roster.
+    <% } else { %>
+      <%= -signupCapacity.delta %> week(s) still unclaimed (<%= signupCapacity.signedUpWeeks %> signed up vs. <%= signupCapacity.totalSlots %> slots available).
+    <% } %>
+    <a href="/admin/sessions/<%= session.id %>/signups">Review sign-ups &hellip;</a>
+  </div>
+<% } %>
 
 <% if (conflicts.length) { %>
   <h2>Scheduling conflicts</h2>

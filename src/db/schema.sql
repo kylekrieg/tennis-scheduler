@@ -116,6 +116,61 @@ CREATE TABLE IF NOT EXISTS player_constraints (
   UNIQUE(session_id, player_a_id, player_b_id, type)
 );
 
+-- Season sign-ups (Kyle, 2026-09-23): "Before blackout dates are sent out, a
+-- player who is going to be on the roster can sign up for a session and
+-- declare how much they want to play. The percentages need to be defined by
+-- an admin of a session. Typically they are full time = 75%, half time =
+-- 50% and quarter time = 25% of the weeks." Self-service, percentage-based
+-- alternative to the admin hand-typing every player's target_games on
+-- session_form.ejs — see "Season sign-ups" in CLAUDE.md for the full design
+-- and src/services/signup.js for the percentage-to-weeks math.
+--
+-- Deliberately kept separate from session_players (the real roster) rather
+-- than writing target_games directly: a player's own tier choice is a
+-- declaration of intent, not automatically the final number — the admin
+-- reviews the whole session's sign-ups (do they add up to the available
+-- slots?) and explicitly applies them, same "player proposes, admin
+-- disposes" shape as everything else self-service in this app (blackout
+-- dates are the one exception, and even that one is a deliberate, documented
+-- product tradeoff — see "Blackout dates" below).
+--
+-- Which players even see a sign-up option is the admin's own candidate list
+-- (session_signup_candidates), not "every active player in the system" —
+-- Kyle's own phrasing was "a player who is going to be on the roster",
+-- mirroring how the ad-hoc roster's invite list already works.
+CREATE TABLE IF NOT EXISTS session_signup_candidates (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  UNIQUE(session_id, player_id)
+);
+
+-- One row per player's current declared commitment for a session. `weeks` is
+-- computed server-side at submit time (percentage x this session's total
+-- match weeks, rounded to the nearest whole week — never trust a
+-- client-submitted number) and re-derived from scratch on every save, so it
+-- always reflects the tier percentages in effect at the moment of that save,
+-- not whatever they were when the player first signed up. `applied_at` is
+-- NULL until the admin's "Apply to roster" action copies `weeks` into
+-- session_players.target_games (see signup.js's applySignupsToRoster()) —
+-- and is reset back to NULL any time this row is saved again after that, so
+-- the admin review page can tell "applied and unchanged since" apart from
+-- "changed since the last apply, needs re-applying" without a separate
+-- history table.
+CREATE TABLE IF NOT EXISTS session_signups (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  tier          TEXT NOT NULL, -- 'full' | 'half' | 'quarter'
+  weeks         INTEGER NOT NULL,
+  applied_at    TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(session_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_signup_candidates_session ON session_signup_candidates(session_id);
+CREATE INDEX IF NOT EXISTS idx_signups_session ON session_signups(session_id);
+
 -- VESTIGIAL as of the removal of the blackout-date email-confirmation step
 -- (POST /blackout now writes straight to blackout_dates) — left in place,
 -- never dropped, per this app's additive-only migration philosophy. Nothing

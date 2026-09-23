@@ -1,0 +1,107 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Sign-Ups — <%= sessionFullTitle(session) %></h1>
+<p class="muted" style="margin-top:0;">Lets players declare how much of the season they want to play (full/half/quarter time) before you hand-type targets on the roster page. Sign-ups are recorded here and stay separate until you click "Apply to roster" below — nothing here touches the real roster on its own.</p>
+
+<h2>Tier percentages</h2>
+<p class="muted" style="margin-top:0;">What each tier means for this session, as a percentage of the season's total match weeks. Changing these only affects sign-ups made (or re-saved) from now on — anyone who already signed up under the old numbers keeps their originally-computed week count until they resubmit or you re-set them below.</p>
+<form method="post" action="/admin/sessions/<%= session.id %>/signups/config" class="card">
+  <label for="signup_pct_full">Full time %</label>
+  <input type="number" name="signup_pct_full" id="signup_pct_full" value="<%= percents.full %>" min="1" max="100" required>
+  <label for="signup_pct_half">Half time %</label>
+  <input type="number" name="signup_pct_half" id="signup_pct_half" value="<%= percents.half %>" min="1" max="100" required>
+  <label for="signup_pct_quarter">Quarter time %</label>
+  <input type="number" name="signup_pct_quarter" id="signup_pct_quarter" value="<%= percents.quarter %>" min="1" max="100" required>
+  <div class="actions"><button class="btn green" type="submit">Save percentages</button></div>
+</form>
+
+<h2>Who can sign up</h2>
+<p class="muted" style="margin-top:0;">Check off everyone you expect to be on this session's roster — only these players see a sign-up link. Doesn't enroll anyone by itself; that only happens once you apply sign-ups to the roster below.</p>
+<form method="post" action="/admin/sessions/<%= session.id %>/signups/candidates" class="card wide">
+  <% allPlayers.forEach(function(p) { %>
+    <div class="checkbox-row">
+      <input type="checkbox" name="candidate_player_id" id="cand<%= p.id %>" value="<%= p.id %>" <%= candidateIds.has(p.id) ? 'checked' : '' %>>
+      <label for="cand<%= p.id %>" style="margin:0;font-weight:400;"><%= fullName(p) %></label>
+    </div>
+  <% }) %>
+  <div class="actions"><button class="btn green" type="submit">Save candidate list</button></div>
+</form>
+
+<% if (session.status === 'draft') { %>
+  <div class="card wide" style="margin-top:16px;">
+    <p class="muted" style="margin-top:0;">Send everyone on the candidate list a direct link to sign up.</p>
+    <form method="post" action="/admin/sessions/<%= session.id %>/signups/notify">
+      <div class="checkbox-row">
+        <input type="checkbox" name="only_unanswered" id="only_unanswered" value="1" checked>
+        <label for="only_unanswered" style="margin:0;font-weight:400;">Only notify players who haven't signed up yet</label>
+      </div>
+      <div class="actions"><button class="btn green" type="submit">Notify candidates to sign up</button></div>
+    </form>
+  </div>
+<% } else { %>
+  <p class="muted">This session has already been scheduled, so sign-ups are locked for players — there's no need to notify anyone here anymore.</p>
+<% } %>
+
+<h2 style="margin-top:24px;">Capacity</h2>
+<div class="notice">
+  <div>Match weeks in this season: <strong><%= capacity.totalWeeks %></strong></div>
+  <div>Players per week: <strong><%= capacity.playersPerWeek %></strong></div>
+  <div>Total slots available: <strong><%= capacity.totalSlots %></strong> <span class="muted">(weeks &times; players per week)</span></div>
+  <div>Total weeks signed up for so far: <strong><%= capacity.signedUpWeeks %></strong></div>
+  <div style="margin-top:8px;font-weight:600;<%= capacity.delta === 0 ? 'color:#1a7f37;' : 'color:#b42318;' %>">
+    <% if (capacity.delta === 0) { %>
+      ✓ Sign-ups add up exactly to the available slots.
+    <% } else if (capacity.delta > 0) { %>
+      ⚠ <%= capacity.delta %> too many week(s) signed up for — ask one or more players to slide down a tier (or ask an admin override below) before applying to the roster.
+    <% } else { %>
+      ⚠ <%= -capacity.delta %> week(s) still unclaimed — there's room for someone to sign up for more, or fill the gap with a sub/admin-added player later.
+    <% } %>
+  </div>
+</div>
+
+<% if (capacity.optedForSub.length) { %>
+  <p class="muted" style="margin-top:12px;">Opted to be a sub instead of a roster spot: <%= capacity.optedForSub.map(function(s) { return s.playerName; }).join(', ') %></p>
+<% } %>
+<% if (capacity.notYetSignedUp.length) { %>
+  <p class="muted" style="margin-top:4px;">Haven't signed up yet: <%= capacity.notYetSignedUp.map(fullName).join(', ') %></p>
+<% } %>
+
+<h2 style="margin-top:24px;">Sign-ups so far</h2>
+<% if (capacity.signups.length === 0) { %>
+  <p class="muted">No sign-ups recorded yet.</p>
+<% } else { %>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Tier</th><th>Weeks</th><th>Status</th><th>Change tier</th><th></th></tr></thead>
+      <tbody>
+        <% capacity.signups.forEach(function(s) { %>
+          <tr>
+            <td><%= s.playerName %></td>
+            <td><%= tierLabels[s.tier] %></td>
+            <td><%= s.tier === 'sub' ? '—' : (s.weeks + ' of ' + capacity.totalWeeks) %></td>
+            <td class="muted"><%= s.stale ? 'not yet applied' : ('applied ' + s.applied_at) %></td>
+            <td>
+              <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/signups/<%= s.player_id %>/set" style="display:inline-flex;gap:4px;">
+                <select name="tier">
+                  <% tiers.forEach(function(t) { %><option value="<%= t %>" <%= s.tier === t ? 'selected' : '' %>><%= tierLabels[t] %></option><% }) %>
+                </select>
+                <button class="btn small neutral" type="submit">Save</button>
+              </form>
+            </td>
+            <td>
+              <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/signups/<%= s.player_id %>/remove" onsubmit="return confirm('Remove this sign-up?');">
+                <button class="btn small neutral" type="submit">Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <div class="actions" style="margin-top:12px;">
+      <form method="post" action="/admin/sessions/<%= session.id %>/signups/apply" onsubmit="return confirm('Apply all recorded sign-ups to the roster? This sets each player\'s target games to their signed-up week count.');">
+        <button class="btn green" type="submit">Apply sign-ups to roster</button>
+      </form>
+    </div>
+    <p class="muted" style="margin-top:8px;">Doesn't regenerate the schedule — review targets on <a href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a> and click "Schedule these players" there once you're happy with the numbers.</p>
+  </div>
+<% } %>
+<%- include('../partials/footer') %>
