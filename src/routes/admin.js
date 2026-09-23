@@ -33,6 +33,7 @@ const { rateLimiter } = require('../middleware/rateLimiter');
 const weather = require('../services/weather');
 const gameScores = require('../services/gameScores');
 const playerBehaviorStats = require('../services/playerBehaviorStats');
+const playerConstraints = require('../services/playerConstraints');
 
 // Pre-launch security review (Kyle, 2026-08-29): POST /admin/login had no
 // abuse protection at all — bcrypt slows an individual guess but does
@@ -3111,6 +3112,70 @@ router.post('/sessions/:id/blackouts', (req, res) => {
   });
   flash(req, 'Blackout dates updated.');
   res.redirect(`/admin/sessions/${sessionId}/blackouts?player=${playerId}`);
+});
+
+// --- Player-pair scheduling constraints ---------------------------------
+//
+// "Never together" (these two must never be scheduled the same week — on
+// the same team, opposing teams, or even a different court in a multi-court
+// week, doesn't matter, just never the same week) and "always together"
+// (these two must always be scheduled the exact same weeks as each other),
+// entered per session — see services/playerConstraints.js and
+// scheduler/engine.js's "Player-pair constraints" doc comment for how
+// they're enforced when the schedule is (re)generated. Deliberately
+// session-scoped, not global like blackout_dates — who has to (or can't)
+// play with whom is a fact about a particular group of players in a
+// particular session, not a universal calendar fact.
+
+router.get('/sessions/:id/constraints', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  const roster = db
+    .prepare(`SELECT p.* FROM session_players sp JOIN players p ON p.id = sp.player_id WHERE sp.session_id = ? ORDER BY p.name`)
+    .all(session.id);
+  const { rows } = playerConstraints.getConstraintsForSession(session.id);
+
+  res.render('admin/constraints', {
+    title: 'Player Constraints',
+    session,
+    roster,
+    constraints: rows,
+    flashMsg: popFlash(req),
+  });
+});
+
+router.post('/sessions/:id/constraints', (req, res) => {
+  const sessionId = Number(req.params.id);
+  const playerAId = Number(req.body.player_a_id);
+  const playerBId = Number(req.body.player_b_id);
+  const type = req.body.type;
+
+  const result = playerConstraints.addConstraint(sessionId, playerAId, playerBId, type);
+  if (!result.ok) {
+    flash(req, result.error);
+    return res.redirect(`/admin/sessions/${sessionId}/constraints`);
+  }
+
+  const players = db
+    .prepare('SELECT id, name, full_name FROM players WHERE id IN (?, ?)')
+    .all(playerAId, playerBId);
+  const nameById = new Map(players.map((p) => [p.id, fullName(p)]));
+  const label = type === 'always_together' ? 'must always play the same week as' : 'must never play the same week as';
+  logActivity(req, {
+    action: 'constraint.add',
+    description: `${nameById.get(playerAId) || `player #${playerAId}`} ${label} ${nameById.get(playerBId) || `player #${playerBId}`}`,
+    sessionId,
+  });
+  flash(req, 'Constraint added.');
+  res.redirect(`/admin/sessions/${sessionId}/constraints`);
+});
+
+router.post('/sessions/:id/constraints/:constraintId/delete', (req, res) => {
+  const sessionId = Number(req.params.id);
+  playerConstraints.removeConstraint(sessionId, Number(req.params.constraintId));
+  logActivity(req, { action: 'constraint.remove', description: `Removed a player constraint`, sessionId });
+  flash(req, 'Constraint removed.');
+  res.redirect(`/admin/sessions/${sessionId}/constraints`);
 });
 
 // --- Ad-hoc sign-up manual overrides -----------------------------------

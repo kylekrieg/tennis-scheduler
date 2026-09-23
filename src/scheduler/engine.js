@@ -432,6 +432,42 @@ function pairKey(a, b) {
   return a < b ? `${a}_${b}` : `${b}_${a}`;
 }
 
+// ---------------------------------------------------------------------------
+// Player-pair constraints ("never together" / "always together") — see
+// "Player-pair constraints" doc comment further down, above validateConstraints.
+// ---------------------------------------------------------------------------
+
+// Dominates the partner-variety objective (which tops out in the low
+// hundreds/thousands for realistic rosters) so the local search in
+// optimizePartnerVariety always prefers fixing a constraint violation over
+// improving partner spread, no matter how bad the partner spread gets as a
+// result. Partner variety is a nice-to-have; these constraints are a hard
+// requirement Kyle typed in by hand (e.g. "these two can never play the same
+// week") and must never be silently traded away for a smoother pairing
+// rotation.
+const CONSTRAINT_PENALTY = 1000000;
+
+/**
+ * How many never-together/always-together violations a single week's roster
+ * (array of player ids) contains, checked independently per week — both
+ * kinds of violation are local to a single week (a never-together violation
+ * is two players both present; an always-together violation is exactly one
+ * of the two present), so this is all that's needed to incrementally track
+ * violations the same way optimizePartnerVariety already incrementally
+ * tracks partnerCounts: only the two weeks touched by a swap ever need
+ * rechecking.
+ */
+function countWeekViolations(weekRoster, neverTogether, alwaysTogether) {
+  let v = 0;
+  for (const [a, b] of neverTogether) {
+    if (weekRoster.includes(a) && weekRoster.includes(b)) v++;
+  }
+  for (const [a, b] of alwaysTogether) {
+    if (weekRoster.includes(a) !== weekRoster.includes(b)) v++;
+  }
+  return v;
+}
+
 function bestSplitFor4(four, partnerCounts) {
   const [a, b, c, d] = four;
   const options = [
@@ -507,7 +543,7 @@ function rebuildPartnerCounts(weekOrder, weekTeams) {
  * partner pairings evenly across the whole season.
  */
 function optimizePartnerVariety(assignment, weeks, isBlackedOut, options = {}) {
-  const { iterations = 4000, seed = 42 } = options;
+  const { iterations = 4000, seed = 42, neverTogether = [], alwaysTogether = [] } = options;
   // A week reduced to 0 capacity (understaffed — see solveAssignment) has an
   // empty roster and nothing to optimize. It also has to be excluded from
   // swap candidates entirely, not just skipped when picked as the *source* of
@@ -542,6 +578,18 @@ function optimizePartnerVariety(assignment, weeks, isBlackedOut, options = {}) {
 
   let currentObjective = computeObjective(weekTeams, partnerCounts);
 
+  // Running count of never-together/always-together violations across the
+  // whole season, tracked incrementally exactly like currentObjective above
+  // — see countWeekViolations's doc comment for why only the two weeks a
+  // swap touches ever need rechecking. Zero when neverTogether/alwaysTogether
+  // are both empty (the normal case), so this has no effect on behavior or
+  // the existing deterministic test expectations when no pair constraints
+  // are in play.
+  let currentViolations = 0;
+  for (const w of weeks) {
+    currentViolations += countWeekViolations(roster.get(w.id), neverTogether, alwaysTogether);
+  }
+
   for (let iter = 0; iter < iterations; iter++) {
     const temperature = 1 - iter / iterations; // linear cooling, 1 -> 0
 
@@ -563,6 +611,12 @@ function optimizePartnerVariety(assignment, weeks, isBlackedOut, options = {}) {
     // Tentatively swap
     const newRoster1 = roster1.map((p) => (p === p1 ? p2 : p));
     const newRoster2 = roster2.map((p) => (p === p2 ? p1 : p));
+
+    const newViolations1 = countWeekViolations(newRoster1, neverTogether, alwaysTogether);
+    const newViolations2 = countWeekViolations(newRoster2, neverTogether, alwaysTogether);
+    const oldViolations1 = countWeekViolations(roster1, neverTogether, alwaysTogether);
+    const oldViolations2 = countWeekViolations(roster2, neverTogether, alwaysTogether);
+    const trialViolations = currentViolations - oldViolations1 - oldViolations2 + newViolations1 + newViolations2;
 
     // Remove old contributions for w1/w2 (all their courts), compute new
     // best court splits for the swapped rosters, compare objective.
@@ -591,7 +645,12 @@ function optimizePartnerVariety(assignment, weeks, isBlackedOut, options = {}) {
     addCourts(courts2);
 
     const trialObjective = computeObjective(null, trial);
-    const delta = trialObjective - currentObjective;
+    // Violations dominate via CONSTRAINT_PENALTY (see its doc comment), so a
+    // swap that reduces violations is accepted essentially unconditionally,
+    // and one that increases them is rejected essentially unconditionally,
+    // regardless of what it does to partner spread.
+    const delta =
+      (trialObjective - currentObjective) + CONSTRAINT_PENALTY * (trialViolations - currentViolations);
 
     const accept = delta <= 0 || rand() < Math.exp(-delta / Math.max(temperature, 0.001) / 5);
     if (accept) {
@@ -601,10 +660,11 @@ function optimizePartnerVariety(assignment, weeks, isBlackedOut, options = {}) {
       weekTeams.set(w2, courts2);
       partnerCounts = trial;
       currentObjective = trialObjective;
+      currentViolations = trialViolations;
     }
   }
 
-  return { roster, weekTeams, partnerCounts };
+  return { roster, weekTeams, partnerCounts, violations: currentViolations };
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +710,137 @@ function assignBallDuty(weeks, roster, players) {
 }
 
 // ---------------------------------------------------------------------------
+// Player-pair constraints — "never together" (two players must never be
+// scheduled the same week, regardless of team/court — see engine.js's
+// countWeekViolations) and "always together" (two players must be scheduled
+// on exactly the same weeks as each other, again regardless of team/court).
+// These are entered by the admin per pair (session_players constraint UI),
+// not derived from anything structural, so they're validated up front the
+// same way blackout/target conflicts are: a structurally impossible
+// constraint is reported as a conflict rather than silently ignored or
+// silently violated. Multiple always-together pairs chain correctly without
+// any special "grouping" logic — enforcing every pairwise "same weeks as"
+// constraint independently (both here and in optimizePartnerVariety) is
+// sufficient to make a 3+-person chain (A always with B, B always with C)
+// converge to all three sharing the same weeks, since "same weeks as" is
+// transitive.
+// ---------------------------------------------------------------------------
+
+/**
+ * Structural pre-checks for never-together/always-together pairs, run before
+ * attempting a schedule at all — catches the cases that are providably
+ * impossible regardless of how good the local search is, so those get a
+ * clear, specific conflict instead of a generic "couldn't satisfy
+ * constraints" after a failed search.
+ *
+ * @param {Array<{id:number, target:number}>} players
+ * @param {Array<{id:number}>} weeks
+ * @param {(playerId:number, weekId:number) => boolean} isBlackedOut
+ * @param {Array<[number, number]>} neverTogether
+ * @param {Array<[number, number]>} alwaysTogether
+ */
+function validateConstraints(players, weeks, isBlackedOut, neverTogether, alwaysTogether) {
+  const conflicts = [];
+  const byId = new Map(players.map((p) => [p.id, p]));
+
+  // A pair can't be both never-together and always-together at once.
+  const alwaysKeys = new Set(alwaysTogether.map(([a, b]) => pairKey(a, b)));
+  for (const [a, b] of neverTogether) {
+    if (alwaysKeys.has(pairKey(a, b))) {
+      conflicts.push({
+        type: 'contradictory_constraint',
+        detail: `Players are set to both never play the same week and always play the same week — that's a contradiction. Remove one of the two constraints.`,
+        playerIds: [a, b],
+      });
+    }
+  }
+
+  // Never-together: by pigeonhole, if their targets sum to more than the
+  // number of weeks in the season, they're mathematically forced to share
+  // at least (targetA + targetB - weeks.length) week(s) no matter how the
+  // rest of the schedule is arranged.
+  for (const [a, b] of neverTogether) {
+    const pa = byId.get(a);
+    const pb = byId.get(b);
+    if (!pa || !pb) continue;
+    if (pa.target + pb.target > weeks.length) {
+      conflicts.push({
+        type: 'never_together_unreachable',
+        detail: `These two players can never play the same week, but their targets (${pa.target} + ${pb.target} = ${
+          pa.target + pb.target
+        }) add up to more than the ${weeks.length} week(s) in the season — they'd be forced to share at least ${
+          pa.target + pb.target - weeks.length
+        } week(s). Lower a target, add weeks, or remove the constraint.`,
+        playerIds: [a, b],
+      });
+    }
+  }
+
+  // Always-together: the pair must have identical targets (they play the
+  // exact same weeks, so the exact same number of games), and there must be
+  // enough weeks where *neither* of them is individually blacked out to
+  // reach that shared target.
+  for (const [a, b] of alwaysTogether) {
+    const pa = byId.get(a);
+    const pb = byId.get(b);
+    if (!pa || !pb) continue;
+    if (pa.target !== pb.target) {
+      conflicts.push({
+        type: 'always_together_target_mismatch',
+        detail: `These two players are set to always play the same week, but have different targets (${pa.target} vs ${pb.target}) — they need the exact same number of games for that to be possible.`,
+        playerIds: [a, b],
+      });
+      continue;
+    }
+    const availableCount = weeks.filter((w) => !isBlackedOut(a, w.id) && !isBlackedOut(b, w.id)).length;
+    if (availableCount < pa.target) {
+      conflicts.push({
+        type: 'always_together_unreachable',
+        detail: `These two players are set to always play the same week, but only ${availableCount} week(s) are available to both of them (not blacked out for either one), short of their target of ${pa.target}.`,
+        playerIds: [a, b],
+      });
+    }
+  }
+
+  return conflicts;
+}
+
+/**
+ * After the local search in optimizePartnerVariety runs (see generateSeasonSchedule),
+ * turns any remaining violations into the same kind of structured conflict
+ * objects validateConstraints produces, naming exactly which weeks are at
+ * fault so the admin can see what to fix rather than a bare "infeasible".
+ */
+function describeRemainingViolations(roster, weeks, neverTogether, alwaysTogether) {
+  const conflicts = [];
+  for (const [a, b] of neverTogether) {
+    const weekIds = weeks.filter((w) => roster.get(w.id).includes(a) && roster.get(w.id).includes(b)).map((w) => w.id);
+    if (weekIds.length > 0) {
+      conflicts.push({
+        type: 'never_together_violated',
+        detail: `Could not avoid scheduling these two players the same week ${weekIds.length} time(s) while also meeting every target and blackout date — the constraint set may be too tight to satisfy in full. Try loosening a target, blackout date, or another constraint.`,
+        playerIds: [a, b],
+        weekIds,
+      });
+    }
+  }
+  for (const [a, b] of alwaysTogether) {
+    const weekIds = weeks
+      .filter((w) => roster.get(w.id).includes(a) !== roster.get(w.id).includes(b))
+      .map((w) => w.id);
+    if (weekIds.length > 0) {
+      conflicts.push({
+        type: 'always_together_violated',
+        detail: `Could not keep these two players on the exact same weeks ${weekIds.length} time(s) while also meeting every target and blackout date — the constraint set may be too tight to satisfy in full. Try loosening a target, blackout date, or another constraint.`,
+        playerIds: [a, b],
+        weekIds,
+      });
+    }
+  }
+  return conflicts;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -660,9 +851,27 @@ function assignBallDuty(weeks, roster, players) {
  * @param {(playerId:number, weekId:number) => boolean} input.isBlackedOut
  * @param {number} [input.playersPerWeek]
  * @param {number} [input.iterations] - local search iterations for partner variety
+ * @param {Array<[number, number]>} [input.neverTogether] - pairs of player ids that must never share a week
+ * @param {Array<[number, number]>} [input.alwaysTogether] - pairs of player ids that must always share a week
  */
 function generateSeasonSchedule(input) {
-  const { players, weeks, isBlackedOut, playersPerWeek = 4, iterations = 4000 } = input;
+  const {
+    players,
+    weeks,
+    isBlackedOut,
+    playersPerWeek = 4,
+    iterations = 4000,
+    neverTogether = [],
+    alwaysTogether = [],
+  } = input;
+
+  const hasPairConstraints = neverTogether.length > 0 || alwaysTogether.length > 0;
+  if (hasPairConstraints) {
+    const constraintConflicts = validateConstraints(players, weeks, isBlackedOut, neverTogether, alwaysTogether);
+    if (constraintConflicts.length > 0) {
+      return { feasible: false, conflicts: constraintConflicts, understaffedWeeks: [] };
+    }
+  }
 
   let solved = solveAssignment(players, weeks, isBlackedOut, playersPerWeek);
   let targetAdjustments = [];
@@ -682,12 +891,37 @@ function generateSeasonSchedule(input) {
     return { feasible: false, conflicts: solved.conflicts, understaffedWeeks: solved.understaffedWeeks || [] };
   }
 
-  const { roster, weekTeams, partnerCounts } = optimizePartnerVariety(
-    solved.assignment,
-    weeks,
-    isBlackedOut,
-    { iterations }
-  );
+  // When there are never-together/always-together pairs to satisfy, the
+  // local search below is doing real combinatorial work (not just polishing
+  // partner variety on top of an already-fully-valid assignment), so it gets
+  // more iterations and — since simulated annealing over random swaps can
+  // land in a bad basin depending on the random path taken — several
+  // independent attempts with different seeds, keeping whichever attempt
+  // reaches the fewest violations. With no pair constraints this reduces to
+  // exactly one attempt at the original iteration count and seed 42, so
+  // behavior (and the existing deterministic tests) are unchanged.
+  const attempts = hasPairConstraints ? 6 : 1;
+  const constraintIterations = hasPairConstraints ? Math.max(iterations, 12000) : iterations;
+  let best = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const outcome = optimizePartnerVariety(solved.assignment, weeks, isBlackedOut, {
+      iterations: constraintIterations,
+      seed: 42 + attempt * 97,
+      neverTogether,
+      alwaysTogether,
+    });
+    if (!best || outcome.violations < best.violations) best = outcome;
+    if (best.violations === 0) break;
+  }
+  const { roster, weekTeams, partnerCounts, violations } = best;
+
+  if (violations > 0) {
+    return {
+      feasible: false,
+      conflicts: describeRemainingViolations(roster, weeks, neverTogether, alwaysTogether),
+      understaffedWeeks: solved.understaffedWeeks || [],
+    };
+  }
 
   const ballDuty = assignBallDuty(weeks, roster, players);
 
@@ -737,4 +971,7 @@ module.exports = {
   assignBallDuty,
   splitIntoCourtTeams,
   FlowGraph,
+  validateConstraints,
+  describeRemainingViolations,
+  countWeekViolations,
 };

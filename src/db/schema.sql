@@ -94,6 +94,28 @@ CREATE TABLE IF NOT EXISTS blackout_dates (
   UNIQUE(session_id, player_id, date)
 );
 
+-- Per-session, per-pair hard constraints for the scheduling engine (Kyle,
+-- 2026-09-23): "never_together" means the two players are never scheduled
+-- the same week (whether on the same team, opposing teams, or even a
+-- different court in a multi-court week — see scheduler/engine.js's
+-- countWeekViolations); "always_together" means they're always scheduled
+-- the exact same weeks as each other. Session-scoped (not global like
+-- blackout_dates) because who can/must play with whom is naturally a
+-- per-session thing (Kyle: different sessions can be entirely different
+-- friend groups), unlike a blackout date which is a fact about a real
+-- calendar day. player_a_id/player_b_id are always stored with the lower
+-- player id first (enforced in the admin route, not here) so a given pair
+-- can't be entered twice in reversed order under the same type.
+CREATE TABLE IF NOT EXISTS player_constraints (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_a_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  player_b_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  type          TEXT NOT NULL, -- never_together | always_together
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(session_id, player_a_id, player_b_id, type)
+);
+
 -- VESTIGIAL as of the removal of the blackout-date email-confirmation step
 -- (POST /blackout now writes straight to blackout_dates) — left in place,
 -- never dropped, per this app's additive-only migration philosophy. Nothing
@@ -366,4 +388,5 @@ CREATE INDEX IF NOT EXISTS idx_weeks_session ON weeks(session_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_week ON week_assignments(week_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_player ON week_assignments(player_id);
 CREATE INDEX IF NOT EXISTS idx_blackout_session_player ON blackout_dates(session_id, player_id);
+CREATE INDEX IF NOT EXISTS idx_player_constraints_session ON player_constraints(session_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_tokens_assignment ON week_assignment_tokens(week_assignment_id);

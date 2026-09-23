@@ -68,6 +68,7 @@ src/scheduler/
   engine.test.js              plain assert-based test file, run directly with node
 src/services/               business logic — one file per concern (see filenames, mostly self-descriptive):
   scheduleRun.js              glue between engine.js and the DB
+  playerConstraints.js        per-session "never/always play the same week" pair constraints, fed into engine.js
   email.js                    every email template + the single sendMail() choke point
   tokenStore.js / tokens.js   hashed single-use token issuing/lookup for confirm/sub links
   subFlow.js / swapFlow.js    sub-request and direct-swap state machines
@@ -85,7 +86,7 @@ src/views/                  EJS templates, no shared layout — each page does i
 
 ## Routine operations (day to day)
 
-The short version — `/admin/guide` has the full walkthrough: create a session → build the roster and set target games (or, for ad-hoc, just an invite list) → collect blackout dates (regular sessions only — "Notify roster" sends the email) → click "Schedule these players" → monitor via the dashboard and `/admin/status` for anything flagged (understaffed weeks, unfilled subs, stale swaps, double-bookings) → the Activity Log and Email Log for after-the-fact "what happened" questions.
+The short version — `/admin/guide` has the full walkthrough: create a session → build the roster and set target games (or, for ad-hoc, just an invite list) → collect blackout dates (regular sessions only — "Notify roster" sends the email) → optionally set any never/always-together player constraints → click "Schedule these players" → monitor via the dashboard and `/admin/status` for anything flagged (understaffed weeks, unfilled subs, stale swaps, double-bookings) → the Activity Log and Email Log for after-the-fact "what happened" questions.
 
 ## Emergency / recovery playbook
 

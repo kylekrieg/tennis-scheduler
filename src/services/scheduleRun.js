@@ -2,6 +2,7 @@
 const db = require('../db');
 const { generateSeasonSchedule } = require('../scheduler/engine');
 const { carriedOverBlackoutsForSession } = require('./sessionHelper');
+const { getConstraintsForSession } = require('./playerConstraints');
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10);
@@ -148,12 +149,20 @@ function runScheduler(sessionId) {
 
   const engineWeeks = openWeeks.map((w) => ({ id: w.id, date: w.match_date }));
 
+  // Never-together/always-together player-pair constraints, set on the
+  // session's "Manage player constraints" admin page — see
+  // services/playerConstraints.js and scheduler/engine.js's "Player-pair
+  // constraints" doc comment for what these do and how they're enforced.
+  const { neverTogether, alwaysTogether } = getConstraintsForSession(sessionId);
+
   const result = generateSeasonSchedule({
     players: roster,
     weeks: engineWeeks,
     isBlackedOut,
     playersPerWeek: session.players_per_week,
     iterations: Math.min(8000, Math.max(2000, engineWeeks.length * roster.length * 15)),
+    neverTogether,
+    alwaysTogether,
   });
 
   const applyResult = db.transaction(() => {
@@ -179,6 +188,16 @@ function runScheduler(sessionId) {
           const names = c.involvedPlayerIds.map((id) => nameById.get(id) || `player #${id}`);
           return { ...c, involvedPlayerNames: names, detail: `${c.detail} Involved player(s): ${names.join(', ')}.` };
         }
+        // The player-pair constraint conflicts (never_together_unreachable,
+        // always_together_target_mismatch, always_together_unreachable,
+        // never_together_violated, always_together_violated,
+        // contradictory_constraint — see scheduler/engine.js) all carry
+        // `playerIds: [a, b]` and nothing else identifying, for the same
+        // reason noted above for player_target_unreachable/combined_conflict.
+        if (c.playerIds) {
+          const names = c.playerIds.map((id) => nameById.get(id) || `player #${id}`);
+          return { ...c, playerNames: names, detail: `${names.join(' & ')}: ${c.detail}` };
+        }
         return c;
       });
 
@@ -193,6 +212,13 @@ function runScheduler(sessionId) {
         }
         if (c.involvedWeekIds) {
           for (const wid of c.involvedWeekIds) {
+            db.prepare('UPDATE weeks SET needs_attention = 1, notes = ? WHERE id = ?').run(c.detail, wid);
+          }
+        }
+        // never_together_violated / always_together_violated (see above)
+        // name the specific weeks where the constraint couldn't be honored.
+        if (c.weekIds) {
+          for (const wid of c.weekIds) {
             db.prepare('UPDATE weeks SET needs_attention = 1, notes = ? WHERE id = ?').run(c.detail, wid);
           }
         }

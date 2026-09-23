@@ -1,0 +1,56 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Player Constraints — <%= sessionFullTitle(session) %></h1>
+<p class="muted" style="margin-top:0;">Hard rules for this session's schedule, on top of targets and blackout dates. "Never together" means these two are never scheduled the same week — same team, opposing teams, or even a different court in a multi-court week, doesn't matter, just never the same week. "Always together" means these two are always scheduled the exact same weeks as each other (they need equal targets for that to be possible). Re-run the schedule from <a href="/admin/sessions/<%= session.id %>/edit">Edit session &amp; roster</a> after changing constraints for them to take effect.</p>
+
+<h2>Current constraints</h2>
+<% if (constraints.length === 0) { %>
+  <p class="muted">No constraints set for this session yet.</p>
+<% } else { %>
+  <div class="card wide">
+    <table>
+      <thead><tr><th>Player</th><th>Constraint</th><th>Player</th><th></th></tr></thead>
+      <tbody>
+        <% constraints.forEach(function(c) { %>
+          <tr>
+            <td style="white-space:nowrap;"><%= fullName({name: c.player_a_name, full_name: c.player_a_full_name}) %></td>
+            <td><%= c.type === 'always_together' ? 'always plays the same week as' : 'never plays the same week as' %></td>
+            <td style="white-space:nowrap;"><%= fullName({name: c.player_b_name, full_name: c.player_b_full_name}) %></td>
+            <td>
+              <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/constraints/<%= c.id %>/delete" onsubmit="return confirm('Remove this constraint?');">
+                <button class="btn neutral" type="submit">Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+
+<h2 style="margin-top:24px;">Add a constraint</h2>
+<form method="post" action="/admin/sessions/<%= session.id %>/constraints" class="card">
+  <label for="player_a_id">Player</label>
+  <select name="player_a_id" id="player_a_id" required>
+    <option value="">Select…</option>
+    <% roster.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= fullName(p) %></option>
+    <% }) %>
+  </select>
+
+  <label for="type" style="margin-top:12px;">Constraint</label>
+  <select name="type" id="type" required>
+    <option value="never_together">never plays the same week as</option>
+    <option value="always_together">always plays the same week as</option>
+  </select>
+
+  <label for="player_b_id" style="margin-top:12px;">Player</label>
+  <select name="player_b_id" id="player_b_id" required>
+    <option value="">Select…</option>
+    <% roster.forEach(function(p) { %>
+      <option value="<%= p.id %>"><%= fullName(p) %></option>
+    <% }) %>
+  </select>
+
+  <div class="actions" style="margin-top:16px;"><button class="btn green" type="submit">Add constraint</button></div>
+</form>
+<%- include('../partials/footer') %>

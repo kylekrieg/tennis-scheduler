@@ -333,4 +333,153 @@ console.log('Test 6: players_per_week that is not a positive multiple of 4 is re
   console.log('  PASS:', result.conflicts[0].detail);
 }
 
+// --- Test 7b: "never together" — two players must never be scheduled the
+// same week, regardless of team/court — with targets that actually leave
+// enough room (pigeonhole-feasible), confirming a real schedule comes back
+// with the pair never overlapping. ---
+console.log('Test 7b: never-together pair, feasible targets, produces zero overlapping weeks');
+{
+  const players = [
+    { id: 1, target: 8 },
+    { id: 2, target: 8 }, // never with player 1 — 8+8=16 <= 17 weeks, so it's reachable
+    { id: 3, target: 10 },
+    { id: 4, target: 10 },
+    { id: 5, target: 10 },
+    { id: 6, target: 10 },
+    { id: 7, target: 4 },
+    { id: 8, target: 4 },
+    { id: 9, target: 4 },
+  ];
+  const weeks = makeWeeks(17); // 68 total slots = sum of targets
+  const result = generateSeasonSchedule({
+    players,
+    weeks,
+    isBlackedOut: () => false,
+    playersPerWeek: 4,
+    iterations: 8000,
+    neverTogether: [[1, 2]],
+  });
+  assert.strictEqual(result.feasible, true, 'should be feasible');
+  for (const w of result.weeks) {
+    assert.ok(
+      !(w.players.includes(1) && w.players.includes(2)),
+      `players 1 and 2 should never share week ${w.weekId}`
+    );
+  }
+  // Every player still hits their target exactly.
+  const gamesPlayed = new Map(players.map((p) => [p.id, 0]));
+  for (const w of result.weeks) for (const pid of w.players) gamesPlayed.set(pid, gamesPlayed.get(pid) + 1);
+  for (const p of players) assert.strictEqual(gamesPlayed.get(p.id), p.target, `player ${p.id} should hit target ${p.target}`);
+  console.log('  PASS: 1 and 2 never shared a week across all 17 weeks, every target still hit exactly');
+}
+
+// --- Test 7c: never-together pair whose targets provably can't avoid
+// overlapping (pigeonhole) is rejected up front with a clear conflict,
+// rather than burning iterations on a doomed local search. ---
+console.log('Test 7c: never-together pair with targets exceeding the season length is rejected up front');
+{
+  const players = [
+    { id: 1, target: 14 },
+    { id: 2, target: 14 }, // 14+14=28 > 17 weeks — provably must overlap
+    { id: 3, target: 7 },
+    { id: 4, target: 7 },
+    { id: 5, target: 7 },
+    { id: 6, target: 7 },
+    { id: 7, target: 4 },
+    { id: 8, target: 4 },
+    { id: 9, target: 4 },
+  ];
+  const weeks = makeWeeks(17);
+  const result = generateSeasonSchedule({
+    players,
+    weeks,
+    isBlackedOut: () => false,
+    playersPerWeek: 4,
+    neverTogether: [[1, 2]],
+  });
+  assert.strictEqual(result.feasible, false);
+  assert.strictEqual(result.conflicts[0].type, 'never_together_unreachable');
+  console.log('  PASS:', result.conflicts[0].detail);
+}
+
+// --- Test 8: "always together" — two players must always be scheduled the
+// same week as each other. ---
+console.log('Test 8: always-together pair is always scheduled the same week');
+{
+  const players = [
+    { id: 1, target: 8 },
+    { id: 2, target: 8 }, // always with player 1 — equal targets, required
+    { id: 3, target: 10 },
+    { id: 4, target: 10 },
+    { id: 5, target: 10 },
+    { id: 6, target: 10 },
+    { id: 7, target: 4 },
+    { id: 8, target: 4 },
+    { id: 9, target: 4 },
+  ];
+  const weeks = makeWeeks(17);
+  const result = generateSeasonSchedule({
+    players,
+    weeks,
+    isBlackedOut: () => false,
+    playersPerWeek: 4,
+    iterations: 8000,
+    alwaysTogether: [[1, 2]],
+  });
+  assert.strictEqual(result.feasible, true, 'should be feasible');
+  for (const w of result.weeks) {
+    assert.strictEqual(
+      w.players.includes(1),
+      w.players.includes(2),
+      `players 1 and 2 should always be scheduled together or not at all — week ${w.weekId} split them`
+    );
+  }
+  const weeksTogether = result.weeks.filter((w) => w.players.includes(1) && w.players.includes(2)).length;
+  assert.strictEqual(weeksTogether, 8, 'should play together exactly target(=8) weeks');
+  console.log('  PASS: players 1 and 2 shared exactly the same', weeksTogether, 'weeks');
+}
+
+// --- Test 8b: always-together pair with mismatched targets is rejected up
+// front with a clear conflict — they structurally can't play the same
+// number of games if they must always play the same weeks. ---
+console.log('Test 8b: always-together pair with different targets is rejected up front');
+{
+  const players = [
+    { id: 1, target: 8 },
+    { id: 2, target: 6 }, // mismatched target vs player 1
+    { id: 3, target: 54 },
+  ];
+  const weeks = makeWeeks(17);
+  const result = generateSeasonSchedule({
+    players,
+    weeks,
+    isBlackedOut: () => false,
+    playersPerWeek: 4,
+    alwaysTogether: [[1, 2]],
+  });
+  assert.strictEqual(result.feasible, false);
+  assert.strictEqual(result.conflicts[0].type, 'always_together_target_mismatch');
+  console.log('  PASS:', result.conflicts[0].detail);
+}
+
+// --- Test 8c: a pair marked both never-together and always-together at
+// once is a contradiction, rejected up front rather than silently picking
+// one interpretation. ---
+console.log('Test 8c: contradictory never-together + always-together constraint on the same pair is rejected');
+{
+  const players = [{ id: 1, target: 4 }, { id: 2, target: 4 }, { id: 3, target: 4 }, { id: 4, target: 4 }];
+  const weeks = makeWeeks(4);
+  const result = generateSeasonSchedule({
+    players,
+    weeks,
+    isBlackedOut: () => false,
+    playersPerWeek: 4,
+    neverTogether: [[1, 2]],
+    alwaysTogether: [[1, 2]],
+  });
+  assert.strictEqual(result.feasible, false);
+  assert.strictEqual(result.conflicts[0].type, 'contradictory_constraint');
+  console.log('  PASS:', result.conflicts[0].detail);
+}
+
 console.log('\nAll scheduling engine tests passed.');

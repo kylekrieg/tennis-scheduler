@@ -221,7 +221,7 @@
 <% if (session && !isAdhoc) { %>
 <div class="card wide" style="margin-top:24px; border-color:#b42318;">
   <h2 style="margin-top:0;">Regenerate schedule</h2>
-  <p class="muted">Runs the scheduler against this session's <strong>currently saved</strong> roster and targets, filling in only the open (not yet completed) weeks — locked weeks are never touched. Typically only needed once at the start of a session, or after a structural roster change (a player added, removed, or with a changed target). Save any edits above first — this button uses what's already saved, not unsaved changes on this page.</p>
+  <p class="muted">Runs the scheduler against this session's <strong>currently saved</strong> roster and targets, filling in only the open (not yet completed) weeks — locked weeks are never touched. Typically only needed once at the start of a session, or after a structural roster change (a player added, removed, or with a changed target). Save any edits above first — this button uses what's already saved, not unsaved changes on this page. Also respects any <a href="/admin/sessions/<%= session.id %>/constraints">player constraints</a> set for this session (who must never, or must always, play the same week as whom).</p>
   <form method="post" action="/admin/sessions/<%= session.id %>/schedule">
     <button class="btn green" type="submit">Schedule these players</button>
   </form>
