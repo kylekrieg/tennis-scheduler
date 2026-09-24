@@ -1,0 +1,44 @@
+<%- include('partials/header', {title, wideMain: true}) %>
+<h1>Score History</h1>
+<p class="muted">Every scored week for <%= sessionFullTitle(session) %>, one row per week and one column per player, so anyone can scan down their own column and check each week looks right — without clicking through <a href="/scores?session=<%= session.id %>">the week-by-week entry page</a> one week at a time or diffing the <a href="/leaderboard?session=<%= session.id %>">leaderboard</a> total. Each cell shows games won, with games played (the shared match total) in small type next to it. A blank "—" means that player didn't play that week; "not entered" means they played it but nobody's put a number in yet.</p>
+<%- include('partials/session_picker', {sessions, session}) %>
+
+<% if (grid.weeks.length === 0) { %>
+  <p class="muted">No scored weeks yet for this session.</p>
+<% } else { %>
+  <div class="table-scroll">
+<table class="wide">
+    <thead>
+      <tr>
+        <th style="white-space:nowrap;">Week</th>
+        <% grid.players.forEach(function(p) { %><th style="white-space:nowrap;"><a href="/me/<%= p.slug || p.id %>"><%= p.name %></a></th><% }) %>
+      </tr>
+    </thead>
+    <tbody>
+      <% grid.weeks.forEach(function(w) { %>
+        <tr>
+          <td style="white-space:nowrap;"><%= fmtDate(w.match_date) %></td>
+          <% grid.players.forEach(function(p) { %>
+            <% var c = grid.cell(w.id, p.id); %>
+            <td style="text-align:center;white-space:nowrap;">
+              <% if (!c) { %>
+                <span class="muted">—</span>
+              <% } else if (c.gamesWon === null) { %>
+                <span class="muted" style="font-size:11px;">not entered</span>
+              <% } else { %>
+                <strong><%= c.gamesWon %></strong><% if (c.gamesPlayed !== null) { %> <span class="muted" style="font-size:11px;">/ <%= c.gamesPlayed %></span><% } %><% if (c.isSub) { %> <span class="muted" style="font-size:11px;">(sub)</span><% } %>
+              <% } %>
+            </td>
+          <% }) %>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<p class="actions" style="margin-top:16px;">
+  <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter scores</a>
+  <a class="btn small neutral" href="/leaderboard?session=<%= session.id %>">Leaderboard</a>
+</p>
+<%- include('partials/footer') %>

@@ -528,6 +528,15 @@ ensureColumn('sessions', 'signup_pct_full', 'INTEGER NOT NULL DEFAULT 75');
 ensureColumn('sessions', 'signup_pct_half', 'INTEGER NOT NULL DEFAULT 50');
 ensureColumn('sessions', 'signup_pct_quarter', 'INTEGER NOT NULL DEFAULT 25');
 
+// Win % leaderboard qualification threshold, made per-session (Kyle,
+// 2026-09-23) — was a hardcoded constant (gameScores.js's
+// MIN_MATCHES_FOR_WIN_PCT) until Kyle asked whether it should be an
+// admin-level parameter per session. Defaults to 2, matching the constant's
+// own prior hardcoded value, so every existing session behaves identically
+// until an admin actually changes it. See schema.sql's comment on this
+// column and gameScores.js's MIN_MATCHES_FOR_WIN_PCT doc comment.
+ensureColumn('sessions', 'min_matches_for_win_pct', 'INTEGER NOT NULL DEFAULT 2');
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

@@ -1,6 +1,6 @@
 <%- include('partials/header', {title, wideMain: true}) %>
 <h1>Leaderboard</h1>
-<p class="muted">Total games won this season, from scores entered on <a href="/scores?session=<%= session.id %>">the Scores page</a>. Only counts weeks that have actually been played and scored — someone who hasn't had a score entered yet just isn't on the board.</p>
+<p class="muted">Total games won this season, from scores entered on <a href="/scores?session=<%= session.id %>">the Scores page</a>. Only counts weeks that have actually been played and scored — someone who hasn't had a score entered yet just isn't on the board. Want to check a week's numbers instead of just the running total? See <a href="/scores/history?session=<%= session.id %>">Score History</a>.</p>
 <%- include('partials/session_picker', {sessions, session}) %>
 
 <% if (board.length === 0) { %>
@@ -72,10 +72,14 @@
 <% } %>
 
 <h3 style="margin-top:20px;">All-Time Win % Leaderboard</h3>
-<% if (overallWinBoard.length === 0) { %>
+<p class="muted">Ranked by win % like the session board above, but requires at least <%= minMatchesForWinPct %> matches scored to appear here — otherwise a sub who's played one match and won it can outrank someone with a full season behind them. Players below that bar aren't hidden, just listed separately below once they've got a match or two in.</p>
+<% if (overallWinBoard.length === 0 && overallWinBoardBuilding.length === 0) { %>
   <p class="muted">No weeks with both games won and games played entered yet.</p>
 <% } else { %>
-  <div class="table-scroll">
+  <% if (overallWinBoard.length === 0) { %>
+    <p class="muted">Nobody has reached <%= minMatchesForWinPct %> matches scored yet — check the "still building a sample" list below.</p>
+  <% } else { %>
+    <div class="table-scroll">
 <table>
     <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
     <tbody>
@@ -92,9 +96,31 @@
     </tbody>
   </table>
 </div>
+  <% } %>
+
+  <% if (overallWinBoardBuilding.length > 0) { %>
+    <h4 style="margin-top:20px;">Still building a sample (fewer than <%= minMatchesForWinPct %> matches scored)</h4>
+    <div class="table-scroll">
+<table>
+    <thead><tr><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
+    <tbody>
+      <% overallWinBoardBuilding.forEach(function(row) { %>
+        <tr>
+          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+          <td><%= (row.winPct * 100).toFixed(1) %>%</td>
+          <td><%= row.gamesWon %></td>
+          <td><%= row.gamesPlayed %></td>
+          <td><%= row.matchesScored %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+  <% } %>
 <% } %>
 
 <p class="actions" style="margin-top:16px;">
   <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
+  <a class="btn small neutral" href="/scores/history?session=<%= session.id %>">Score History</a>
 </p>
 <%- include('partials/footer') %>

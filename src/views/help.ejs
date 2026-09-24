@@ -17,6 +17,7 @@
     <li><a href="#calendar">Calendar</a></li>
     <li><a href="#pdf">Print Schedule</a></li>
     <li><a href="#stats">Player Stats</a></li>
+    <li><a href="#scores">Scores &amp; Leaderboard</a></li>
     <li><a href="#adhoc">Pickup games (ad-hoc sessions)</a></li>
     <li><a href="#double-booked">What does "double booked" mean?</a></li>
     <li><a href="#statuses">What do the badges mean?</a></li>
@@ -357,6 +358,11 @@
 <p>Go to <a href="/stats">Stats</a> for a quick "how's my season going" check, across every active session at once: for each session, a simple table of every player's target games for the season, games actually played so far, any bonus games picked up by subbing in for someone else, and how many weeks they've been on ball duty. Every player's name links straight to their own <a href="/me">My Page</a>.</p>
 <img class="screenshot" src="/img/help/player-stats.png?v=<%= assetVersion %>" alt="Player Stats page showing a table of every player's target games, games played, sub bonus games, and ball duty count for one session.">
 <p class="screenshot-caption">Same numbers you'd get counting by hand from the schedule — just already totaled up.</p>
+
+<h2 id="scores">Scores &amp; Leaderboard</h2>
+<p>If your admin has turned this on for a session, you can log how a match actually went once it's over. Go to <a href="/scores">Enter Scores</a> — you'll get a grid for the whole match: one shared "total games played" number for the court, plus a "games won" box for each player, so anyone who was out there can fill in the whole thing at once instead of everyone typing their own number separately. There's also a per-player page if you'd rather just enter your own — pick your name from <a href="/scores">Enter Scores</a>'s lookup link. Counting games: regular games won count as 1 each; if a 7- or 10-point tiebreaker was played, whoever won it gets 1 point, same as any other game. Once a score is entered, you (or anyone) can still fix it for 24 hours — after that, only the admin can change it.</p>
+<p>Entered scores feed the <a href="/leaderboard">Leaderboard</a> page, which has two boards per session — total games won, and a win-percentage board (games won ÷ games played) so someone who's made every single week doesn't automatically outrank someone who's missed a few but wins a higher share of what they actually play. There's also an all-time version of each combining every session you've ever played in.</p>
+<p>The win % board has one wrinkle worth knowing: it only ranks a player once they've scored at least a minimum number of matches (your admin sets this per session, small by default) — otherwise one great night early in the season could outrank someone with a whole season of solid play behind them. If you don't see your name in the ranked table yet, check the "still building a sample" list right below it — that's where you'll show up until you cross that threshold, and your numbers are still right there, just not ranked yet.</p>
 
 <h2 id="adhoc">Pickup games (ad-hoc sessions)</h2>
 <p>Some sessions are pickup games instead of a fixed season schedule — filled week to week, first come first served. None of the sections above apply here: no season roster, no target games, no blackout dates, no confirm/need-a-sub flow. Signing up <em>is</em> your confirmation.</p>

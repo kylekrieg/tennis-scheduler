@@ -195,13 +195,46 @@ router.get('/leaderboard', (req, res) => {
   // All-time, all-sessions boards (Kyle, 2026-09-10: "we should have a total
   // leaderboard for all of the players entered into the system... broken
   // out into each session, but also have a total players leaderboard") —
-  // deliberately NOT scoped by the session picker above (resolveSession()
-  // only affects which single session's two boards show; these two are
-  // always every session combined, so switching sessions leaves them
-  // unchanged).
+  // the ROWS in these two are deliberately NOT scoped by the session picker
+  // above (resolveSession() only affects which single session's two
+  // session-scoped boards show; these two always sum every session
+  // combined). The win% board's QUALIFICATION CUTOFF is the one thing that
+  // does still depend on the picker, though — see the next comment.
   const overallBoard = gameScores.overallLeaderboard();
-  const overallWinBoard = gameScores.overallWinPercentLeaderboard();
-  res.render('leaderboard', { title: 'Leaderboard', session, sessions, board, winBoard, overallBoard, overallWinBoard });
+  // Split into a "qualified" ranked table and a small-sample "still
+  // building" one (Kyle, 2026-09-23) — a sub who's played one match and won
+  // it was outranking players with a full season of matches. See
+  // MIN_MATCHES_FOR_WIN_PCT's doc comment in gameScores.js for why the
+  // threshold is matches-scored rather than games-played, and why nobody is
+  // dropped from the page entirely, just moved out of the ranked table.
+  //
+  // Made a per-session admin field the same day (Kyle: "should we set that
+  // the min_matches as admin level parameter when setting up each
+  // session?") — sessions.min_matches_for_win_pct, defaulting to 2 for every
+  // session. The all-time board itself has no single "owning" session, so
+  // this uses the CURRENTLY-VIEWED session's own configured value (the one
+  // the picker above resolved) as the cutoff for this cross-session board —
+  // see MIN_MATCHES_FOR_WIN_PCT's doc comment in gameScores.js for the full
+  // reasoning. Falls back to the gameScores.js default if the field is
+  // somehow missing (a session row that predates the migration, before the
+  // next boot's ensureColumn backfill runs).
+  const minMatchesForWinPct = session.min_matches_for_win_pct != null
+    ? session.min_matches_for_win_pct
+    : gameScores.MIN_MATCHES_FOR_WIN_PCT;
+  const overallWinBoardAll = gameScores.overallWinPercentLeaderboard(minMatchesForWinPct);
+  const overallWinBoard = overallWinBoardAll.filter((r) => r.qualified);
+  const overallWinBoardBuilding = overallWinBoardAll.filter((r) => !r.qualified);
+  res.render('leaderboard', {
+    title: 'Leaderboard',
+    session,
+    sessions,
+    board,
+    winBoard,
+    overallBoard,
+    overallWinBoard,
+    overallWinBoardBuilding,
+    minMatchesForWinPct,
+  });
 });
 
 // Group score entry (Kyle, 2026-09-10): "instead of a dropdown and everybody
@@ -384,6 +417,38 @@ router.get('/scores/lookup', (req, res) => {
   }
   const allPlayers = db.prepare('SELECT id, slug, name FROM players WHERE active = 1 ORDER BY name').all();
   res.render('scores_lookup', { title: 'Enter Scores', allPlayers });
+});
+
+// Week-by-week validate grid (Kyle, 2026-09-23: "a screen that shows week by
+// week the # of games won by player so other players can validate their
+// games were entered correctly" — today one person enters the whole group's
+// scores each week via the group entry page above, and everyone else's only
+// way to sanity-check that was clicking through one week at a time or
+// diffing the leaderboard's running total). Registered before GET
+// /scores/:idOrSlug below on purpose — that route's wildcard would otherwise
+// swallow "history" as a slug lookup. Same session-scoped resolveSession +
+// not-tracked-here message pattern as /leaderboard above; see gameScores.js's
+// weeklyScoreGrid() doc comment for exactly what's included in the grid.
+router.get('/scores/history', (req, res) => {
+  const { session, sessions } = resolveSession(req, { gamesWonOnly: true });
+  if (!session) {
+    if (getViewableSessions().length > 0) {
+      return res.render('message', {
+        title: 'Score History',
+        heading: 'Not tracked here',
+        body: "Games-won tracking isn't turned on for any current session.",
+        tone: 'ok',
+      });
+    }
+    return res.render('no_session', { title: 'Score History' });
+  }
+  const grid = gameScores.weeklyScoreGrid(session.id);
+  res.render('scores_history', {
+    title: 'Score History',
+    session,
+    sessions,
+    grid,
+  });
 });
 
 // A player's own "enter your games won" page — accepts either their slug or

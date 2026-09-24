@@ -392,6 +392,12 @@ router.get('/stats', (req, res) => {
   // admin-side home for the combined "total players leaderboard" alongside
   // the public /leaderboard page's own copy of the same two boards.
   const overallLeaderboard = gameScores.overallLeaderboard();
+  // Uses the fallback threshold (no explicit arg), unlike public.js's
+  // /leaderboard route — this page sums every active session at once with
+  // no single session in context to draw a min_matches_for_win_pct value
+  // from (see gameScores.js's MIN_MATCHES_FOR_WIN_PCT doc comment). The
+  // `qualified` flag on each row is still there if this page ever grows the
+  // same "ranked vs. still-building" split the public page has.
   const overallWinLeaderboard = gameScores.overallWinPercentLeaderboard();
 
   res.render('admin/all_stats', { title: 'Stats Summary', rows, overallLeaderboard, overallWinLeaderboard, flashMsg: popFlash(req) });
@@ -912,6 +918,20 @@ function invalidGamesWonReminderLeadHours(b) {
   return null;
 }
 
+// Win % leaderboard qualification threshold (Kyle, 2026-09-23) — how many
+// matches a player must have scored before they show up in the ranked
+// win% table on /leaderboard rather than the "still building a sample"
+// list. 0 is a legitimate choice here (no minimum — everyone with at
+// least one scored match is ranked), unlike the lead-hours fields above
+// which require > 0, so this only rejects a negative or non-integer value.
+function invalidMinMatchesForWinPct(b) {
+  const n = Number(b.min_matches_for_win_pct);
+  if (b.min_matches_for_win_pct !== undefined && (!Number.isInteger(n) || n < 0)) {
+    return 'Win % leaderboard minimum matches must be a whole number, 0 or greater.';
+  }
+  return null;
+}
+
 // Weather forecast (Kyle, 2026-09-05) — a per-session opt-in checkbox plus
 // lat/lon, shared by both regular and ad-hoc sessions (unlike the admin
 // report/ad-hoc-timing fields above, which are scoped to one session type
@@ -1033,6 +1053,11 @@ router.post('/sessions', (req, res) => {
     flash(req, scoreReminderError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const minMatchesError = invalidMinMatchesForWinPct(b);
+  if (minMatchesError) {
+    flash(req, minMatchesError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -1043,8 +1068,8 @@ router.post('/sessions', (req, res) => {
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
         reminder_days_before, follow_up_lead_hours, reminders_enabled, courts, players_per_week, lookahead_weeks, club_name, court_info, color,
         session_type, adhoc_invite_lead_hours, adhoc_reminder_lead_hours, adhoc_final_lead_hours,
-        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, games_won_enabled, games_won_reminder_lead_hours, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_report_emails, admin_report_lead_hours, escalation_lead_hours, weather_enabled, weather_lat, weather_lon, games_won_enabled, games_won_reminder_lead_hours, min_matches_for_win_pct, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name,
@@ -1080,6 +1105,9 @@ router.post('/sessions', (req, res) => {
       // opt a session out, never the other way around.
       b.games_won_enabled ? 1 : 0,
       Number(b.games_won_reminder_lead_hours || 24),
+      b.min_matches_for_win_pct !== undefined && b.min_matches_for_win_pct !== ''
+        ? Number(b.min_matches_for_win_pct)
+        : 2,
       // Ad-hoc has no "Schedule these players" step to promote it out of
       // draft — it's ready to start inviting the moment it's saved, so it
       // skips straight to 'active'. Regular sessions keep starting 'draft'.
@@ -1260,6 +1288,7 @@ const SESSION_FIELD_LABELS = [
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['games_won_enabled', 'games-won leaderboard', (v) => (Number(v) ? 'on' : 'off')],
   ['games_won_reminder_lead_hours', 'ball duty scores reminder lead hours', (v) => v],
+  ['min_matches_for_win_pct', 'win % leaderboard minimum matches', (v) => v],
 ];
 
 function playerNamesForIds(ids) {
@@ -1339,6 +1368,11 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, scoreReminderError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const minMatchesError = invalidMinMatchesForWinPct(b);
+  if (minMatchesError) {
+    flash(req, minMatchesError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   const weatherError = invalidWeatherFields(b);
   if (weatherError) {
     flash(req, weatherError, 'error');
@@ -1348,7 +1382,7 @@ router.post('/sessions/:id', (req, res) => {
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
      adhoc_invite_lead_hours=?, adhoc_reminder_lead_hours=?, adhoc_final_lead_hours=?,
-     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=?, games_won_enabled=?, games_won_reminder_lead_hours=? WHERE id=?`
+     admin_report_emails=?, admin_report_lead_hours=?, escalation_lead_hours=?, weather_enabled=?, weather_lat=?, weather_lon=?, games_won_enabled=?, games_won_reminder_lead_hours=?, min_matches_for_win_pct=? WHERE id=?`
   ).run(
     b.name,
     b.start_date,
@@ -1376,6 +1410,9 @@ router.post('/sessions/:id', (req, res) => {
     parseOptionalFloat(b.weather_lon),
     b.games_won_enabled ? 1 : 0,
     Number(b.games_won_reminder_lead_hours || 24),
+    b.min_matches_for_win_pct !== undefined && b.min_matches_for_win_pct !== ''
+      ? Number(b.min_matches_for_win_pct)
+      : 2,
     req.params.id
   );
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);

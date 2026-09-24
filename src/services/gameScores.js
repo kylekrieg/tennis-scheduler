@@ -56,6 +56,47 @@ const { SESSION_DISPLAY_ORDER } = require('./sessionHelper');
  */
 
 const MAX_GAMES = 50; // sane sanity cap, not a real tennis rule — just guards against fat-fingered/garbage input
+
+/** Fallback/default minimum matches SCORED (not games played) for a player
+ * to "qualify" for the all-time win% leaderboard's main ranking (Kyle,
+ * 2026-09-23: subs who play one match and happen to win it were outranking
+ * players with a full season's worth of matches). Deliberately a
+ * matches-scored threshold, not a games-played one — games-per-match isn't
+ * constant (sets vary), and this is the ALL-TIME board
+ * (overallWinPercentLeaderboard), which keeps accumulating matches across
+ * every season forever, so a fixed games-played number would need constant
+ * re-tuning as history grows while a small matches-scored bar stays
+ * meaningful. Unqualified players aren't dropped — see
+ * overallWinPercentLeaderboard()'s `qualified` flag and the /leaderboard
+ * route/view, which show them in a separate "still building a sample"
+ * section instead of the ranked table.
+ *
+ * Made a per-session admin field the same day (Kyle: "should we set that the
+ * min_matches as admin level parameter when setting up each session?") —
+ * sessions.min_matches_for_win_pct, editable on session_form.ejs, same
+ * pattern as follow_up_lead_hours/escalation_lead_hours/etc. This constant
+ * is now only the fallback overallWinPercentLeaderboard() uses when called
+ * with no explicit threshold (e.g. from a script, or a future caller with no
+ * session context) — public.js's /leaderboard route always passes the
+ * currently-viewed session's own configured value instead.
+ *
+ * The all-time board is explicitly cross-session, though, so "per-session
+ * field" doesn't map onto it perfectly — there's no single session that
+ * "owns" an all-time ranking. The resolution: /leaderboard always renders in
+ * the context of one currently-selected session (the session picker at the
+ * top of the page), so that session's own threshold is what's applied to
+ * the all-time table shown alongside it. Switching sessions can therefore
+ * change where the all-time cutoff falls — a deliberate tradeoff for
+ * keeping this a single admin-configurable number instead of e.g. always
+ * taking the max/min across every session, which would be harder to explain
+ * to an admin tuning it for their own group.
+ *
+ * Same rationale would apply to sessionWinPercentLeaderboard() below if that
+ * one turns out to need a threshold too (a single session is much shorter,
+ * so it hasn't yet) — it would use this same session.min_matches_for_win_pct
+ * column directly rather than needing a second one.
+ */
+const MIN_MATCHES_FOR_WIN_PCT = 2;
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** SQLite's `datetime('now')` values are stored as 'YYYY-MM-DD HH:MM:SS' UTC,
@@ -438,6 +479,84 @@ function setGamesPlayedForWeekCourt({ weekId, court, gamesPlayed, isAdmin = fals
 }
 
 /**
+ * Week-by-week validate grid (Kyle, 2026-09-23: one person — whoever brings
+ * the balls — enters everybody's games for the whole group each week via
+ * the group entry page above, and until now the only way for anyone ELSE to
+ * check their own numbers went in right was to click through
+ * scoreRowsForWeek()'s single-week view one week at a time, or eyeball the
+ * running leaderboard total and notice if it looked off week to week — which
+ * only flags THAT something changed, never WHICH week or WHOSE number).
+ * This returns everything needed to show one screen with every scored week
+ * as a row and every player as a column, so a player can scan straight down
+ * their own column and confirm each week at a glance.
+ *
+ * Same eligibility as the rest of this file: only locked (actually-played)
+ * weeks and scoreable (scheduled/confirmed) rows are included. Players are
+ * every player with at least one such row in this session — roster regulars
+ * and subs alike, same inclusive spirit as sessionLeaderboard() below —
+ * rather than the full roster, so nobody with zero scoreable weeks pads out
+ * an already-wide table with an all-blank column.
+ *
+ * `gamesPlayed` on each cell comes from week_court_games, joined on that
+ * row's own week+court — the same shared-per-match value
+ * sessionWinPercentLeaderboard() divides by — so a player can also spot if
+ * the shared total for their match looks wrong, not just their own number.
+ *
+ * Returns { weeks, players, cell(weekId, playerId) } rather than a plain
+ * nested array/object — weeks and players are each already deduped and
+ * sorted (weeks newest-first, matching every other week list in this app;
+ * players by name) for the view to iterate directly, and `cell()` is a
+ * lookup rather than a dense grid so a week+player combo that never
+ * happened (player didn't play that week) is simply absent instead of
+ * needing a sentinel value threaded through — the view treats "no cell" and
+ * "cell with games_won still null" as two distinct, separately-labeled
+ * states (didn't play it vs. played it but nobody's entered it yet).
+ */
+function weeklyScoreGrid(sessionId) {
+  const rows = db
+    .prepare(
+      `SELECT wa.week_id, w.match_date, wa.court, wa.player_id, p.name, p.full_name, p.slug,
+              wa.is_sub, wa.games_won, wcg.games_played
+       FROM week_assignments wa
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       LEFT JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
+       WHERE w.session_id = ? AND w.locked = 1 AND wa.status IN ('scheduled', 'confirmed')
+       ORDER BY w.match_date DESC, p.name ASC`
+    )
+    .all(sessionId);
+
+  const weeksById = new Map();
+  const playersById = new Map();
+  const cells = new Map();
+  const cellKey = (weekId, playerId) => weekId + '_' + playerId;
+
+  for (const r of rows) {
+    if (!weeksById.has(r.week_id)) weeksById.set(r.week_id, { id: r.week_id, match_date: r.match_date });
+    if (!playersById.has(r.player_id)) {
+      playersById.set(r.player_id, { id: r.player_id, name: r.name, full_name: r.full_name, slug: r.slug });
+    }
+    cells.set(cellKey(r.week_id, r.player_id), {
+      gamesWon: r.games_won,
+      gamesPlayed: r.games_played,
+      isSub: !!r.is_sub,
+      court: r.court,
+    });
+  }
+
+  // Row order came back match_date DESC already; Map preserves first-seen
+  // insertion order, so this is still newest-first with no extra sort.
+  const weeks = Array.from(weeksById.values());
+  const players = Array.from(playersById.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    weeks,
+    players,
+    cell: (weekId, playerId) => cells.get(cellKey(weekId, playerId)) || null,
+  };
+}
+
+/**
  * "Who's on top" for one session: every player (roster regular or a sub who
  * picked up a real game) with at least one scored assignment in this
  * session, ranked by total games won. Ties break by average games per
@@ -568,8 +687,15 @@ function overallLeaderboard() {
 /** All-time, all-sessions version of sessionWinPercentLeaderboard() — same
  * relationship to overallLeaderboard() above as the per-session win% board
  * has to the per-session total-games board. See overallLeaderboard()'s doc
- * comment for why archived sessions are included. */
-function overallWinPercentLeaderboard() {
+ * comment for why archived sessions are included.
+ *
+ * `minMatches` (default MIN_MATCHES_FOR_WIN_PCT) sets the bar for the
+ * returned `qualified` flag — pass the currently-viewed session's own
+ * sessions.min_matches_for_win_pct here (see that column's doc comment /
+ * MIN_MATCHES_FOR_WIN_PCT's doc comment above for why this cross-session
+ * board still takes a single session's threshold rather than having one of
+ * its own). */
+function overallWinPercentLeaderboard(minMatches = MIN_MATCHES_FOR_WIN_PCT) {
   const rows = db
     .prepare(
       `SELECT wa.player_id, p.name, p.full_name, p.slug,
@@ -594,11 +720,16 @@ function overallWinPercentLeaderboard() {
     // the same week), so "matches" is the only accurate label here.
     matchesScored: r.matches,
     winPct: r.gp ? r.gw / r.gp : 0,
+    // See MIN_MATCHES_FOR_WIN_PCT's doc comment — callers split the ranked
+    // table from the small-sample one using this flag rather than a query
+    // param, so both sections always agree on the same threshold.
+    qualified: r.matches >= minMatches,
   }));
 }
 
 module.exports = {
   MAX_GAMES,
+  MIN_MATCHES_FOR_WIN_PCT,
   ScoreError,
   parseGamesWon,
   parseGamesPlayed,
@@ -615,6 +746,7 @@ module.exports = {
   scoreRowsForWeek,
   setGameScore,
   setGamesPlayedForWeekCourt,
+  weeklyScoreGrid,
   sessionLeaderboard,
   sessionWinPercentLeaderboard,
   overallLeaderboard,

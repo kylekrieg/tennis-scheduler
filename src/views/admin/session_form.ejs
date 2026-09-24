@@ -159,6 +159,10 @@
   <input type="number" name="games_won_reminder_lead_hours" id="games_won_reminder_lead_hours" value="<%= session ? session.games_won_reminder_lead_hours : 24 %>" min="1">
   <p class="muted">If any player who was scheduled that week still hasn't entered games won by this many hours after match time, that week's ball-duty person gets a one-time reminder email with a link to the Scores page. Defaults to 24. Only applies while the checkbox above is on.</p>
 
+  <label for="min_matches_for_win_pct">Win % leaderboard — minimum matches scored to be ranked</label>
+  <input type="number" name="min_matches_for_win_pct" id="min_matches_for_win_pct" value="<%= session ? session.min_matches_for_win_pct : 2 %>" min="0">
+  <p class="muted">A player needs at least this many scored matches before they show up in the ranked Win % Leaderboard, rather than the "still building a sample" list below it — otherwise someone who's played one match and won it can outrank players with a full season behind them. Defaults to 2. Set to 0 for no minimum.</p>
+
   <div id="regular-roster">
     <h2>Roster &amp; target games</h2>
     <% if (session) { %><p class="muted">Prefer letting players declare their own commitment instead of typing every target by hand? Use <a href="/admin/sessions/<%= session.id %>/signups">Sign-Ups</a> first, then apply the results here.</p><% } %>
