@@ -1,0 +1,51 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1>Seasons</h1>
+<p class="muted">A season groups sessions that belong together — for example "Indoor Frontenac 2026" might hold "Session 1 Wed Court 4" (first half) and "Session 2 Wed Court 4" (second half). Each season gets its own leaderboard and graphs made from all of its sessions. Sessions, seasons, and the <a href="/admin/master-stats">master leaderboard</a> are three separate levels of stats — see the note on each page.</p>
+
+<h2>Create a season</h2>
+<form method="post" action="/admin/seasons" class="card">
+  <label for="name">Season name</label>
+  <input type="text" name="name" id="name" required placeholder="e.g. Indoor Frontenac 2026">
+  <p class="muted">Then pick it in the <strong>Season</strong> list when you create a session (you can also type a new season name right on the session form).</p>
+  <div class="actions"><button class="btn green" type="submit">Create season</button></div>
+</form>
+
+<h2>Open seasons</h2>
+<% var open = seasons.filter(function (s) { return !s.archived_at; }); var archived = seasons.filter(function (s) { return s.archived_at; }); %>
+<% if (open.length === 0) { %><p class="muted">No open seasons yet.</p><% } %>
+<% open.forEach(function (s) { %>
+  <div class="session-card">
+    <h3><a href="/admin/seasons/<%= s.id %>"><%= s.name %></a>
+      <% if (!s.stats_visible) { %><span class="badge scheduled">stats hidden from players</span><% } %></h3>
+    <p class="muted"><%= s.session_count %> session(s)</p>
+    <div class="actions" style="margin-top:8px;">
+      <a class="btn small neutral" href="/admin/seasons/<%= s.id %>">Settings &amp; exclusions</a>
+      <a class="btn small neutral" href="/leaderboard?view=season:<%= s.id %>">View board</a>
+      <form method="post" action="/admin/seasons/<%= s.id %>/archive" class="inline" onsubmit="return confirm('Archive this season and all of its sessions? Nothing is deleted.');">
+        <button class="btn small neutral" type="submit">Archive season</button>
+      </form>
+    </div>
+  </div>
+<% }) %>
+
+<% if (archived.length > 0) { %>
+  <h2 style="margin-top:32px;">Archived seasons</h2>
+  <p class="muted">Hidden from the dashboard and player schedule pages. Their stats stay viewable on the public Leaderboard page as long as stats are on.</p>
+  <% archived.forEach(function (s) { %>
+    <div class="session-card" style="opacity:0.8;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <a href="/admin/seasons/<%= s.id %>"><%= s.name %></a>
+          <p class="muted" style="margin:4px 0 0;"><%= s.session_count %> session(s) · archived <%= s.archived_at %></p>
+        </div>
+        <div class="actions" style="margin:0;">
+          <a class="btn small neutral" href="/leaderboard?view=season:<%= s.id %>">View board</a>
+          <form method="post" action="/admin/seasons/<%= s.id %>/unarchive" class="inline">
+            <button class="btn small neutral" type="submit">Unarchive</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% }) %>
+<% } %>
+<%- include('../partials/footer') %>

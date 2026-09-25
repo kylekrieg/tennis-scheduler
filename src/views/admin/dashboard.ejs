@@ -40,7 +40,7 @@
 <% flags.forEach(function(f) { %>
   <div class="session-card">
     <h3><a href="/admin/sessions/<%= f.session.id %>"><%= sessionTitle(f.session) %></a> <span class="badge scheduled"><%= f.session.status %></span></h3>
-    <p class="muted"><%= f.session.start_date %> – <%= f.session.end_date %></p>
+    <p class="muted"><%= f.session.start_date %> – <%= f.session.end_date %><% if (f.session.season_id && seasonNames[f.session.season_id]) { %> · Season: <a href="/admin/seasons/<%= f.session.season_id %>"><%= seasonNames[f.session.season_id] %></a><% } %><% if (!f.session.games_won_enabled) { %> · <strong>Stats off</strong><% } %></p>
     <div class="flags">
       <% if (f.conflicts.length) { %><div class="flag error"><%= f.conflicts.length %> scheduling conflict(s) — open the session to resolve.</div><% } %>
       <% if (f.needsAttention > 0) { %><div class="flag error"><%= f.needsAttention %> week(s) need attention — short-staffed or otherwise flagged, open the session to review.</div><% } %>
@@ -64,6 +64,7 @@
   <% adhocSessions.forEach(function (a) { %>
     <div class="session-card">
       <h3><a href="/admin/sessions/<%= a.session.id %>"><%= sessionTitle(a.session) %></a> <span class="badge scheduled">ad-hoc</span></h3>
+      <p class="muted"><% if (a.session.season_id && seasonNames[a.session.season_id]) { %>Season: <a href="/admin/seasons/<%= a.session.season_id %>"><%= seasonNames[a.session.season_id] %></a><% } else { %>No season<% } %><% if (!a.session.games_won_enabled) { %> · <strong>Stats off</strong><% } %></p>
       <% if (a.weekSummaries.length === 0) { %>
         <p class="muted">No upcoming match weeks.</p>
       <% } else { %>
@@ -91,7 +92,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div>
           <a href="/admin/sessions/<%= s.id %>"><%= sessionTitle(s) %></a> <span class="badge scheduled"><%= s.status %></span>
-          <p class="muted" style="margin:4px 0 0;"><%= s.start_date %> – <%= s.end_date %></p>
+          <p class="muted" style="margin:4px 0 0;"><%= s.start_date %> – <%= s.end_date %><% if (s.season_id && seasonNames[s.season_id]) { %> · Season: <a href="/admin/seasons/<%= s.season_id %>"><%= seasonNames[s.season_id] %></a><% } %></p>
         </div>
         <form method="post" action="/admin/sessions/<%= s.id %>/unarchive">
           <button class="btn small neutral" type="submit">Unarchive</button>

@@ -1,0 +1,31 @@
+<%# Stats card for a session's admin page (Kyle, 2026-09-25). Expects: session, statsCard { season, players, excluded }. %>
+<div class="card wide" id="stats-card" style="margin-top:24px;">
+  <h2 style="margin-top:0;">Stats</h2>
+  <p>
+    <strong>Stats:</strong> <%= session.games_won_enabled ? 'On' : 'Off' %> ·
+    <strong>Season:</strong> <% if (statsCard.season) { %><a href="/admin/seasons/<%= statsCard.season.id %>"><%= statsCard.season.name %></a><% } else { %>none<% } %> ·
+    <strong>Counts toward season:</strong> <%= session.games_won_enabled ? (session.count_toward_season ? 'Yes' : 'No') : '—' %>
+    (<a href="/admin/sessions/<%= session.id %>/edit">change on the edit page</a>) ·
+    <a href="/leaderboard?view=session:<%= session.id %>">View this session's board &amp; graphs</a>
+  </p>
+  <% if (!session.games_won_enabled) { %>
+    <div class="flag error">Stats are OFF for this session — players can't enter scores, and nothing from it counts toward its season or the master leaderboard.</div>
+  <% } %>
+  <form method="post" action="/admin/sessions/<%= session.id %>/stat-exclusions">
+    <h3>Exclude players from this session's stats</h3>
+    <p class="muted">Checked players are hidden from this session's leaderboard and graphs, and this session's scores for them are left out of the season board too (their other sessions in the season still count). They still count on the master leaderboard.</p>
+    <% if (statsCard.players.length === 0) { %>
+      <p class="muted">No players enrolled yet.</p>
+    <% } else { %>
+      <div style="columns:2;column-gap:24px;">
+        <% statsCard.players.forEach(function (p) { %>
+          <div class="checkbox-row">
+            <input type="checkbox" name="exclude" id="sx-<%= p.id %>" value="<%= p.id %>" <%= statsCard.excluded.has(p.id) ? 'checked' : '' %>>
+            <label for="sx-<%= p.id %>" style="margin:0;font-weight:400;"><%= fullName(p) %></label>
+          </div>
+        <% }) %>
+      </div>
+      <div class="actions"><button class="btn green" type="submit">Save exclusions</button></div>
+    <% } %>
+  </form>
+</div>

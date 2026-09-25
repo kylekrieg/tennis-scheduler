@@ -5,13 +5,14 @@
 <div class="card wide">
   <strong>Jump to:</strong>
   <ul style="margin:8px 0 0; padding-left:20px;">
-    <li><a href="#confirming">Confirming you're playing</a></li>
+    <li><a href="#signup">Signing up for a season</a></li>
     <li><a href="#blackout">Blackout dates</a></li>
     <li><a href="#request-sub">Request a Sub</a></li>
     <li><a href="#found-sub">I Found a Sub</a></li>
     <li><a href="#swap">Swap a Week</a></li>
     <li><a href="#timing">The full timeline: what happens, and when</a></li>
     <li><a href="#my-page">My Page</a></li>
+    <li><a href="#confirming">Confirming you're playing</a></li>
     <li><a href="#schedule">Season Schedule &amp; Next 4 Weeks</a></li>
     <li><a href="#weather">Weather forecast</a></li>
     <li><a href="#calendar">Calendar</a></li>
@@ -23,41 +24,6 @@
     <li><a href="#statuses">What do the badges mean?</a></li>
   </ul>
 </div>
-
-<h2 id="confirming">Confirming you're playing</h2>
-<p>A few days before a match, you'll get a reminder email with two links: confirm you're playing, or say you need a sub. Opening the email doesn't change anything — you click a button on the page it takes you to. No response? You'll get one follow-up nudge roughly a day before match time. Once match time passes, both links stop working and the week locks in as played.</p>
-<p class="muted" style="margin-bottom:0;">Here's what that email looks like:</p>
-<div class="email-mock">
-  <div class="email-mock-header">
-    <div class="to">To: jamie@example.com</div>
-    <div class="subject">Riverside Doubles Club — Doubles Wednesday, Sep 2, 6:00 PM, Court 2 — please confirm</div>
-  </div>
-  <div class="email-mock-body">
-    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
-      <div class="name">Wednesday Doubles — Riverside Doubles Club, Court 2</div>
-      <div class="date">Wednesday, Sep 2 &middot; 6:00 PM, Court 2</div>
-    </div>
-    <p>Hi Jamie Rivera,</p>
-    <p>You're scheduled to play doubles on <strong>Wednesday, Sep 2</strong> at 6:00 PM.</p>
-    <p>
-      <a href="#" class="btn-confirm">Confirm you're playing</a>
-      <a href="#" class="btn-needsub">Need a sub? Click here</a>
-    </p>
-    <p class="email-mock-flag"><strong>You're on ball duty this week</strong> &mdash; please bring the balls.</p>
-    <p style="margin:12px 0;display:flex;align-items:center;gap:8px;">
-      <img src="https://openweathermap.org/img/wn/01d@2x.png" width="40" height="40" alt="clear sky" style="display:inline-block;">
-      <span><strong>Forecast for match time:</strong> 74&deg;F, clear sky (5% chance of rain)</span>
-    </p>
-    <p><strong>Next few weeks:</strong></p>
-    <ul style="margin:4px 0;">
-      <li>Wednesday, Sep 9 &mdash; Alice Chen, Marcus Lee, Priya Nair, Dan Ostrow</li>
-      <li>Wednesday, Sep 16 &mdash; Alice Chen, Marcus Lee, Priya Nair, Jamie Rivera (ball duty: Priya Nair)</li>
-    </ul>
-    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Doubles Club &mdash; Court 2</p>
-    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
-  </div>
-</div>
-<p class="muted">The forecast line only shows up if your admin has turned on weather forecasts for this session — see <a href="#weather">Weather forecast</a> below.</p>
 
 <h2 id="signup">Signing up for a season</h2>
 <p>Before a new season's schedule is put together, you may be asked to declare how much you want to play at <a href="/signup">Sign Up</a>. Pick your name, choose full, half, or quarter time, and you'll see exactly how many weeks that comes to for this session — the page does the math for you from the admin's own tier percentages. Change your mind any time before the schedule is generated; your latest answer is what counts. Don't want a roster spot at all this time? Pick "Sub only" instead and you'll be added to this session's sub list rather than the roster. Not every session uses this page — some admins still set targets by hand instead.</p>
@@ -336,6 +302,41 @@
 <img class="screenshot" src="/img/help/my-page.png?v=<%= assetVersion %>" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
 <p class="screenshot-caption">Enrolled in more than one session? Each one gets its own colored card here — same color you'll see everywhere else that session shows up.</p>
 
+<h2 id="confirming">Confirming you're playing</h2>
+<p>A few days before a match, you'll get a reminder email with two links: confirm you're playing, or say you need a sub. Opening the email doesn't change anything — you click a button on the page it takes you to. No response? You'll get one follow-up nudge roughly a day before match time. Once match time passes, both links stop working and the week locks in as played.</p>
+<p class="muted" style="margin-bottom:0;">Here's what that email looks like:</p>
+<div class="email-mock">
+  <div class="email-mock-header">
+    <div class="to">To: jamie@example.com</div>
+    <div class="subject">Riverside Doubles Club — Doubles Wednesday, Sep 2, 6:00 PM, Court 2 — please confirm</div>
+  </div>
+  <div class="email-mock-body">
+    <div class="email-mock-banner" style="background:#0969da1a;border-left:5px solid #0969da;">
+      <div class="name">Wednesday Doubles — Riverside Doubles Club, Court 2</div>
+      <div class="date">Wednesday, Sep 2 &middot; 6:00 PM, Court 2</div>
+    </div>
+    <p>Hi Jamie Rivera,</p>
+    <p>You're scheduled to play doubles on <strong>Wednesday, Sep 2</strong> at 6:00 PM.</p>
+    <p>
+      <a href="#" class="btn-confirm">Confirm you're playing</a>
+      <a href="#" class="btn-needsub">Need a sub? Click here</a>
+    </p>
+    <p class="email-mock-flag"><strong>You're on ball duty this week</strong> &mdash; please bring the balls.</p>
+    <p style="margin:12px 0;display:flex;align-items:center;gap:8px;">
+      <img src="https://openweathermap.org/img/wn/01d@2x.png" width="40" height="40" alt="clear sky" style="display:inline-block;">
+      <span><strong>Forecast for match time:</strong> 74&deg;F, clear sky (5% chance of rain)</span>
+    </p>
+    <p><strong>Next few weeks:</strong></p>
+    <ul style="margin:4px 0;">
+      <li>Wednesday, Sep 9 &mdash; Alice Chen, Marcus Lee, Priya Nair, Dan Ostrow</li>
+      <li>Wednesday, Sep 16 &mdash; Alice Chen, Marcus Lee, Priya Nair, Jamie Rivera (ball duty: Priya Nair)</li>
+    </ul>
+    <p class="email-mock-footer" style="margin:0 0 4px;">Riverside Doubles Club &mdash; Court 2</p>
+    <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
+  </div>
+</div>
+<p class="muted">The forecast line only shows up if your admin has turned on weather forecasts for this session — see <a href="#weather">Weather forecast</a> below.</p>
+
 <h2 id="schedule">Season Schedule &amp; Next 4 Weeks</h2>
 <p><a href="/schedule">Season Schedule</a> shows the whole season at a glance — every date, who's playing, how they're paired up, and who's on ball duty. <a href="/lookahead">Next 4 Weeks</a> is the same table trimmed to just what's coming up soon.</p>
 <img class="screenshot" src="/img/help/next-four-weeks.png?v=<%= assetVersion %>" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
@@ -363,6 +364,8 @@
 <p>If your admin has turned this on for a session, you can log how a match actually went once it's over. Go to <a href="/scores">Enter Scores</a> — you'll get a grid for the whole match: one shared "total games played" number for the court, plus a "games won" box for each player, so anyone who was out there can fill in the whole thing at once instead of everyone typing their own number separately. There's also a per-player page if you'd rather just enter your own — pick your name from <a href="/scores">Enter Scores</a>'s lookup link. Counting games: regular games won count as 1 each; if a 7- or 10-point tiebreaker was played, whoever won it gets 1 point, same as any other game. Once a score is entered, you (or anyone) can still fix it for 24 hours — after that, only the admin can change it.</p>
 <p>Entered scores feed the <a href="/leaderboard">Leaderboard</a> page, which has two boards per session — total games won, and a win-percentage board (games won ÷ games played) so someone who's made every single week doesn't automatically outrank someone who's missed a few but wins a higher share of what they actually play. There's also an all-time version of each combining every session you've ever played in.</p>
 <p>The win % board has one wrinkle worth knowing: it only ranks a player once they've scored at least a minimum number of matches (your admin sets this per session, small by default) — otherwise one great night early in the season could outrank someone with a whole season of solid play behind them. If you don't see your name in the ranked table yet, check the "still building a sample" list right below it — that's where you'll show up until you cross that threshold, and your numbers are still right there, just not ranked yet.</p>
+
+<p>The Leaderboard page has a picker at the top with three levels: a single <strong>session</strong>, a <strong>season</strong> (a named group of sessions, like "Indoor 2026"), and the <strong>Master</strong> board covering everything since the admin last reset it. Each has a Leaderboard tab and a Graphs tab showing win % week by week and average games per match. Sessions with stats turned off don't appear or count anywhere.</p>
 
 <h2 id="adhoc">Pickup games (ad-hoc sessions)</h2>
 <p>Some sessions are pickup games instead of a fixed season schedule — filled week to week, first come first served. None of the sections above apply here: no season roster, no target games, no blackout dates, no confirm/need-a-sub flow. Signing up <em>is</em> your confirmation.</p>

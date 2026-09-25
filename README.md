@@ -118,7 +118,7 @@ sample:
 - **Season scheduler** — every player hits their target game count exactly, or the app explains precisely why not; partner pairings and ball duty spread out evenly. Runs multiple courts per week automatically (players-per-week just needs to be a multiple of 4).
 - **My Page** (`/me`) — one bookmarkable dashboard per player, across every session they're in: upcoming matches, ball duty, one-click sub/swap, calendar link.
 - **Blackout dates, Request a Sub, Swap a Week** — mark dates you can't play before the season's scheduled; after that, request a sub (opens to the whole roster) or propose a direct swap with one teammate. Every step that changes something needs a click-through from an emailed link, so nothing fires by accident.
-- **Calendar, PDF, Player Stats, leaderboard** — a subscribable calendar feed that stays current automatically, a one-page printable schedule, a public target/played/ball-duty table, and an informal games-won leaderboard.
+- **Calendar, PDF, Player Stats, leaderboard** — a subscribable calendar feed that stays current automatically, a one-page printable schedule, a public target/played/ball-duty table, and games-won / win % leaderboards at three levels (session, admin-named season, and a resettable master board) with win % and games-per-match graphs.
 - **Weather forecasts**, **dark mode**, **adjustable text size**, and a **mobile-friendly layout** — all self-service, all remembered per-browser.
 - **Double-booking**, if a player's enrolled in two overlapping sessions, is caught and shown everywhere they'd look — schedule, My Page, PDF, calendar invite — weeks in advance, not just to the admin.
 

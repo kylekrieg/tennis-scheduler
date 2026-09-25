@@ -537,6 +537,35 @@ ensureColumn('sessions', 'signup_pct_quarter', 'INTEGER NOT NULL DEFAULT 25');
 // column and gameScores.js's MIN_MATCHES_FOR_WIN_PCT doc comment.
 ensureColumn('sessions', 'min_matches_for_win_pct', 'INTEGER NOT NULL DEFAULT 2');
 
+// ---------------------------------------------------------------------------
+// Seasons + three-tier stats (Kyle, 2026-09-25) — see schema.sql's "Seasons
+// and the three-tier stats model" comment for the full model. All additive:
+// nothing existing is altered, and every existing session simply lands in
+// one starting season below.
+//
+// season_id is a plain nullable INTEGER (no REFERENCES clause) so it can be
+// added with ALTER TABLE on a table that already has rows; app code treats a
+// NULL as "not in a season" (it still counts toward the master).
+ensureColumn('sessions', 'season_id', 'INTEGER');
+// "Count this session's stats toward the season leaderboard" — defaults ON.
+ensureColumn('sessions', 'count_toward_season', 'INTEGER NOT NULL DEFAULT 1');
+// Global master-board settings live on the single app_settings row.
+ensureColumn('app_settings', 'master_stats_visible', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('app_settings', 'master_min_matches_for_win_pct', 'INTEGER NOT NULL DEFAULT 2');
+
+// One-time backfill: sessions that predate seasons all go into a single
+// starting season the admin can rename. Guarded so it only ever runs while
+// there are no seasons at all — after that, admins assign seasons
+// themselves and a NULL season_id is left alone.
+(function backfillInitialSeason() {
+  const orphans = raw.prepare('SELECT COUNT(*) AS n FROM sessions WHERE season_id IS NULL').get().n;
+  const seasonCount = raw.prepare('SELECT COUNT(*) AS n FROM seasons').get().n;
+  if (orphans > 0 && seasonCount === 0) {
+    const info = raw.prepare("INSERT INTO seasons (name) VALUES ('Initial season (rename me)')").run();
+    raw.prepare('UPDATE sessions SET season_id = ? WHERE season_id IS NULL').run(Number(info.lastInsertRowid));
+  }
+})();
+
 // Thin wrapper giving a better-sqlite3-like ergonomic API (prepare().run/get/all,
 // plus a convenience .exec) so the rest of the app reads the same regardless of
 // which underlying driver is in use.

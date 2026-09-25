@@ -446,3 +446,58 @@ CREATE INDEX IF NOT EXISTS idx_assignments_player ON week_assignments(player_id)
 CREATE INDEX IF NOT EXISTS idx_blackout_session_player ON blackout_dates(session_id, player_id);
 CREATE INDEX IF NOT EXISTS idx_player_constraints_session ON player_constraints(session_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_tokens_assignment ON week_assignment_tokens(week_assignment_id);
+
+-- ---------------------------------------------------------------------------
+-- Seasons and the three-tier stats model (Kyle, 2026-09-25).
+--
+-- Three boards, each computed live from the raw scores (week_assignments.
+-- games_won + week_court_games.games_played) — nothing here ever stores or
+-- deletes a score:
+--   * Session board  — everything scored in one session.
+--   * Season board   — every session in one season that has "count toward
+--                      season" on, minus excluded players.
+--   * Master board   — every session with stats on, every season, every
+--                      player, from the most recent master reset date on.
+-- A session with games_won_enabled = 0 ("Stats off") feeds none of these.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS seasons (
+  id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                      TEXT NOT NULL,            -- admin-named, e.g. "Indoor Frontenac 2026"
+  stats_visible             INTEGER NOT NULL DEFAULT 1, -- 0 hides this season's board and graphs from the public stats page (admin always sees it)
+  min_matches_for_win_pct   INTEGER NOT NULL DEFAULT 2, -- season board's own "still building a sample" cutoff
+  archived_at               TEXT,                      -- set when the whole season is archived (its sessions get the same timestamp — see admin.js's season archive route)
+  created_at                TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Players hidden from ONE session's board. A player excluded from a session
+-- also has THAT session's scores left out of the season board, but their
+-- other sessions in the same season still count. Never affects the master.
+CREATE TABLE IF NOT EXISTS session_stat_exclusions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  UNIQUE(session_id, player_id)
+);
+
+-- Players hidden from a season's board entirely (every session in it).
+CREATE TABLE IF NOT EXISTS season_stat_exclusions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  season_id   INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+  player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  UNIQUE(season_id, player_id)
+);
+
+-- Master leaderboard resets. A reset never deletes scores: it records the
+-- date the master starts counting from (weeks with match_date >= reset_date)
+-- and freezes a JSON snapshot of the board as it stood so the old standings
+-- stay viewable. `undone_at` set = the reset was rolled back and no longer
+-- counts as the baseline.
+CREATE TABLE IF NOT EXISTS master_stat_resets (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  reset_date     TEXT NOT NULL,   -- ISO date the new master period starts
+  label          TEXT NOT NULL,   -- e.g. "Master board before reset on 2027-05-01"
+  snapshot_json  TEXT NOT NULL,   -- { totals: [...], winPct: [...], since: <previous baseline date or null> }
+  created_by     TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  undone_at      TEXT
+);

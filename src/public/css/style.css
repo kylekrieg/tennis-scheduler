@@ -367,3 +367,59 @@ table.compact td { vertical-align: middle; }
 .flow-branch { flex: 1 1 220px; display: flex; flex-direction: column; min-width: 0; }
 .flow-branch .flow-branch-label { font-size: calc(11px * var(--text-scale, 1)); font-weight: 700; color: var(--muted); margin-bottom: 6px; text-align: center; }
 .flow-note { font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); border-left: 3px solid var(--border); padding: 4px 12px; margin: 4px 0 0; }
+
+/* ---- Stats page: view picker, tabs, charts (Kyle, 2026-09-25) ----------
+   Categorical slots --viz-s1..s8 are a fixed order (never cycled), validated
+   for colour-blind separation on both the light and dark site backgrounds.
+   Text never wears a series colour: marks carry identity, labels stay in
+   --ink / --muted. */
+:root {
+  --viz-s1: #2a78d6; --viz-s2: #eb6834; --viz-s3: #1baf7a; --viz-s4: #eda100;
+  --viz-s5: #e87ba4; --viz-s6: #008300; --viz-s7: #4a3aa7; --viz-s8: #e34948; --viz-grey: #9aa4b2;
+}
+[data-theme="dark"] {
+  --viz-s1: #3987e5; --viz-s2: #d95926; --viz-s3: #199e70; --viz-s4: #c98500;
+  --viz-s5: #d55181; --viz-s6: #008300; --viz-s7: #9085e9; --viz-s8: #e66767; --viz-grey: #6b7686;
+}
+.view-picker { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.view-picker label { font-weight: 600; margin: 0; }
+.view-picker select { max-width: 100%; }
+.stat-tabs { display: flex; gap: 4px; border-bottom: var(--border-width) solid var(--border); margin: 8px 0 16px; }
+.stat-tabs a { padding: 8px 14px; text-decoration: none; color: var(--muted); border: var(--border-width) solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; font-weight: 600; }
+.stat-tabs a.on { color: var(--ink); background: var(--bg-soft); border-color: var(--border); }
+.viz-wrap { margin: 8px 0 24px; }
+.viz-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.viz-seg { display: inline-flex; border: var(--border-width) solid var(--border); border-radius: 6px; overflow: hidden; }
+.viz-seg-btn { border: 0; background: var(--bg); color: var(--ink); padding: 6px 12px; cursor: pointer; font: inherit; font-size: calc(13px * var(--text-scale, 1)); }
+.viz-seg-btn.on { background: var(--bg-soft); font-weight: 700; box-shadow: inset 0 -2px 0 var(--ink); }
+.viz-plot { position: relative; }
+.viz-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.viz-svg:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.viz-grid { stroke: var(--border); stroke-width: 1; opacity: 0.6; }
+.viz-axis { stroke: var(--muted); stroke-width: 1; }
+.viz-cross { stroke: var(--muted); stroke-width: 1; }
+.viz-tick, .viz-cat { fill: var(--muted); font-size: 12px; }
+.viz-value { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.viz-endlabel { fill: var(--ink); font-size: 12px; }
+.viz-ref { stroke: var(--muted); stroke-width: 1; }
+.viz-reflabel { fill: var(--muted); font-size: 12px; }
+.viz-dot { stroke: var(--bg); stroke-width: 2; }
+.viz-bar.hot, .viz-bar:focus-visible { filter: brightness(1.12); outline: none; stroke: var(--ink); stroke-width: 1; }
+.viz-hit { cursor: crosshair; }
+.viz-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--bg); color: var(--ink); border: var(--border-width) solid var(--border); border-radius: 6px; padding: 8px 10px; box-shadow: 0 2px 8px rgba(0,0,0,.18); font-size: calc(13px * var(--text-scale, 1)); min-width: 150px; max-width: 260px; }
+.viz-tip[hidden] { display: none; }
+.viz-tip-title { font-weight: 700; margin-bottom: 4px; }
+.viz-tip-row { display: flex; align-items: center; gap: 6px; line-height: 1.5; }
+.viz-tip-val { font-variant-numeric: tabular-nums; }
+.viz-tip-name { color: var(--muted); }
+.viz-key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+.viz-key.off { background: transparent; border: 1px solid var(--muted); height: 3px; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.viz-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: var(--border-width) solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; font-size: calc(13px * var(--text-scale, 1)); }
+.viz-chip.on { color: var(--ink); background: var(--bg-soft); border-color: var(--ink); }
+.viz-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.viz-chip-val { font-variant-numeric: tabular-nums; opacity: 0.8; }
+.viz-legend-actions { display: inline-flex; gap: 12px; margin-left: 8px; }
+.viz-link { background: none; border: 0; color: var(--ink); text-decoration: underline; cursor: pointer; font: inherit; font-size: calc(13px * var(--text-scale, 1)); padding: 0; }
+.viz-note { margin: 6px 0 0; }
+.viz-table-wrap { overflow-x: auto; }

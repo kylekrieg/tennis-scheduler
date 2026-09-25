@@ -38,8 +38,8 @@
   </table>
 
   <div class="card wide" style="margin-top:16px;">
-    <h2 style="margin-top:0;">All-Time Leaderboard (all sessions combined)</h2>
-    <p class="muted">Every scored week across every session, summed into one board — archived sessions included. Broken out per-session further down.</p>
+    <h2 style="margin-top:0;">Master Leaderboard (all sessions combined)</h2>
+    <p class="muted">Every scored week across every session that has stats on, archived sessions included, counting <strong><%= masterBaseline ? 'matches dated ' + masterBaseline + ' and later' : 'from the very beginning' %></strong>. Manage or reset it on the <a href="/admin/master-stats">Master Board</a> page; per-season boards are on the <a href="/admin/seasons">Seasons</a> page. Broken out per-session further down.</p>
     <% if (overallLeaderboard.length === 0) { %>
       <p class="muted">No scores entered yet.</p>
     <% } else { %>
@@ -59,7 +59,7 @@
       </table>
     <% } %>
     <% if (overallWinLeaderboard.length) { %>
-      <h3>All-Time Win % Leaderboard</h3>
+      <h3>Master Win % Leaderboard</h3>
       <table class="wide">
         <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
         <tbody>

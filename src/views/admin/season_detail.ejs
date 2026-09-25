@@ -1,0 +1,65 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<h1><%= season.name %> <% if (season.archived_at) { %><span class="badge scheduled">archived</span><% } %></h1>
+<p><a href="/admin/seasons">&larr; All seasons</a> · <a href="/leaderboard?view=season:<%= season.id %>">View this season's board &amp; graphs</a></p>
+
+<form method="post" action="/admin/seasons/<%= season.id %>" class="card">
+  <label for="name">Season name</label>
+  <input type="text" name="name" id="name" value="<%= season.name %>" required>
+
+  <label for="stats_visible">Season stats visible to players</label>
+  <div class="checkbox-row">
+    <input type="checkbox" name="stats_visible" id="stats_visible" value="1" <%= season.stats_visible ? 'checked' : '' %>>
+    <label for="stats_visible" style="margin:0;font-weight:400;">Show this season's leaderboard and graphs on the public Leaderboard page</label>
+  </div>
+  <p class="muted">Applies to archived seasons too. Admins always see everything. This never changes any numbers.</p>
+
+  <label for="min_matches_for_win_pct">Win % board — minimum matches to be ranked</label>
+  <input type="number" name="min_matches_for_win_pct" id="min_matches_for_win_pct" value="<%= season.min_matches_for_win_pct %>" min="0" max="100">
+  <p class="muted">Players with fewer scored matches than this appear in the "still building a sample" list instead of the ranked table, on this season's board.</p>
+
+  <h2>Exclude players from this season's board</h2>
+  <p class="muted">Checked players are hidden from this season's leaderboard and graphs (all of its sessions). They still count on the <a href="/admin/master-stats">master leaderboard</a>, and on each session's own board unless you exclude them there too (on the session's page). A player excluded from one <em>session</em> only loses that session's scores from the season; their other sessions still count.</p>
+  <% if (players.length === 0) { %>
+    <p class="muted">No players yet — nobody is enrolled in or has played in this season's sessions.</p>
+  <% } else { %>
+    <div style="columns:2;column-gap:24px;">
+      <% players.forEach(function (p) { %>
+        <div class="checkbox-row">
+          <input type="checkbox" name="exclude" id="ex-<%= p.id %>" value="<%= p.id %>" <%= excluded.has(p.id) ? 'checked' : '' %>>
+          <label for="ex-<%= p.id %>" style="margin:0;font-weight:400;"><%= fullName(p) %></label>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+  <div class="actions"><button class="btn green" type="submit">Save season</button></div>
+</form>
+
+<h2>Sessions in this season</h2>
+<% if (sessions.length === 0) { %>
+  <p class="muted">No sessions yet. Pick this season on a session's edit page to add it here.</p>
+<% } else { %>
+  <table class="wide">
+    <thead><tr><th>Session</th><th>Dates</th><th>Stats</th><th>Counts toward season</th><th></th></tr></thead>
+    <tbody>
+      <% sessions.forEach(function (s) { %>
+        <tr>
+          <td><a href="/admin/sessions/<%= s.id %>"><%= sessionFullTitle(s) %></a> <% if (s.session_type === 'adhoc') { %><span class="badge scheduled">ad-hoc</span><% } %> <% if (s.archived_at) { %><span class="badge scheduled">archived</span><% } %></td>
+          <td class="muted"><%= s.start_date %> – <%= s.end_date %></td>
+          <td><%= s.games_won_enabled ? 'On' : 'Off — feeds nothing' %></td>
+          <td><%= s.games_won_enabled ? (s.count_toward_season ? 'Yes' : 'No') : '—' %></td>
+          <td><a href="/admin/sessions/<%= s.id %>/edit">Edit</a></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <p class="muted">"Stats" and "Counts toward season" are set on each session's edit page.</p>
+<% } %>
+
+<h2>Archive</h2>
+<% if (season.archived_at) { %>
+  <form method="post" action="/admin/seasons/<%= season.id %>/unarchive"><button class="btn neutral" type="submit">Unarchive season and its sessions</button></form>
+<% } else { %>
+  <p class="muted">Archiving hides the season's sessions from the dashboard and player schedule pages. Nothing is deleted and no stat changes.</p>
+  <form method="post" action="/admin/seasons/<%= season.id %>/archive" onsubmit="return confirm('Archive this season and all of its sessions? Nothing is deleted.');"><button class="btn neutral" type="submit">Archive season</button></form>
+<% } %>
+<%- include('../partials/footer') %>

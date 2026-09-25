@@ -32,6 +32,7 @@ const testEmail = require('../services/testEmail');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const weather = require('../services/weather');
 const gameScores = require('../services/gameScores');
+const statsBoards = require('../services/statsBoards');
 const playerBehaviorStats = require('../services/playerBehaviorStats');
 const playerConstraints = require('../services/playerConstraints');
 const signup = require('../services/signup');
@@ -261,7 +262,11 @@ router.get('/', (req, res) => {
     return { session: s, unconfirmed, unfilledSubs, unfilledBallDuty, staleBallDuty, needsAttention, conflicts, overlapping, doubleBooked, staleSwaps };
   });
 
-  res.render('admin/dashboard', { title: 'Admin', flags, adhocSessions, archivedSessions, flashMsg: popFlash(req) });
+  const seasonNames = {};
+  db.prepare('SELECT id, name FROM seasons').all().forEach((r) => {
+    seasonNames[r.id] = r.name;
+  });
+  res.render('admin/dashboard', { title: 'Admin', flags, adhocSessions, archivedSessions, seasonNames, flashMsg: popFlash(req) });
 });
 
 // Admin-only process walkthrough — static content, no DB queries needed. The
@@ -391,16 +396,16 @@ router.get('/stats', (req, res) => {
   // already aggregates across every active session, so it's the natural
   // admin-side home for the combined "total players leaderboard" alongside
   // the public /leaderboard page's own copy of the same two boards.
-  const overallLeaderboard = gameScores.overallLeaderboard();
-  // Uses the fallback threshold (no explicit arg), unlike public.js's
-  // /leaderboard route — this page sums every active session at once with
-  // no single session in context to draw a min_matches_for_win_pct value
-  // from (see gameScores.js's MIN_MATCHES_FOR_WIN_PCT doc comment). The
-  // `qualified` flag on each row is still there if this page ever grows the
-  // same "ranked vs. still-building" split the public page has.
-  const overallWinLeaderboard = gameScores.overallWinPercentLeaderboard();
+  // Now the MASTER board (Kyle, 2026-09-25): every session with stats on,
+  // from the latest master reset date on — see statsBoards.js. Session and
+  // season boards live on the public Leaderboard page and each season's admin page.
+  const masterSet = statsBoards.masterSettings();
+  const masterBaseline = statsBoards.masterBaseline();
+  const masterBoards = statsBoards.boardsForScope({ type: 'master' }, masterSet.minMatches);
+  const overallLeaderboard = masterBoards.totals;
+  const overallWinLeaderboard = masterBoards.winPct;
 
-  res.render('admin/all_stats', { title: 'Stats Summary', rows, overallLeaderboard, overallWinLeaderboard, flashMsg: popFlash(req) });
+  res.render('admin/all_stats', { title: 'Stats Summary', rows, overallLeaderboard, overallWinLeaderboard, masterBaseline, flashMsg: popFlash(req) });
 });
 
 router.post('/sessions/:id/archive', (req, res) => {
@@ -452,6 +457,284 @@ router.post('/sessions/:id/unlock-schedule', (req, res) => {
   logActivity(req, { action: 'session.unlock_schedule', description: `Unlocked the schedule for "${email.sessionFullTitle(session)}"`, sessionId: session.id });
   flash(req, `"${session.name}"'s schedule is unlocked again.`);
   res.redirect(`/admin/sessions/${session.id}`);
+});
+
+// ---------------------------------------------------------------------------
+// Seasons + three-tier stats (Kyle, 2026-09-25). See statsBoards.js's doc
+// comment for the inclusion rules and schema.sql's "Seasons and the
+// three-tier stats model" comment for the data model.
+// ---------------------------------------------------------------------------
+
+/** Seasons an admin can still assign new sessions to (open ones), plus the
+ * session's own current season even if that one has since been archived. */
+function seasonsForSessionForm(currentSeasonId) {
+  return db
+    .prepare(
+      'SELECT * FROM seasons WHERE archived_at IS NULL OR id = ? ORDER BY created_at DESC, id DESC'
+    )
+    .all(currentSeasonId || 0);
+}
+
+/**
+ * Validates the Season fields on the session form (a dropdown plus an
+ * optional "or create a new season named…" box). Returns { error } or
+ * { seasonId, newSeasonName } — nothing is written here, so a later
+ * validation failure never leaves a half-created season behind; call
+ * applySeasonSelection() once every other check has passed.
+ */
+function validateSeasonSelection(b, existingSession) {
+  const newName = (b.new_season_name || '').trim();
+  if (newName) {
+    const dup = db.prepare('SELECT id FROM seasons WHERE lower(name) = lower(?)').get(newName);
+    if (dup) {
+      return { error: `A season named "${newName}" already exists — pick it from the Season list instead.` };
+    }
+    return { newSeasonName: newName };
+  }
+  const seasonId = Number(b.season_id);
+  if (!seasonId) {
+    // Only an old session that never had a season may stay without one.
+    if (existingSession && !existingSession.season_id) return { seasonId: null };
+    return { error: 'Choose a season for this session (or type a name to create a new one).' };
+  }
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(seasonId);
+  if (!season) return { error: 'That season no longer exists — pick another.' };
+  if (season.archived_at && (!existingSession || existingSession.season_id !== season.id)) {
+    return { error: `"${season.name}" is archived — unarchive it first, or pick an open season.` };
+  }
+  return { seasonId: season.id };
+}
+
+function applySeasonSelection(sel) {
+  if (sel.newSeasonName) {
+    const info = db.prepare('INSERT INTO seasons (name) VALUES (?)').run(sel.newSeasonName);
+    return Number(info.lastInsertRowid);
+  }
+  return sel.seasonId || null;
+}
+
+/** Data for the "Stats" card on both session detail pages. */
+function sessionStatsCardData(session) {
+  const season = session.season_id ? db.prepare('SELECT * FROM seasons WHERE id = ?').get(session.season_id) : null;
+  const excluded = new Set(
+    db.prepare('SELECT player_id FROM session_stat_exclusions WHERE session_id = ?').all(session.id).map((r) => r.player_id)
+  );
+  return { season, players: statsBoards.sessionPlayerList(session.id), excluded };
+}
+
+function idList(v) {
+  return [].concat(v || []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+}
+
+router.get('/seasons', (req, res) => {
+  const seasons = db
+    .prepare(
+      `SELECT se.*, (SELECT COUNT(*) FROM sessions s WHERE s.season_id = se.id) AS session_count
+       FROM seasons se ORDER BY (se.archived_at IS NOT NULL), se.created_at DESC, se.id DESC`
+    )
+    .all();
+  res.render('admin/seasons', { title: 'Seasons', seasons, flashMsg: popFlash(req) });
+});
+
+router.post('/seasons', (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) {
+    flash(req, 'A season needs a name — e.g. "Indoor Frontenac 2026".', 'error');
+    return res.redirect('/admin/seasons');
+  }
+  if (db.prepare('SELECT id FROM seasons WHERE lower(name) = lower(?)').get(name)) {
+    flash(req, `A season named "${name}" already exists.`, 'error');
+    return res.redirect('/admin/seasons');
+  }
+  const info = db.prepare('INSERT INTO seasons (name) VALUES (?)').run(name);
+  const id = Number(info.lastInsertRowid);
+  logActivity(req, { action: 'season.create', description: `Created season "${name}"` });
+  flash(req, `Season "${name}" created. Pick it in the Season list when you create or edit a session.`);
+  res.redirect(`/admin/seasons/${id}`);
+});
+
+router.get('/seasons/:id', (req, res) => {
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(req.params.id);
+  if (!season) return res.status(404).send('Season not found');
+  const sessions = db
+    .prepare('SELECT * FROM sessions WHERE season_id = ? ORDER BY start_date, id')
+    .all(season.id);
+  const excluded = new Set(
+    db.prepare('SELECT player_id FROM season_stat_exclusions WHERE season_id = ?').all(season.id).map((r) => r.player_id)
+  );
+  res.render('admin/season_detail', {
+    title: season.name,
+    season,
+    sessions,
+    players: statsBoards.seasonPlayerList(season.id),
+    excluded,
+    flashMsg: popFlash(req),
+  });
+});
+
+router.post('/seasons/:id', (req, res) => {
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(req.params.id);
+  if (!season) return res.status(404).send('Season not found');
+  const b = req.body;
+  const name = (b.name || '').trim();
+  if (!name) {
+    flash(req, 'A season needs a name.', 'error');
+    return res.redirect(`/admin/seasons/${season.id}`);
+  }
+  const dup = db.prepare('SELECT id FROM seasons WHERE lower(name) = lower(?) AND id != ?').get(name, season.id);
+  if (dup) {
+    flash(req, `Another season is already named "${name}".`, 'error');
+    return res.redirect(`/admin/seasons/${season.id}`);
+  }
+  const minMatches = Number(b.min_matches_for_win_pct);
+  if (!Number.isInteger(minMatches) || minMatches < 0 || minMatches > 100) {
+    flash(req, 'Minimum matches for the win % board must be a whole number from 0 to 100.', 'error');
+    return res.redirect(`/admin/seasons/${season.id}`);
+  }
+  const allowed = new Set(statsBoards.seasonPlayerList(season.id).map((p) => p.id));
+  const excludedIds = idList(b.exclude).filter((id) => allowed.has(id));
+  const run = db.transaction(() => {
+    db.prepare('UPDATE seasons SET name = ?, stats_visible = ?, min_matches_for_win_pct = ? WHERE id = ?').run(
+      name,
+      b.stats_visible ? 1 : 0,
+      minMatches,
+      season.id
+    );
+    db.prepare('DELETE FROM season_stat_exclusions WHERE season_id = ?').run(season.id);
+    const ins = db.prepare('INSERT OR IGNORE INTO season_stat_exclusions (season_id, player_id) VALUES (?, ?)');
+    excludedIds.forEach((pid) => ins.run(season.id, pid));
+  });
+  run();
+  logActivity(req, {
+    action: 'season.update',
+    description: `Updated season "${name}" (stats ${b.stats_visible ? 'visible' : 'hidden'}, ${excludedIds.length} player(s) excluded, min matches ${minMatches})`,
+  });
+  flash(req, 'Season saved.');
+  res.redirect(`/admin/seasons/${season.id}`);
+});
+
+// Archiving a season archives every still-visible session in it with the
+// SAME timestamp, so unarchiving can restore exactly those sessions (and
+// leave alone any session an admin had archived on its own beforehand).
+// Nothing is deleted and no stat changes — archiving is only about clutter.
+router.post('/seasons/:id/archive', (req, res) => {
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(req.params.id);
+  if (!season) return res.status(404).send('Season not found');
+  if (season.archived_at) return res.redirect(`/admin/seasons/${season.id}`);
+  const ts = db.prepare("SELECT datetime('now') AS t").get().t;
+  const run = db.transaction(() => {
+    db.prepare('UPDATE seasons SET archived_at = ? WHERE id = ?').run(ts, season.id);
+    return db.prepare('UPDATE sessions SET archived_at = ? WHERE season_id = ? AND archived_at IS NULL').run(ts, season.id);
+  });
+  const result = run();
+  logActivity(req, { action: 'season.archive', description: `Archived season "${season.name}" (${result.changes} session(s))` });
+  flash(req, `"${season.name}" archived along with its ${result.changes} session(s). Nothing was deleted, and its stats stay viewable on the public Leaderboard page as long as stats are on.`);
+  res.redirect('/admin/seasons');
+});
+
+router.post('/seasons/:id/unarchive', (req, res) => {
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(req.params.id);
+  if (!season) return res.status(404).send('Season not found');
+  if (!season.archived_at) return res.redirect(`/admin/seasons/${season.id}`);
+  const run = db.transaction(() => {
+    const r = db.prepare('UPDATE sessions SET archived_at = NULL WHERE season_id = ? AND archived_at = ?').run(season.id, season.archived_at);
+    db.prepare('UPDATE seasons SET archived_at = NULL WHERE id = ?').run(season.id);
+    return r;
+  });
+  const result = run();
+  logActivity(req, { action: 'season.unarchive', description: `Restored season "${season.name}" from archive (${result.changes} session(s))` });
+  flash(req, `"${season.name}" restored along with ${result.changes} session(s).`);
+  res.redirect(`/admin/seasons/${season.id}`);
+});
+
+// Per-session player exclusions (hidden from this session's board, and this
+// session's scores drop out of the season board for them — never the master).
+router.post('/sessions/:id/stat-exclusions', (req, res) => {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  if (!session) return res.status(404).send('Session not found');
+  const allowed = new Set(statsBoards.sessionPlayerList(session.id).map((p) => p.id));
+  const excludedIds = idList(req.body.exclude).filter((id) => allowed.has(id));
+  const run = db.transaction(() => {
+    db.prepare('DELETE FROM session_stat_exclusions WHERE session_id = ?').run(session.id);
+    const ins = db.prepare('INSERT OR IGNORE INTO session_stat_exclusions (session_id, player_id) VALUES (?, ?)');
+    excludedIds.forEach((pid) => ins.run(session.id, pid));
+  });
+  run();
+  logActivity(req, {
+    action: 'session.stat_exclusions',
+    description: `Set stat exclusions for "${email.sessionFullTitle(session)}" (${excludedIds.length} player(s) excluded)`,
+    sessionId: session.id,
+  });
+  flash(req, `Stat exclusions saved — ${excludedIds.length} player(s) excluded from this session's board and its season's board.`);
+  res.redirect(`/admin/sessions/${session.id}#stats-card`);
+});
+
+// Master leaderboard: visibility, win % threshold, and the type-to-confirm reset.
+router.get('/master-stats', (req, res) => {
+  const settings = statsBoards.masterSettings();
+  const baseline = statsBoards.masterBaseline();
+  const current = statsBoards.boardsForScope({ type: 'master', from: baseline, to: null }, settings.minMatches);
+  const resets = db.prepare('SELECT * FROM master_stat_resets ORDER BY reset_date DESC, id DESC').all();
+  res.render('admin/master_stats', {
+    title: 'Master Leaderboard',
+    settings,
+    baseline,
+    top: current.totals.slice(0, 3),
+    scoredRows: current.scoredRows,
+    resets,
+    today: statsBoards.todayLocalISO(),
+    flashMsg: popFlash(req),
+  });
+});
+
+router.post('/master-stats/settings', (req, res) => {
+  const minMatches = Number(req.body.min_matches_for_win_pct);
+  if (!Number.isInteger(minMatches) || minMatches < 0 || minMatches > 100) {
+    flash(req, 'Minimum matches must be a whole number from 0 to 100.', 'error');
+    return res.redirect('/admin/master-stats');
+  }
+  db.prepare('UPDATE app_settings SET master_stats_visible = ?, master_min_matches_for_win_pct = ? WHERE id = 1').run(
+    req.body.master_stats_visible ? 1 : 0,
+    minMatches
+  );
+  logActivity(req, {
+    action: 'master_stats.settings',
+    description: `Master leaderboard: ${req.body.master_stats_visible ? 'visible' : 'hidden'} to players, min matches ${minMatches}`,
+  });
+  flash(req, 'Master leaderboard settings saved.');
+  res.redirect('/admin/master-stats');
+});
+
+router.post('/master-stats/reset', (req, res) => {
+  if ((req.body.confirm || '').trim() !== 'RESET') {
+    flash(req, 'Reset cancelled — you have to type RESET (capital letters) in the box to confirm.', 'error');
+    return res.redirect('/admin/master-stats');
+  }
+  const reset = statsBoards.resetMaster({ createdBy: req.session.adminName || null });
+  logActivity(req, {
+    action: 'master_stats.reset',
+    description: `Reset the master leaderboard — it now counts weeks dated ${reset.reset_date} onward (session and season boards untouched)`,
+  });
+  flash(req, `Master leaderboard reset. It now counts matches dated ${reset.reset_date} and later. The previous standings are saved below and no scores were deleted.`);
+  res.redirect('/admin/master-stats');
+});
+
+router.post('/master-stats/undo', (req, res) => {
+  if ((req.body.confirm || '').trim() !== 'UNDO') {
+    flash(req, 'Undo cancelled — type UNDO (capital letters) in the box to confirm.', 'error');
+    return res.redirect('/admin/master-stats');
+  }
+  const undone = statsBoards.undoLastReset();
+  if (!undone) {
+    flash(req, 'There is no reset to undo.', 'error');
+    return res.redirect('/admin/master-stats');
+  }
+  logActivity(req, {
+    action: 'master_stats.undo_reset',
+    description: `Undid the master leaderboard reset dated ${undone.reset_date}`,
+  });
+  flash(req, `The ${undone.reset_date} reset was undone. The master board counts from the previous baseline again.`);
+  res.redirect('/admin/master-stats');
 });
 
 router.get('/settings', (req, res) => {
@@ -760,9 +1043,11 @@ router.post('/backup/:filename/delete', (req, res) => {
 
 router.get('/sessions/new', (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
+  const seasonChoices = seasonsForSessionForm(null);
   res.render('admin/session_form', {
     title: 'New Session',
     session: null,
+    seasonChoices,
     players,
     enrolled: new Map(),
     enrolledPriority: new Map(),
@@ -1063,6 +1348,12 @@ router.post('/sessions', (req, res) => {
     flash(req, weatherError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const seasonSel = validateSeasonSelection(b, null);
+  if (seasonSel.error) {
+    flash(req, seasonSel.error, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
+  const seasonIdForSession = applySeasonSelection(seasonSel);
   const info = db
     .prepare(
       `INSERT INTO sessions (name, start_date, end_date, match_day_of_week, match_time, reminder_time,
@@ -1114,6 +1405,11 @@ router.post('/sessions', (req, res) => {
       sessionType === 'adhoc' ? 'active' : 'draft'
     );
   const sessionId = info.lastInsertRowid;
+  db.prepare('UPDATE sessions SET season_id = ?, count_toward_season = ? WHERE id = ?').run(
+    seasonIdForSession,
+    b.count_toward_season ? 1 : 0,
+    sessionId
+  );
   if (sessionType === 'adhoc') {
     saveAdhocRoster(sessionId, b);
   } else {
@@ -1129,12 +1425,15 @@ router.post('/sessions', (req, res) => {
     description: `Created ${sessionType === 'adhoc' ? 'ad-hoc ' : ''}session "${email.sessionFullTitle(db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId))}"`,
     sessionId,
   });
+  const statsNote = b.games_won_enabled
+    ? ''
+    : ' Note: Stats are OFF for this session, so nothing from it will count toward its season or the master leaderboard.';
   const overlapWarning = overlapWarningText(sessionId);
   const baseMsg =
     sessionType === 'adhoc'
       ? 'Ad-hoc session created. Sign-up invites go out automatically before each match based on the timing you set — nothing else to click.'
       : 'Session created. Add blackout dates, then click "Schedule these players" when ready.';
-  flash(req, overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg, overlapWarning ? 'error' : 'ok');
+  flash(req, (overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg) + statsNote, overlapWarning || statsNote ? 'error' : 'ok');
   res.redirect(`/admin/sessions/${sessionId}`);
 });
 
@@ -1244,6 +1543,7 @@ router.get('/sessions/:id/edit', (req, res) => {
   res.render('admin/session_form', {
     title: 'Edit Session',
     session,
+    seasonChoices: seasonsForSessionForm(session.season_id),
     players,
     enrolled,
     enrolledPriority,
@@ -1378,6 +1678,12 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, weatherError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const seasonSel = validateSeasonSelection(b, existingSession);
+  if (seasonSel.error) {
+    flash(req, seasonSel.error, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
+  const seasonIdForSession = applySeasonSelection(seasonSel);
   db.prepare(
     `UPDATE sessions SET name=?, start_date=?, end_date=?, match_day_of_week=?, match_time=?, reminder_time=?,
      reminder_days_before=?, follow_up_lead_hours=?, reminders_enabled=?, courts=?, players_per_week=?, lookahead_weeks=?, club_name=?, court_info=?, color=?,
@@ -1415,6 +1721,11 @@ router.post('/sessions/:id', (req, res) => {
       : 2,
     req.params.id
   );
+  db.prepare('UPDATE sessions SET season_id = ?, count_toward_season = ? WHERE id = ?').run(
+    seasonIdForSession,
+    b.count_toward_season ? 1 : 0,
+    req.params.id
+  );
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
   const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   logActivity(req, {
@@ -1422,12 +1733,15 @@ router.post('/sessions/:id', (req, res) => {
     description: `Updated session "${email.sessionFullTitle(updatedSession)}" (${describeSessionChanges(existingSession, updatedSession, rosterResult)})`,
     sessionId: Number(req.params.id),
   });
+  const statsNote = b.games_won_enabled
+    ? ''
+    : ' Note: Stats are OFF for this session, so nothing from it will count toward its season or the master leaderboard.';
   const overlapWarning = overlapWarningText(req.params.id);
   const baseMsg =
     sessionType === 'adhoc'
       ? 'Ad-hoc session updated.'
       : 'Session updated. Click "Schedule these players" to (re)generate the schedule for open weeks.';
-  flash(req, overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg, overlapWarning ? 'error' : 'ok');
+  flash(req, (overlapWarning ? `${baseMsg} ${overlapWarning}` : baseMsg) + statsNote, overlapWarning || statsNote ? 'error' : 'ok');
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 
@@ -1566,11 +1880,19 @@ router.get('/sessions/:id', (req, res) => {
       } catch (e) {
         matchAt = null;
       }
-      return { week: w, ...groups, finalized, finalizedAssignments, matchAt, weather: weather.getCachedWeather(w.id) };
+      const courtsGamesPlayed = [...new Set(finalizedAssignments.map((a) => a.court))]
+        .sort((a, b) => a - b)
+        .map((court) => {
+          const gpRow = gameScores.gamesPlayedRowForWeekCourt(w.id, court);
+          return { court, gamesPlayed: gpRow ? gpRow.games_played : null };
+        });
+      return { week: w, ...groups, finalized, finalizedAssignments, courtsGamesPlayed, matchAt, weather: weather.getCachedWeather(w.id) };
     });
     return res.render('admin/adhoc_session_detail', {
       title: session.name,
       session,
+      statsCard: sessionStatsCardData(session),
+      maxGames: gameScores.MAX_GAMES,
       roster,
       weekRows,
       flashMsg: popFlash(req),
@@ -1816,6 +2138,7 @@ router.get('/sessions/:id', (req, res) => {
   res.render('admin/session_detail', {
     title: session.name,
     session,
+    statsCard: sessionStatsCardData(session),
     weekRows,
     roster,
     subListCandidates,

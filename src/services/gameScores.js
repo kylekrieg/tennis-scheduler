@@ -580,6 +580,7 @@ function sessionLeaderboard(sessionId) {
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
        WHERE w.session_id = ? AND wa.games_won IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM session_stat_exclusions x WHERE x.session_id = w.session_id AND x.player_id = wa.player_id)
        GROUP BY wa.player_id
        ORDER BY total DESC, (total * 1.0 / matches) DESC, p.name ASC`
     )
@@ -631,6 +632,7 @@ function sessionWinPercentLeaderboard(sessionId) {
        JOIN players p ON p.id = wa.player_id
        JOIN week_court_games wcg ON wcg.week_id = wa.week_id AND wcg.court = wa.court
        WHERE w.session_id = ? AND wa.games_won IS NOT NULL AND wcg.games_played IS NOT NULL AND wcg.games_played > 0
+         AND NOT EXISTS (SELECT 1 FROM session_stat_exclusions x WHERE x.session_id = w.session_id AND x.player_id = wa.player_id)
        GROUP BY wa.player_id
        ORDER BY (gw * 1.0 / gp) DESC, matches DESC, p.name ASC`
     )

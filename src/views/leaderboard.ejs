@@ -1,126 +1,184 @@
 <%- include('partials/header', {title, wideMain: true}) %>
+<%
+  function pctFmt(v) { return (v * 100).toFixed(1) + '%'; }
+  var isSession = view.kind === 'session';
+  var isSeason = view.kind === 'season';
+  var isMaster = view.kind === 'master';
+  var qs = function (t) { return '?view=' + encodeURIComponent(view.key) + (t === 'graphs' ? '&tab=graphs' : ''); };
+  var ranked = data.winPct.filter(function (r) { return r.qualified; });
+  var building = data.winPct.filter(function (r) { return !r.qualified; });
+%>
 <h1>Leaderboard</h1>
-<p class="muted">Total games won this season, from scores entered on <a href="/scores?session=<%= session.id %>">the Scores page</a>. Only counts weeks that have actually been played and scored — someone who hasn't had a score entered yet just isn't on the board. Want to check a week's numbers instead of just the running total? See <a href="/scores/history?session=<%= session.id %>">Score History</a>.</p>
-<%- include('partials/session_picker', {sessions, session}) %>
 
-<% if (board.length === 0) { %>
-  <p class="muted">No scores entered yet for this session.</p>
-<% } else { %>
-  <div class="table-scroll">
-<table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
-    <tbody>
-      <% board.forEach(function(row, i) { %>
-        <tr>
-          <td><%= i + 1 %></td>
-          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
-          <td><strong><%= row.totalGames %></strong></td>
-          <td><%= row.matchesScored %></td>
-          <td><%= row.avgPerMatch.toFixed(1) %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+<form method="get" class="view-picker">
+  <input type="hidden" name="tab" value="<%= tab %>">
+  <label for="view">Showing</label>
+  <select name="view" id="view" onchange="this.form.submit()">
+    <% groups.forEach(function (g) { %>
+      <optgroup label="<%= g.label %>">
+        <% g.options.forEach(function (o) { %>
+          <option value="<%= o.value %>" <%= o.value === view.key ? 'selected' : '' %>><%= o.label %></option>
+        <% }) %>
+      </optgroup>
+    <% }) %>
+  </select>
+  <noscript><button class="btn small neutral" type="submit">Go</button></noscript>
+</form>
+
+<% if (notice) { %><div class="flag"><%= notice %></div><% } %>
+
+<div class="card wide" style="padding:12px 16px;margin-bottom:8px;<%= isSession ? 'border-left:6px solid ' + sessionColor(view.session) + ';' : '' %>">
+  <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">
+    <%= isMaster ? 'Master leaderboard' : (isSeason ? 'Season' : 'Session') %><% if (view.detail && !isMaster && view.detail.indexOf('archived') === 0) { %> &middot; <%= view.detail %><% } %>
+  </div>
+  <div style="font-size:19px;font-weight:700;"><%= isSession ? sessionFullTitle(view.session) : (isMaster ? (view.key === 'master' ? 'Every session, every player' : 'Past master period') : view.label) %></div>
+  <p class="muted" style="margin:6px 0 0;">
+    <% if (isMaster) { %>
+      Combines every session that has stats on, across all seasons and all players. Counting matches <strong><%= view.detail %></strong>.
+    <% } else if (isSeason) { %>
+      Combines <%= includedSessions.length %> session(s): <%= includedSessions.map(function (s) { return s.name + (s.court_info ? ' · ' + s.court_info : ''); }).join(', ') || 'none yet' %>.
+    <% } else { %>
+      Scores entered for this session only.
+    <% } %>
+  </p>
 </div>
-<% } %>
 
-<h2 style="margin-top:28px;">Win % Leaderboard</h2>
-<p class="muted">Ranked by games won ÷ games played instead of a raw total, so someone who's made every week doesn't automatically outrank someone who's missed a few but wins a higher share of the games they actually play. Only counts weeks where both games won AND games played were entered — a week scored before games-played tracking started won't count here even if it's on the total-games board above. No minimum number of weeks required to appear.</p>
-<% if (winBoard.length === 0) { %>
-  <p class="muted">No weeks with both games won and games played entered yet for this session.</p>
-<% } else { %>
-  <div class="table-scroll">
-<table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
-    <tbody>
-      <% winBoard.forEach(function(row, i) { %>
-        <tr>
-          <td><%= i + 1 %></td>
-          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
-          <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
-          <td><%= row.gamesWon %></td>
-          <td><%= row.gamesPlayed %></td>
-          <td><%= row.matchesScored %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-</div>
-<% } %>
+<nav class="stat-tabs" aria-label="Leaderboard sections">
+  <a href="<%= qs('boards') %>" class="<%= tab === 'boards' ? 'on' : '' %>">Leaderboards</a>
+  <a href="<%= qs('graphs') %>" class="<%= tab === 'graphs' ? 'on' : '' %>">Graphs</a>
+</nav>
 
-<h2 style="margin-top:36px;">All-Time Leaderboard (all sessions)</h2>
-<p class="muted">Every scored week across every session anyone's ever played, combined into one board — not just this session.</p>
-<% if (overallBoard.length === 0) { %>
-  <p class="muted">No scores entered yet.</p>
-<% } else { %>
-  <div class="table-scroll">
-<table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
-    <tbody>
-      <% overallBoard.forEach(function(row, i) { %>
-        <tr>
-          <td><%= i + 1 %></td>
-          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
-          <td><strong><%= row.totalGames %></strong></td>
-          <td><%= row.matchesScored %></td>
-          <td><%= row.avgPerMatch.toFixed(1) %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-</div>
-<% } %>
+<% if (tab === 'boards') { %>
 
-<h3 style="margin-top:20px;">All-Time Win % Leaderboard</h3>
-<p class="muted">Ranked by win % like the session board above, but requires at least <%= minMatchesForWinPct %> matches scored to appear here — otherwise a sub who's played one match and won it can outrank someone with a full season behind them. Players below that bar aren't hidden, just listed separately below once they've got a match or two in.</p>
-<% if (overallWinBoard.length === 0 && overallWinBoardBuilding.length === 0) { %>
-  <p class="muted">No weeks with both games won and games played entered yet.</p>
-<% } else { %>
-  <% if (overallWinBoard.length === 0) { %>
-    <p class="muted">Nobody has reached <%= minMatchesForWinPct %> matches scored yet — check the "still building a sample" list below.</p>
+  <h2>Total games won</h2>
+  <p class="muted">Counts only weeks that have been played and scored &mdash; someone who hasn't had a score entered yet just isn't on the board.</p>
+  <% if (data.totals.length === 0) { %>
+    <p class="muted">No scores entered yet here.</p>
   <% } else { %>
     <div class="table-scroll">
-<table>
-    <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
-    <tbody>
-      <% overallWinBoard.forEach(function(row, i) { %>
-        <tr>
-          <td><%= i + 1 %></td>
-          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
-          <td><strong><%= (row.winPct * 100).toFixed(1) %>%</strong></td>
-          <td><%= row.gamesWon %></td>
-          <td><%= row.gamesPlayed %></td>
-          <td><%= row.matchesScored %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-</div>
+      <table>
+        <thead><tr><th>Rank</th><th>Player</th><th>Total games won</th><th>Matches scored</th><th>Avg per match</th></tr></thead>
+        <tbody>
+          <% data.totals.forEach(function (row, i) { %>
+            <tr>
+              <td><%= i + 1 %></td>
+              <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+              <td><strong><%= row.totalGames %></strong></td>
+              <td><%= row.matchesScored %></td>
+              <td><%= row.avgPerMatch.toFixed(1) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 
-  <% if (overallWinBoardBuilding.length > 0) { %>
-    <h4 style="margin-top:20px;">Still building a sample (fewer than <%= minMatchesForWinPct %> matches scored)</h4>
-    <div class="table-scroll">
-<table>
-    <thead><tr><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
-    <tbody>
-      <% overallWinBoardBuilding.forEach(function(row) { %>
-        <tr>
-          <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
-          <td><%= (row.winPct * 100).toFixed(1) %>%</td>
-          <td><%= row.gamesWon %></td>
-          <td><%= row.gamesPlayed %></td>
-          <td><%= row.matchesScored %></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-</div>
+  <h2 style="margin-top:28px;">Win % leaderboard</h2>
+  <p class="muted">Ranked by games won &divide; games played, so attendance alone doesn't decide it. Only counts weeks where both a player's games won and the match's total games played have been entered. Needs at least <%= minMatches %> scored match(es) to be ranked; everyone else is in the &ldquo;still building a sample&rdquo; list below.</p>
+  <% if (data.winPct.length === 0) { %>
+    <p class="muted">No weeks with both games won and games played entered yet.</p>
+  <% } else { %>
+    <% if (ranked.length === 0) { %>
+      <p class="muted">Nobody has reached <%= minMatches %> matches scored yet &mdash; see the list below.</p>
+    <% } else { %>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Rank</th><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
+          <tbody>
+            <% ranked.forEach(function (row, i) { %>
+              <tr>
+                <td><%= i + 1 %></td>
+                <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+                <td><strong><%= pctFmt(row.winPct) %></strong></td>
+                <td><%= row.gamesWon %></td>
+                <td><%= row.gamesPlayed %></td>
+                <td><%= row.matchesScored %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <% if (building.length > 0) { %>
+      <h4 style="margin-top:20px;">Still building a sample (fewer than <%= minMatches %> matches scored)</h4>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Player</th><th>Win %</th><th>Games won</th><th>Games played</th><th>Matches scored</th></tr></thead>
+          <tbody>
+            <% building.forEach(function (row) { %>
+              <tr>
+                <td><a href="/me/<%= row.player.slug || row.player.id %>"><%= row.player.name %></a></td>
+                <td><%= pctFmt(row.winPct) %></td>
+                <td><%= row.gamesWon %></td>
+                <td><%= row.gamesPlayed %></td>
+                <td><%= row.matchesScored %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
   <% } %>
+
+<% } else { %>
+
+  <% var S = data.winSeries; var G = data.avgGames; %>
+  <h2>Win % <%= S.axis === 'week' ? 'by week' : 'over time' %></h2>
+  <p class="muted">One line per player. <strong><%= S.axis === 'week' ? 'Season to date' : 'Running total' %></strong> is games won &divide; games played so far, which steadies out over time; switch to <strong><%= S.axis === 'week' ? 'Each week only' : 'Each match day only' %></strong> to see single matches. A line starts at a player's first scored match and stays flat on weeks they don't play.</p>
+  <% if (S.players.length === 0) { %>
+    <p class="muted">No weeks with both games won and games played entered yet, so there's nothing to graph.</p>
+  <% } else { %>
+    <div id="winpct-chart"></div>
+    <details class="viz-table-wrap">
+      <summary>View win % as a table</summary>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Player</th><% S.labels.forEach(function (l) { %><th><%= l %></th><% }) %></tr></thead>
+          <tbody>
+            <% S.players.forEach(function (p) { %>
+              <tr>
+                <td><%= p.name %></td>
+                <% p.cumulative.forEach(function (v) { %><td><%= v == null ? '—' : pctFmt(v) %></td><% }) %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">Cumulative win % at the end of each <%= S.axis === 'week' ? 'week' : 'match day' %>.</p>
+    </details>
+  <% } %>
+
+  <h2 style="margin-top:32px;">Average games per match</h2>
+  <p class="muted">A &ldquo;match&rdquo; is one court's match in one week. <%= G.mode === 'weeks' ? 'Average games played per match, week by week.' : 'Average games played per match in each session.' %> Only matches with a games-played total entered are counted.</p>
+  <% if (G.points.length === 0) { %>
+    <p class="muted">No matches with a games-played total entered yet.</p>
+  <% } else { %>
+    <div id="games-chart"></div>
+    <details class="viz-table-wrap">
+      <summary>View games per match as a table</summary>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th><%= G.mode === 'weeks' ? 'Week' : 'Session' %></th><th>Avg games per match</th><th>Matches scored</th></tr></thead>
+          <tbody>
+            <% G.points.forEach(function (p) { %>
+              <tr><td><%= p.label %></td><td><%= p.average %></td><td><%= p.matches %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">Overall average: <%= G.average %> games per match across <%= G.matches %> match(es).</p>
+    </details>
+  <% } %>
+
+  <script type="application/json" id="stats-data"><%- chartJson %></script>
+  <script src="/js/statsCharts.js?v=<%= assetVersion %>" defer></script>
+
 <% } %>
 
-<p class="actions" style="margin-top:16px;">
-  <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
-  <a class="btn small neutral" href="/scores/history?session=<%= session.id %>">Score History</a>
-</p>
+<% if (scoresSession) { %>
+  <p class="actions" style="margin-top:16px;">
+    <a class="btn small neutral" href="/scores?session=<%= scoresSession.id %>">Enter your scores</a>
+    <a class="btn small neutral" href="/scores/history?session=<%= scoresSession.id %>">Score History</a>
+  </p>
+<% } %>
 <%- include('partials/footer') %>

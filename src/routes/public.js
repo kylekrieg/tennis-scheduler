@@ -20,6 +20,7 @@ const honeypot = require('../services/honeypot');
 const { logPlayerActivity, logGroupScoreActivity } = require('../services/activityLog');
 const { fullName } = require('../services/playerName');
 const gameScores = require('../services/gameScores');
+const statsBoards = require('../services/statsBoards');
 const { getTimezone } = require('../services/settings');
 const { utcToZonedParts } = require('../services/tz');
 
@@ -171,69 +172,53 @@ router.get('/stats', (req, res) => {
 // when more than one is viewable. See gameScores.js's sessionLeaderboard()
 // doc comment for exactly how ties are broken.
 router.get('/leaderboard', (req, res) => {
-  const { session, sessions } = resolveSession(req, { gamesWonOnly: true });
-  if (!session) {
-    // Distinguish "no session at all" from "there are sessions, just none
-    // tracking games won" (Kyle, 2026-09-10, per-session opt-out) — the
-    // generic no_session page's "check back once the admin has set one up"
-    // wording would be actively wrong for the latter case.
+  const isAdmin = !!(req.session && req.session.isAdmin);
+  // Legacy links (?session=<id>) from the schedule/My Page/Scores pages map
+  // straight onto the new ?view=session:<id> form.
+  let requested = req.query.view;
+  if (!requested && req.query.session) requested = `session:${Number(req.query.session)}`;
+  let view = statsBoards.resolveView(requested, { isAdmin });
+  const notice = requested && !view ? "That board isn't available (stats may be turned off for it), so here's another one." : null;
+  if (!view) view = statsBoards.resolveView(statsBoards.defaultView({ isAdmin }), { isAdmin });
+  const groups = statsBoards.selectorGroups({ isAdmin });
+  if (!view || groups.length === 0) {
     if (getViewableSessions().length > 0) {
       return res.render('message', {
         title: 'Leaderboard',
         heading: 'Not tracked here',
-        body: "Games-won tracking isn't turned on for any current session.",
+        body: "Stats aren't turned on for any current session or season.",
         tone: 'ok',
       });
     }
     return res.render('no_session', { title: 'Leaderboard' });
   }
-  const board = gameScores.sessionLeaderboard(session.id);
-  // Win %-based ranking added alongside the total-games one above (Kyle,
-  // 2026-09-10) — see gameScores.js's sessionWinPercentLeaderboard() doc
-  // comment for why it's a second table rather than a replacement.
-  const winBoard = gameScores.sessionWinPercentLeaderboard(session.id);
-  // All-time, all-sessions boards (Kyle, 2026-09-10: "we should have a total
-  // leaderboard for all of the players entered into the system... broken
-  // out into each session, but also have a total players leaderboard") —
-  // the ROWS in these two are deliberately NOT scoped by the session picker
-  // above (resolveSession() only affects which single session's two
-  // session-scoped boards show; these two always sum every session
-  // combined). The win% board's QUALIFICATION CUTOFF is the one thing that
-  // does still depend on the picker, though — see the next comment.
-  const overallBoard = gameScores.overallLeaderboard();
-  // Split into a "qualified" ranked table and a small-sample "still
-  // building" one (Kyle, 2026-09-23) — a sub who's played one match and won
-  // it was outranking players with a full season of matches. See
-  // MIN_MATCHES_FOR_WIN_PCT's doc comment in gameScores.js for why the
-  // threshold is matches-scored rather than games-played, and why nobody is
-  // dropped from the page entirely, just moved out of the ranked table.
-  //
-  // Made a per-session admin field the same day (Kyle: "should we set that
-  // the min_matches as admin level parameter when setting up each
-  // session?") — sessions.min_matches_for_win_pct, defaulting to 2 for every
-  // session. The all-time board itself has no single "owning" session, so
-  // this uses the CURRENTLY-VIEWED session's own configured value (the one
-  // the picker above resolved) as the cutoff for this cross-session board —
-  // see MIN_MATCHES_FOR_WIN_PCT's doc comment in gameScores.js for the full
-  // reasoning. Falls back to the gameScores.js default if the field is
-  // somehow missing (a session row that predates the migration, before the
-  // next boot's ensureColumn backfill runs).
-  const minMatchesForWinPct = session.min_matches_for_win_pct != null
-    ? session.min_matches_for_win_pct
-    : gameScores.MIN_MATCHES_FOR_WIN_PCT;
-  const overallWinBoardAll = gameScores.overallWinPercentLeaderboard(minMatchesForWinPct);
-  const overallWinBoard = overallWinBoardAll.filter((r) => r.qualified);
-  const overallWinBoardBuilding = overallWinBoardAll.filter((r) => !r.qualified);
+  const tab = req.query.tab === 'graphs' ? 'graphs' : 'boards';
+  const data = statsBoards.boardsForScope(view.scope, view.minMatches);
+
+  // Sessions feeding a season/master board, so the page can say plainly
+  // what's included.
+  let includedSessions = [];
+  if (view.kind === 'season') {
+    includedSessions = db
+      .prepare(
+        `SELECT * FROM sessions WHERE season_id = ? AND games_won_enabled = 1 AND count_toward_season = 1 ORDER BY start_date, id`
+      )
+      .all(view.season.id);
+  }
+  // Charts get one JSON blob (rendered into a non-executing script tag).
+  const chartJson = JSON.stringify({ winSeries: data.winSeries, avgGames: data.avgGames }).replace(/</g, '\\u003c');
+
   res.render('leaderboard', {
     title: 'Leaderboard',
-    session,
-    sessions,
-    board,
-    winBoard,
-    overallBoard,
-    overallWinBoard,
-    overallWinBoardBuilding,
-    minMatchesForWinPct,
+    view,
+    groups,
+    tab,
+    data,
+    includedSessions,
+    notice,
+    chartJson,
+    minMatches: view.minMatches,
+    scoresSession: view.kind === 'session' && view.session.games_won_enabled ? view.session : null,
   });
 });
 

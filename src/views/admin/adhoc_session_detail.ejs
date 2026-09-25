@@ -32,6 +32,27 @@
       <% Object.keys(byCourt).forEach(function (courtNum) { %>
         <p><strong>Court <%= courtNum %>:</strong> <%= byCourt[courtNum].map(function (a) { return fullName(a); }).join(', ') %></p>
       <% }) %>
+      <% if (session.games_won_enabled && wr.week.locked) { %>
+        <div style="margin-top:8px;">
+          <% wr.courtsGamesPlayed.forEach(function (cg) { %>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/court/<%= cg.court %>/games-played" style="display:inline-flex;align-items:center;gap:4px;margin-right:16px;">
+              <span class="muted" style="font-size:11px;">Court <%= cg.court %> total games played:</span>
+              <input type="number" name="games_played" min="0" max="<%= maxGames %>" step="1" value="<%= cg.gamesPlayed !== null ? cg.gamesPlayed : '' %>" style="width:56px;padding:2px 4px;font-size:12px;">
+              <button class="btn small neutral" type="submit">Save</button>
+            </form>
+          <% }) %>
+          <% wr.finalizedAssignments.filter(function (a) { return a.status === 'scheduled' || a.status === 'confirmed'; }).forEach(function (a) { %>
+            <div class="player-row">
+              <span class="pname"><strong><%= fullName(a) %></strong> <span class="muted">(Court <%= a.court %> · Team <%= a.team %>)</span></span>
+              <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/score/<%= a.id %>" style="display:inline-flex;align-items:center;gap:4px;">
+                <span class="muted" style="font-size:11px;">Games won:</span>
+                <input type="number" name="games_won" min="0" max="<%= maxGames %>" step="1" value="<%= a.games_won !== null ? a.games_won : '' %>" style="width:56px;padding:2px 4px;font-size:12px;">
+                <button class="btn small neutral" type="submit">Save</button>
+              </form>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
       <div class="actions" style="margin-top:8px;">
         <a class="btn small neutral" href="/admin/sessions/<%= session.id %>/weeks/<%= wr.week.id %>/send-email">Send email to players</a>
         <% if (session.weather_enabled && !wr.week.locked) { %>
@@ -84,4 +105,5 @@
 <% }) %>
 <% if (weekRows.length === 0) { %><p class="muted">No match weeks in this session's date range yet.</p><% } %>
 
+<%- include('../partials/session_stats_card', {session, statsCard}) %>
 <%- include('../partials/footer') %>
