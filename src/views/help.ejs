@@ -1,6 +1,6 @@
 <%- include('partials/header', {title}) %>
 <h1>How It Works</h1>
-<p class="muted">A quick tour of everything on this site — bookmark it for whenever you forget where something lives. Everything below is self-service: you never need to email or call the admin.</p>
+<p class="muted">A tour of everything on this site. Bookmark it for when you forget where something is. You can do all of this yourself without having to email or call the admin.</p>
 
 <div class="card wide">
   <strong>Jump to:</strong>
@@ -26,13 +26,13 @@
 </div>
 
 <h2 id="signup">Signing up for a season</h2>
-<p>Before a new season's schedule is put together, you may be asked to declare how much you want to play at <a href="/signup">Sign Up</a>. Pick your name, choose full, half, or quarter time, and you'll see exactly how many weeks that comes to for this session — the page does the math for you from the admin's own tier percentages. Change your mind any time before the schedule is generated; your latest answer is what counts. Don't want a roster spot at all this time? Pick "Sub only" instead and you'll be added to this session's sub list rather than the roster. Not every session uses this page — some admins still set targets by hand instead.</p>
-<p class="muted">You'll also get an email when sign-ups open for a new session, with a link that already has your name selected.</p>
+<p>Before a new season is scheduled, you may be asked to go to <a href="/signup">Sign Up</a> and say how much you want to play. Pick your name and choose full, half, or quarter time. The page shows how many weeks that works out to for this session, based on the percentages the admin set. You can change your answer until the schedule is made, and your most recent answer is the one that counts. If you don't want a regular spot this time, pick "Sub only" and you'll go on this session's sub list instead of the roster. Not every session uses this page. Some admins still set everyone's games by hand.</p>
+<p class="muted">When sign-ups open for a new session, you'll get an email with a link that already has your name picked.</p>
 
 <h2 id="blackout">Blackout dates</h2>
-<p>Already know a date won't work this season? Go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off every date you can't play — it saves instantly, no confirmation step. This only works before the admin generates the schedule; once it exists, blackout dates lock and you'll use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> instead.</p>
-<p>Enrolled in more than one session with a match on the same date? Enter the blackout date once — it carries over automatically and shows up already checked (greyed out) on the other session. Want to see every blackout date you've ever entered, across every session at once, not just this one? Check "Show all my blackout dates" right under the name dropdown.</p>
-<p class="muted" style="margin-bottom:0;">You'll also get an email when a new session opens up for blackout dates, so you don't have to go looking:</p>
+<p>If you already know there are dates you can't make this season, go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off those dates. It saves as soon as you check a box. You can only do this before the admin makes the schedule. After that, blackout dates are locked and you'd use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> instead.</p>
+<p>If you're in more than one session and they have matches on the same date, you only need to enter that blackout once. It carries over to the other session and shows up there already checked (and greyed out). To see all the blackout dates you've entered in every session, not just this one, check "Show all my blackout dates" under the name dropdown.</p>
+<p class="muted" style="margin-bottom:0;">When a new session is ready for blackout dates, you'll get an email about it, so you don't have to go looking:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: jamie@example.com</div>
@@ -52,13 +52,14 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<p class="muted" style="margin-bottom:0;">The button takes you straight here, with your name already selected:</p>
+<p class="muted" style="margin-bottom:0;">The button brings you here with your name already picked:</p>
 <img class="screenshot" src="/img/help/blackout.png?v=<%= assetVersion %>" alt="Blackout Dates page showing the session switcher banner, a name dropdown, and a checklist of match dates.">
-<p class="screenshot-caption">Pick your name, check off the dates you can't make, and save — that's the whole page.</p>
+<p class="screenshot-caption">Pick your name, check the dates you can't make, and save. That's all there is to it.</p>
 
 <h2 id="request-sub">Request a Sub</h2>
-<p>Know ahead of time you'll miss a scheduled match? Go to <a href="/request-sub">Request a Sub</a>, pick your name, and click "Need a sub for this week" next to the date — no need to wait for the reminder email. Since this page has no login, clicking the button doesn't email anyone else right away: you'll get a confirmation email first, and only once you click the link in it does everyone not already playing that week get an offer — first to respond gets the spot. That confirmation email names exactly who just got asked, when it escalates to the sub list if nobody responds, and what to do if nobody ever confirms — so you always know where things stand without having to check back. A red "double booked" badge next to a date is usually the one worth requesting a sub for — see below.</p>
-<p class="muted" style="margin-bottom:0;">What the offer looks like to everyone else on the roster:</p>
+<p>If you know ahead of time that you'll miss a match, go to <a href="/request-sub">Request a Sub</a>, pick your name, and click "Need a sub for this week" next to the date. You don't have to wait for the reminder email.</p>
+<p>Because this page has no login, clicking the button doesn't email anyone yet. First you'll get an email asking you to confirm it was you. Once you click the link in that email, everyone who isn't already playing that week gets asked to fill in, and the first one to answer gets the spot. Your confirmation email also tells you who was asked, when it goes to the sub list if nobody takes it, and what to do if nobody ever does, so you don't have to keep checking back. If you see a red "double booked" badge next to a date, that's usually the one to request a sub for (more on that below).</p>
+<p class="muted" style="margin-bottom:0;">Here's the email everyone else on the roster gets:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: dan@example.com</div>
@@ -78,15 +79,17 @@
   </div>
 </div>
 <img class="screenshot" src="/img/help/request-sub.png?v=<%= assetVersion %>" alt="Request a Sub page listing every upcoming week with a status badge and a red 'Need a sub for this week' button next to each date.">
-<p class="screenshot-caption">A red <span class="badge double_booked">double booked</span> badge next to a date is a strong hint that's the one worth requesting a sub for.</p>
-<p class="muted">Once you've requested a sub for a week, the button there is replaced with a note that it's already out; once someone claims it, that week shows <span class="badge subbed_out">subbed out</span> instead. Nothing to click either way — it's just there so you can check it worked.</p>
+<p class="screenshot-caption">A red <span class="badge double_booked">double booked</span> badge next to a date usually means that's the week to get a sub for.</p>
+<p class="muted">After you request a sub, the button for that week is replaced with a note saying the request is out. When someone takes it, the week shows <span class="badge subbed_out">subbed out</span>. You don't need to do anything with either one. They're just there so you can see it went through.</p>
 
 <h2 id="found-sub">I Found a Sub</h2>
-<p>Sometimes you've already lined someone up outside the app — a friend, someone from another session, anyone — before the app ever asks. Instead of ignoring the reminder or requesting a sub the normal way (which opens it up to the whole roster), use the small "Already found your own sub for this week?" link at the bottom of your reminder or follow-up email, or the "I found a sub" button on <a href="/me">My Page</a> next to Need a sub and Propose a swap. Since neither entry point can prove it's really you on its own, you'll get a short verification email first (skipped if you clicked from a reminder you were already emailed, since that link already proves it). From there, pick who you coordinated with from a list of everyone on the roster and sub list — or, if it's someone brand new to the system, enter their name and email instead. Either way, that person gets an email asking them to confirm they're in, exactly like any other sub offer; if they don't respond, it falls back to the normal escalation to the sub list (24 hours before match by default — the admin can change this per session), same as if the app had picked the candidate itself. A brand-new person is automatically added to the sub list so the same coordination works even more smoothly next time — the admin gets notified and can clean up their name or URL slug afterward if needed.</p>
+<p>Sometimes you've already found your own replacement before the app asks, like a friend or someone from another session. When that happens, don't ignore the reminder, and don't use the regular Request a Sub either, since that asks the whole roster. Instead, use the "Already found your own sub for this week?" link at the bottom of your reminder or follow-up email, or the "I found a sub" button on <a href="/me">My Page</a> (next to Need a sub and Propose a swap).</p>
+<p>If you start from My Page, you'll get a quick email to confirm it's you first. If you clicked from a reminder email, you skip that step, since the link already proves who you are. Then pick the person you lined up from the list of everyone on the roster and sub list. If they're new to the app, type in their name and email instead.</p>
+<p>That person gets an email asking them to confirm, the same as any other sub request. If they don't answer, it goes to the sub list just like a regular request would (24 hours before the match by default, though the admin can change that for each session). Someone new gets added to the sub list automatically, which makes it easier next time. The admin gets a notice and can tidy up their name or link afterward if needed.</p>
 
 <h2 id="swap">Swap a Week</h2>
-<p>Prefer to trade with one specific person instead of opening it to the whole roster? Go to <a href="/swap">Swap a Week</a>, pick your name, choose which of your own weeks to give up, then pick who to swap with and which of their weeks you want instead. Since this page has no login, submitting doesn't email the other player right away: you'll get a confirmation email first, and only once you click the link in it does the proposal actually go out to them — nothing changes until they accept. You're both still playing the same number of games, just different dates, so neither of you counts as a sub.</p>
-<p class="muted" style="margin-bottom:0;">Here's what the other player sees:</p>
+<p>If you'd rather trade with one specific person than open it up to everyone, go to <a href="/swap">Swap a Week</a>, pick your name, and choose the week you want to give up. Then pick who you want to swap with and which of their weeks you'd take. Because this page has no login, the other player isn't emailed right away. You'll get an email first, and the proposal only goes to them after you click the link in it. Nothing changes unless they accept. You both still play the same number of games, just on different dates, so neither of you counts as a sub.</p>
+<p class="muted" style="margin-bottom:0;">Here's what the other player gets:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: alice@example.com</div>
@@ -110,23 +113,23 @@
   </div>
 </div>
 <img class="screenshot" src="/img/help/swap.png?v=<%= assetVersion %>" alt="Swap a Week page showing 'Which week do you want to give up?' with a table of dates and a 'Give up this week' button next to each.">
-<p class="screenshot-caption">Step one: pick which of your own weeks you're offering up. The next page lets you pick who you want to swap with.</p>
+<p class="screenshot-caption">First, pick which of your weeks you're giving up. On the next page you choose who to swap with.</p>
 
 <h2 id="timing">The full timeline: what happens, and when</h2>
-<p>The sections above cover each page on its own — this one's the big picture: exactly when each automatic email fires, and what happens if you never respond to one. Three flows, one for each of confirming, requesting a sub, and swapping.</p>
+<p>The sections above cover each page by itself. This one puts it all together: when each automatic email goes out, and what happens if you don't respond. There's one flow each for confirming, requesting a sub, and swapping.</p>
 
 <h3>Confirming you're playing</h3>
 <div class="flowchart">
   <div class="flow-step">
     <div class="flow-when">2 days before your match (the admin can change this)</div>
     <div class="flow-title">Reminder email sent</div>
-    <div class="flow-detail">Confirm and Need a sub buttons. Sent once per week, per player.</div>
+    <div class="flow-detail">It has Confirm and Need a sub buttons. You get one per week.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-when">~27 hours before match time (the admin can change this)</div>
-    <div class="flow-title">Still haven't responded? One follow-up nudge</div>
-    <div class="flow-detail">Same two buttons. Only goes out if you're still sitting on "scheduled" at that point — skipped entirely if you already confirmed or asked for a sub. Timed to land the day before, not the morning of, so it's more likely to reach you during work hours for an evening match.</div>
+    <div class="flow-when">About 27 hours before match time (the admin can change this)</div>
+    <div class="flow-title">No answer yet? One follow-up</div>
+    <div class="flow-detail">Same two buttons. You only get it if you haven't confirmed or asked for a sub yet. It's timed to show up the day before instead of the morning of, so for an evening match it usually arrives during the workday.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
@@ -140,15 +143,15 @@
     <div class="flow-branch">
       <div class="flow-branch-label">You click Need a sub</div>
       <div class="flow-step">
-        <div class="flow-title">Jumps to Request a Sub</div>
-        <div class="flow-detail">See that flow below — an email goes out to the rest of the roster.</div>
+        <div class="flow-title">Goes to Request a Sub</div>
+        <div class="flow-detail">See that flow below. An email goes out to the rest of the roster.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">You click "Already found your own sub?"</div>
       <div class="flow-step">
-        <div class="flow-title">Pick who you coordinated with</div>
-        <div class="flow-detail">No fan-out to the whole roster — just an offer to the one person you name. See <a href="#found-sub">I Found a Sub</a> above.</div>
+        <div class="flow-title">Pick who you lined up</div>
+        <div class="flow-detail">The whole roster isn't emailed, only the one person you pick. See <a href="#found-sub">I Found a Sub</a> above.</div>
       </div>
     </div>
     <div class="flow-branch">
@@ -157,7 +160,7 @@
       <div class="flow-step urgent">
         <div class="flow-when">Match time arrives</div>
         <div class="flow-title">Nothing else happens automatically</div>
-        <div class="flow-detail">There's no extra nudge or escalation the way there is for a sub request — those two emails are it. Your status just stays "scheduled" for good, the week locks, and both links stop working. The admin sees an "unconfirmed" flag on their dashboard, but from there it's a manual call, not anything the app does on its own.</div>
+        <div class="flow-detail">Unlike a sub request, there's no further reminder or escalation. Those two emails are all you get. Your status stays "scheduled," the week locks, and both links stop working. The admin sees an "unconfirmed" flag on their dashboard, and what happens next is up to them.</div>
       </div>
     </div>
   </div>
@@ -170,52 +173,52 @@
       <div class="flow-branch-label">From a reminder email</div>
       <div class="flow-step">
         <div class="flow-title">Click "Need a sub"</div>
-        <div class="flow-detail">The link itself proves it's really you, so this goes straight to the confirm page below.</div>
+        <div class="flow-detail">The link already proves it's you, so you go straight to the confirm page below.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">From the Request a Sub page</div>
       <div class="flow-step">
-        <div class="flow-title">Pick your week — no link yet</div>
-        <div class="flow-detail">You'll get a verification email first. Nothing goes out to anyone else until you click the link in it — that's what stops someone else mashing the button on your behalf.</div>
+        <div class="flow-title">Pick your week (no link yet)</div>
+        <div class="flow-detail">You'll get an email to confirm it's you first. Nobody else is emailed until you click the link in it. That keeps anyone else from requesting a sub in your name.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step pending">
     <div class="flow-title">"Are you sure?"</div>
-    <div class="flow-detail">One more click — this is the point of no return, since it emails the rest of the roster right away.</div>
+    <div class="flow-detail">One more click. After this, the rest of the roster gets emailed right away, so make sure it's the right week.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">Everyone not already playing that week gets an email</div>
-    <div class="flow-detail">Except anyone already blacked out on that date. First to click "I'll play" gets the spot.</div>
+    <div class="flow-detail">Except anyone who has that date blacked out. The first person to click "I'll play" gets the spot.</div>
   </div>
-  <p class="flow-note">An admin can also flag a slot as needing a sub on your behalf, without you asking. It follows the same steps from here on — the only difference is the email to the rest of the roster waits until this week's normal reminder time instead of going out right away.</p>
+  <p class="flow-note">An admin can also mark your spot as needing a sub without you asking. From there it works the same way, except the email to the roster waits until that week's normal reminder time instead of going out right away.</p>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">Someone claims it</div>
+      <div class="flow-branch-label">Someone takes it</div>
       <div class="flow-step success">
         <div class="flow-title">Spot filled</div>
-        <div class="flow-detail">You're marked subbed out and get your own "you're all set" email, they're confirmed, and everyone else still playing that week gets notified too. Done.</div>
+        <div class="flow-detail">You're marked subbed out and get an email saying you're all set. The new player is confirmed, and everyone else playing that week gets a heads-up.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">Nobody claims it yet</div>
+      <div class="flow-branch-label">Nobody takes it yet</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step">
-        <div class="flow-when">24 hours before match (the admin can change this)</div>
-        <div class="flow-title">Escalates to the sub list</div>
-        <div class="flow-detail">A separate, admin-managed pool of subs gets an email too (skipped if the session has none assigned).</div>
+        <div class="flow-when">24 hours before the match (the admin can change this)</div>
+        <div class="flow-title">Goes to the sub list</div>
+        <div class="flow-detail">A separate group of subs, managed by the admin, gets an email too. If the session doesn't have any subs assigned, this step is skipped.</div>
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-branches">
         <div class="flow-branch">
-          <div class="flow-branch-label">A sub claims it</div>
+          <div class="flow-branch-label">A sub takes it</div>
           <div class="flow-step success">
             <div class="flow-title">Spot filled</div>
-            <div class="flow-detail">Same as above. Done.</div>
+            <div class="flow-detail">Same as above.</div>
           </div>
         </div>
         <div class="flow-branch">
@@ -224,62 +227,62 @@
           <div class="flow-step urgent">
             <div class="flow-when">Match time arrives</div>
             <div class="flow-title">Marked unfilled</div>
-            <div class="flow-detail">Flagged for the admin. From here it's their call — add someone manually, or the week plays a player short.</div>
+            <div class="flow-detail">The admin gets a flag, and it's their call from there. They can add someone by hand, or the week plays one short.</div>
           </div>
         </div>
       </div>
     </div>
   </div>
-  <p class="flow-note">An admin can close this out at any point along the way — reassigning the slot, marking you confirmed after all, or clearing the request entirely if you picked the wrong week by mistake (that puts you back to "scheduled" so you're reminded normally again).</p>
+  <p class="flow-note">An admin can close this out at any point. They can reassign the spot, mark you confirmed after all, or cancel the request if you picked the wrong week by mistake. Canceling puts you back to "scheduled," and you'll get the normal reminder.</p>
 </div>
 
 <h3>Swap a Week</h3>
 <div class="flowchart">
   <div class="flow-step">
     <div class="flow-title">You propose a trade</div>
-    <div class="flow-detail">Pick one of your own upcoming weeks, a specific teammate, and one of their weeks you'd rather play instead — no link yet, since this page has no login.</div>
+    <div class="flow-detail">Pick one of your upcoming weeks, a teammate, and one of their weeks you'd rather play. Since this page has no login, nothing is sent to them yet.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step pending">
     <div class="flow-title">Confirm it's you</div>
-    <div class="flow-detail">A verification email goes to you first. Nothing goes out to the other player until you click the link in it — that's what stops someone else proposing a swap on your behalf.</div>
+    <div class="flow-detail">You get an email first. The other player isn't contacted until you click the link in it, which keeps anyone else from proposing swaps in your name.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">They get an email to accept or decline</div>
-    <div class="flow-detail">Nothing changes until they respond — you'll get a confirmation that the proposal went out.</div>
+    <div class="flow-detail">Nothing changes until they answer. You'll get an email letting you know the proposal was sent.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
       <div class="flow-branch-label">They accept</div>
       <div class="flow-step success">
-        <div class="flow-title">Swap complete</div>
-        <div class="flow-detail">Your slots trade places, both go straight to confirmed, and everyone else in both affected weeks gets a heads up. Done.</div>
+        <div class="flow-title">Swap done</div>
+        <div class="flow-detail">You trade spots, you're both confirmed, and everyone else playing in those two weeks gets a heads-up.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">They decline</div>
       <div class="flow-step urgent">
         <div class="flow-title">Nothing changes</div>
-        <div class="flow-detail">You're notified. Your original week is still yours.</div>
+        <div class="flow-detail">You get an email. You keep your original week.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">They don't respond yet</div>
+      <div class="flow-branch-label">They haven't answered</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step">
-        <div class="flow-when">48 hours before the earlier of the two match dates</div>
-        <div class="flow-title">One nudge email</div>
-        <div class="flow-detail">Sent to them only — you already know you're waiting.</div>
+        <div class="flow-when">48 hours before the earlier of the two dates</div>
+        <div class="flow-title">One reminder email</div>
+        <div class="flow-detail">It only goes to them. You already know you're waiting.</div>
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-branches">
         <div class="flow-branch">
-          <div class="flow-branch-label">They respond</div>
+          <div class="flow-branch-label">They answer</div>
           <div class="flow-step">
             <div class="flow-title">Accept or decline</div>
-            <div class="flow-detail">Same outcomes as above.</div>
+            <div class="flow-detail">Same as above.</div>
           </div>
         </div>
         <div class="flow-branch">
@@ -288,23 +291,23 @@
           <div class="flow-step urgent">
             <div class="flow-when">The earlier match date arrives</div>
             <div class="flow-title">Proposal expires</div>
-            <div class="flow-detail">The trade can't happen anymore — that week's about to lock. No email; it quietly closes out so your weeks are free to swap with someone else.</div>
+            <div class="flow-detail">That week is about to lock, so the swap can't happen anymore. No email is sent. It just closes, and you're free to swap those weeks with someone else.</div>
           </div>
         </div>
       </div>
     </div>
   </div>
-  <p class="flow-note">An admin can cancel a pending swap directly. Reassigning either side's slot while a swap is still pending automatically cancels it too.</p>
+  <p class="flow-note">An admin can cancel a pending swap. If an admin reassigns either spot while a swap is pending, the swap gets canceled automatically.</p>
 </div>
 
 <h2 id="my-page">My Page</h2>
-<p>The fastest way to see everything at once. Go to <a href="/me">My Page</a>, pick your name, and bookmark the link (or save it to your phone's home screen) — it always shows your current schedule across every session you're in, no need to pick your name again. Request a sub or propose a swap with one click on any upcoming match, and find your calendar-subscribe link here too. Each session's card also shows a quick target/played/ball-duty line for that session, and — if you've entered a blackout date that lands on one of that session's own match weeks — a note right above the card naming the date.</p>
+<p>This is the quickest way to see everything. Go to <a href="/me">My Page</a>, pick your name, and bookmark the page (or add it to your phone's home screen). It always shows your current schedule for every session you're in, and you won't have to pick your name again. Each upcoming match has buttons to request a sub or propose a swap, and your calendar link is here too. Each session's card also shows your target, games played, and ball duty count for that session. If one of your blackout dates falls on one of that session's match dates, there's a note above the card with the date.</p>
 <img class="screenshot" src="/img/help/my-page.png?v=<%= assetVersion %>" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
-<p class="screenshot-caption">Enrolled in more than one session? Each one gets its own colored card here — same color you'll see everywhere else that session shows up.</p>
+<p class="screenshot-caption">In more than one session? Each one gets its own card here, in the same color that session uses everywhere else on the site.</p>
 
 <h2 id="confirming">Confirming you're playing</h2>
-<p>A few days before a match, you'll get a reminder email with two links: confirm you're playing, or say you need a sub. Opening the email doesn't change anything — you click a button on the page it takes you to. No response? You'll get one follow-up nudge roughly a day before match time. Once match time passes, both links stop working and the week locks in as played.</p>
-<p class="muted" style="margin-bottom:0;">Here's what that email looks like:</p>
+<p>A couple of days before each match, you'll get a reminder email with two buttons: one to confirm you're playing, and one to say you need a sub. Just opening the email doesn't do anything. You have to click a button on the page it opens. If you don't respond, you'll get one more reminder about a day before the match. After match time, both links stop working and the week is locked.</p>
+<p class="muted" style="margin-bottom:0;">Here's what the email looks like:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: jamie@example.com</div>
@@ -335,42 +338,42 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<p class="muted">The forecast line only shows up if your admin has turned on weather forecasts for this session — see <a href="#weather">Weather forecast</a> below.</p>
+<p class="muted">The forecast line only shows up if your admin turned on weather for this session. See <a href="#weather">Weather forecast</a> below.</p>
 
 <h2 id="schedule">Season Schedule &amp; Next 4 Weeks</h2>
-<p><a href="/schedule">Season Schedule</a> shows the whole season at a glance — every date, who's playing, how they're paired up, and who's on ball duty. <a href="/lookahead">Next 4 Weeks</a> is the same table trimmed to just what's coming up soon.</p>
+<p><a href="/schedule">Season Schedule</a> shows the whole season: every date, who's playing, the teams, and who has ball duty. <a href="/lookahead">Next 4 Weeks</a> is the same table, but only the next four dates.</p>
 <img class="screenshot" src="/img/help/next-four-weeks.png?v=<%= assetVersion %>" alt="Next 4 Weeks page showing a table with Date, Team A, Team B, and Ball duty columns for the four upcoming match dates.">
-<p class="screenshot-caption">Team A and Team B for each date, plus who's bringing the balls that week.</p>
+<p class="screenshot-caption">Team A and Team B for each date, and who's bringing the balls.</p>
 
 <h2 id="weather">Weather forecast</h2>
-<p>If your admin has turned it on for a session, you'll see a small forecast — temperature, conditions, and chance of rain — right next to each upcoming date on the Season Schedule and Next 4 Weeks pages above, and it's included in your confirmation reminder email too (or the "you're in" email for a pickup game — see the mocks earlier on this page). It's pulled fresh roughly once an hour, starting once your first email for that week goes out and continuing until an hour after match time, so what you see the morning of is close to real rather than a stale multi-day-old guess. Not every session has this turned on — if you don't see it next to a date, your admin hasn't enabled it (or hasn't entered a location) for that one.</p>
+<p>If your admin turned it on for a session, you'll see a small forecast (temperature, conditions, and chance of rain) next to each upcoming date on the Season Schedule and Next 4 Weeks pages. It's also in your reminder email, or in the "you're in" email for a pickup game. The forecast updates about once an hour, starting when the first email for that week goes out and stopping an hour after the match, so what you see that morning is pretty current. If you don't see a forecast next to a date, weather isn't turned on for that session, or the admin hasn't entered a location for it yet.</p>
 <img class="screenshot" src="/img/help/full-schedule-weather.png?v=<%= assetVersion %>" alt="Season Schedule page with a small weather forecast line under one of the dates, plus a red double-booked badge on another row.">
-<p class="screenshot-caption">The forecast sits right under the date it's for — no need to click anywhere to see it.</p>
+<p class="screenshot-caption">The forecast sits right under its date. You don't have to click anything to see it.</p>
 
 <h2 id="calendar">Calendar</h2>
-<p>Go to <a href="/calendar">Calendar</a> to add your matches to your phone or computer, two ways: a one-time download for the current season, or <strong>Subscribe</strong>, which stays up to date automatically as your schedule changes — the better choice if you don't want to think about it again.</p>
+<p>Go to <a href="/calendar">Calendar</a> to put your matches on your phone or computer. There are two options. You can download the current season once, or you can <strong>Subscribe</strong>, which keeps your calendar updated as the schedule changes. Subscribing is the better choice if you don't want to think about it again.</p>
 <img class="screenshot" src="/img/help/calendar.png?v=<%= assetVersion %>" alt="Personal Calendar page with two sections: a one-time .ics download and a Subscribe option with a webcal link.">
-<p class="screenshot-caption">Subscribe once and re-schedules, subs, and swaps show up automatically — no need to come back and re-download.</p>
+<p class="screenshot-caption">Subscribe once, and schedule changes, subs, and swaps show up on their own. No need to come back and download it again.</p>
 
 <h2 id="pdf">Print Schedule</h2>
-<p><a href="/pdf">Print Schedule</a> gives you a single printable page with the whole season's schedule on it — handy to print and stick on the fridge or pass around at a gathering. If more than one session is currently active, there's also a "Download All Active Sessions" option that combines every session into one PDF sorted by date instead of session-by-session — a couple of pages instead of one, but easier to check "what's happening this week" across everything at once.</p>
+<p><a href="/pdf">Print Schedule</a> gives you the whole season on one page, which is handy for the fridge or for handing out. If more than one session is running, there's also a "Download All Active Sessions" option that puts every session in one PDF, sorted by date. It's a couple of pages instead of one, but it makes it easier to see everything happening in a given week.</p>
 
 <h2 id="stats">Player Stats</h2>
-<p>Go to <a href="/stats">Stats</a> for a quick "how's my season going" check, across every active session at once: for each session, a simple table of every player's target games for the season, games actually played so far, any bonus games picked up by subbing in for someone else, and how many weeks they've been on ball duty. Every player's name links straight to their own <a href="/me">My Page</a>.</p>
+<p>Go to <a href="/stats">Stats</a> to see how the season is going for every active session. Each session has a table showing every player's target games, games played so far, extra games from subbing for someone else, and how many times they've had ball duty. Click any name to go to that player's <a href="/me">My Page</a>.</p>
 <img class="screenshot" src="/img/help/player-stats.png?v=<%= assetVersion %>" alt="Player Stats page showing a table of every player's target games, games played, sub bonus games, and ball duty count for one session.">
-<p class="screenshot-caption">Same numbers you'd get counting by hand from the schedule — just already totaled up.</p>
+<p class="screenshot-caption">The same numbers you'd get by counting from the schedule, already added up for you.</p>
 
 <h2 id="scores">Scores &amp; Leaderboard</h2>
-<p>If your admin has turned this on for a session, you can log how a match actually went once it's over. Go to <a href="/scores">Enter Scores</a> — you'll get a grid for the whole match: one shared "total games played" number for the court, plus a "games won" box for each player, so anyone who was out there can fill in the whole thing at once instead of everyone typing their own number separately. There's also a per-player page if you'd rather just enter your own — pick your name from <a href="/scores">Enter Scores</a>'s lookup link. Counting games: regular games won count as 1 each; if a 7- or 10-point tiebreaker was played, whoever won it gets 1 point, same as any other game. Once a score is entered, you (or anyone) can still fix it for 24 hours — after that, only the admin can change it.</p>
-<p>Entered scores feed the <a href="/leaderboard">Leaderboard</a> page, which has two boards per session — total games won, and a win-percentage board (games won ÷ games played) so someone who's made every single week doesn't automatically outrank someone who's missed a few but wins a higher share of what they actually play. There's also an all-time version of each combining every session you've ever played in.</p>
-<p>The win % board has one wrinkle worth knowing: it only ranks a player once they've scored at least a minimum number of matches (your admin sets this per session, small by default) — otherwise one great night early in the season could outrank someone with a whole season of solid play behind them. If you don't see your name in the ranked table yet, check the "still building a sample" list right below it — that's where you'll show up until you cross that threshold, and your numbers are still right there, just not ranked yet.</p>
+<p>If your admin turned this on for a session, you can enter the score after a match. Go to <a href="/scores">Enter Scores</a>. You'll see a form for the whole court: one "total games played" number that everyone shares, plus a "games won" box for each player. That way one person can fill in the whole thing instead of everybody entering their own. If you'd rather just enter yours, use the lookup link on <a href="/scores">Enter Scores</a> to get to your own page. Each game won counts as 1. If you played a 7- or 10-point tiebreaker, whoever won it gets 1, the same as a regular game. Anyone can fix a score for 24 hours after it's entered. After that, only the admin can change it.</p>
+<p>Scores feed the <a href="/leaderboard">Leaderboard</a>, which has two boards for each session. One is total games won. The other is win percentage (games won divided by games played), so someone who's played every week doesn't automatically rank above someone who's missed a few but wins more of the games they do play. There's also an all-time version of each that covers every session you've played in.</p>
+<p>There's one catch with the win % board. You only get ranked after you've entered scores for a minimum number of matches (your admin sets this for each session, and it's small by default). Otherwise one great night early in the season could put someone ahead of a person with a whole season of good results. If you're not in the ranked table yet, look at the "still building a sample" list below it. Your numbers are there, just not ranked yet.</p>
 
-<p>The Leaderboard page has a picker at the top with three levels: a single <strong>session</strong>, a <strong>season</strong> (a named group of sessions, like "Indoor 2026"), and the <strong>Master</strong> board covering everything since the admin last reset it. Each has a Leaderboard tab and a Graphs tab showing win % week by week and average games per match. Sessions with stats turned off don't appear or count anywhere.</p>
+<p>At the top of the Leaderboard page you can pick one of three levels: a single <strong>session</strong>, a <strong>season</strong> (a group of sessions the admin named, like "Indoor 2026"), or the <strong>Master</strong> board, which covers everything since the admin last reset it. Each one has a Leaderboard tab and a Graphs tab showing win % by week and average games per match. Sessions with stats turned off don't show up or count anywhere.</p>
 
 <h2 id="adhoc">Pickup games (ad-hoc sessions)</h2>
-<p>Some sessions are pickup games instead of a fixed season schedule — filled week to week, first come first served. None of the sections above apply here: no season roster, no target games, no blackout dates, no confirm/need-a-sub flow. Signing up <em>is</em> your confirmation.</p>
-<p>An invite goes out a couple of days before each match. The first 4 to sign up get the first court, the next 4 get a second, and so on — no cap on how many courts can fill. Nothing's held for you, so sign up before someone else takes the spot.</p>
-<p class="muted" style="margin-bottom:0;">The invite looks like this:</p>
+<p>Some sessions are pickup games instead of a set season schedule. They fill up week by week, first come, first served. Most of this page doesn't apply to them: there's no season roster, no target games, no blackout dates, and no confirm or need-a-sub emails. Signing up <em>is</em> how you confirm.</p>
+<p>An invite goes out a couple of days before each game. The first 4 people to sign up get the first court, the next 4 get a second court, and so on, with no limit on courts. Spots aren't held for anyone, so sign up early.</p>
+<p class="muted" style="margin-bottom:0;">Here's the invite:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: dan@example.com</div>
@@ -389,7 +392,7 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<p>If sign-ups aren't a clean multiple of 4 as match day nears, anyone who hasn't signed up yet may get one short reminder asking if they're still in. Once it's decided — usually about a day before — you'll get one of two follow-ups. Landed on a court? A note telling you who you're playing with:</p>
+<p>If the sign-ups don't come out to a multiple of 4 as the game gets close, people who haven't signed up yet may get one short reminder. About a day before the game it's settled, and you'll get one of two emails. If you're on a court, you'll get one telling you who you're playing with:</p>
 <div class="email-mock">
   <div class="email-mock-header">
     <div class="to">To: dan@example.com</div>
@@ -411,78 +414,78 @@
     <p class="email-mock-footer" style="margin-top:0;">Full schedule: <a href="#">https://your-site/schedule</a></p>
   </div>
 </div>
-<p class="muted">— or, if your group never reached 4, a short note that this one didn't come together. Either way, there's nothing more to do; you'll be invited again for the next pickup game. (The forecast line above only shows up if your admin has turned on weather for this session — see <a href="#weather">Weather forecast</a>.)</p>
+<p class="muted">If your group didn't get to 4, you'll get a short note saying this one didn't come together. Either way, you don't need to do anything, and you'll be invited to the next one. (The forecast line only shows up if your admin turned on weather for this session. See <a href="#weather">Weather forecast</a>.)</p>
 
-<p>Here's the whole thing as one picture:</p>
+<p>Here's the whole thing in one picture:</p>
 <div class="flowchart">
   <div class="flow-step">
-    <div class="flow-when">~56 hours before match (the admin can change this)</div>
-    <div class="flow-title">Invite email sent to everyone on the roster</div>
-    <div class="flow-detail">One "I'm in" link each. First come, first served — no waiting for a deadline, a court forms the moment 4 people have signed up.</div>
+    <div class="flow-when">About 56 hours before the game (the admin can change this)</div>
+    <div class="flow-title">Invite email goes to everyone on the roster</div>
+    <div class="flow-detail">Each person gets an "I'm in" link. It's first come, first served. As soon as 4 people sign up, that's a court. There's no deadline to wait for.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">Sign-ups come in</div>
-    <div class="flow-detail">Every complete group of 4, in the order people signed up, becomes its own court — no cap on how many courts can fill.</div>
+    <div class="flow-detail">Each group of 4, in the order they signed up, gets its own court. There's no limit on courts.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">Sign-ups land on a clean multiple of 4</div>
+      <div class="flow-branch-label">Sign-ups come out to a multiple of 4</div>
       <div class="flow-step success">
         <div class="flow-title">No reminder needed</div>
-        <div class="flow-detail">Every court's already full.</div>
+        <div class="flow-detail">All the courts are full.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">There's a leftover group of 1-3</div>
+      <div class="flow-branch-label">1 to 3 people are left over</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step pending">
-        <div class="flow-when">~30 hours before match (the admin can change this)</div>
-        <div class="flow-title">One reminder — to stragglers only</div>
-        <div class="flow-detail">Only sent to whoever on the roster hasn't signed up yet, not to anyone already on a full court.</div>
+        <div class="flow-when">About 30 hours before the game (the admin can change this)</div>
+        <div class="flow-title">One reminder, only to people who haven't signed up</div>
+        <div class="flow-detail">Nobody who's already on a full court gets it.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-when">~24 hours before match (the admin can change this)</div>
-    <div class="flow-title">Courts finalize</div>
-    <div class="flow-detail">Whatever's signed up at this point locks in — this is also your only confirmation, there's no separate confirm step.</div>
+    <div class="flow-when">About 24 hours before the game (the admin can change this)</div>
+    <div class="flow-title">Courts are set</div>
+    <div class="flow-detail">Whoever is signed up at this point is locked in. This is also your only confirmation. There isn't a separate confirm step.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">You landed on a full court</div>
+      <div class="flow-branch-label">You're on a full court</div>
       <div class="flow-step success">
         <div class="flow-title">"You're in" email</div>
-        <div class="flow-detail">Names your teammates and court. Done.</div>
+        <div class="flow-detail">Tells you your teammates and court.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">Your group never reached 4</div>
+      <div class="flow-branch-label">Your group didn't get to 4</div>
       <div class="flow-step urgent">
         <div class="flow-title">"Not enough signed up" email</div>
-        <div class="flow-detail">This one's not happening. Nothing else to do — you'll be invited again for the next pickup game.</div>
+        <div class="flow-detail">This one isn't happening. You don't need to do anything, and you'll be invited to the next one.</div>
       </div>
     </div>
   </div>
-  <p class="flow-note">Signing up doesn't lock in the way confirming does elsewhere on this site — there's no self-service way to back out once you've signed up. If your plans change, contact your admin directly; they can add or remove players on a pickup week by hand.</p>
+  <p class="flow-note">Once you've signed up for a pickup game, you can't back out on your own. If your plans change, contact your admin. They can add or remove people for a pickup week.</p>
 </div>
 
 <h2 id="double-booked">What does "double booked" mean?</h2>
-<p>Enrolled in two sessions with matches on the same date? You'll see a red <span class="badge double_booked">double booked</span> badge in place of your usual status everywhere you'd check your schedule — the season schedule, My Page, Request a Sub, Swap a Week, the printable schedule, even the calendar invite. It doesn't fix itself — pick which one you're actually playing, then request a sub or propose a swap for the other, ideally weeks before match day rather than the week of. Once a sub has actually been requested for that slot, the badge switches to <span class="badge needs_sub">needs sub</span> instead, since that's the more useful thing to know at that point.</p>
+<p>If you're in two sessions that both have a match on the same date, you'll see a red <span class="badge double_booked">double booked</span> badge instead of your normal status everywhere your schedule shows up: the season schedule, My Page, Request a Sub, Swap a Week, the printable schedule, and even the calendar invite. It won't go away on its own. Decide which one you're playing, then request a sub or propose a swap for the other one. Try to do this weeks ahead instead of the week of. Once a sub has been requested for that spot, the badge changes to <span class="badge needs_sub">needs sub</span>, since that's the more useful thing to know at that point.</p>
 
 <h2 id="statuses">What do the badges mean?</h2>
 <div class="table-scroll">
 <table class="wide">
   <thead><tr><th>Badge</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><span class="badge scheduled">scheduled</span></td><td>You're down to play this week — you haven't confirmed yet, and you haven't been asked to.</td></tr>
+    <tr><td><span class="badge scheduled">scheduled</span></td><td>You're playing this week, but you haven't confirmed yet (and haven't been asked to).</td></tr>
     <tr><td><span class="badge confirmed">confirmed</span></td><td>You've confirmed you're playing.</td></tr>
-    <tr><td><span class="badge needs_sub">needs sub</span></td><td>A sub was requested for this slot and it hasn't been filled yet.</td></tr>
-    <tr><td><span class="badge subbed_out">subbed out</span></td><td>Someone else took this spot — you're not playing this week after all.</td></tr>
-    <tr><td><span class="badge double_booked">double booked</span></td><td>You're scheduled to play in two different sessions on this same date — see above.</td></tr>
+    <tr><td><span class="badge needs_sub">needs sub</span></td><td>Someone asked for a sub for this spot and nobody has taken it yet.</td></tr>
+    <tr><td><span class="badge subbed_out">subbed out</span></td><td>Someone else took this spot, so you're not playing this week.</td></tr>
+    <tr><td><span class="badge double_booked">double booked</span></td><td>You're scheduled in two different sessions on the same date. See above.</td></tr>
   </tbody>
 </table>
 </div>

@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>Admin Guide</h1>
-<p class="muted">The whole process, start to finish, for running a session — not visible to players, since it lives here under Admin. See the player-facing <a href="/help">How It Works</a> page for what they see on their end.</p>
+<p class="muted">How to run a session from start to finish. Players can't see this page. For what players see, look at <a href="/help">How It Works</a>.</p>
 
 <div class="card wide">
   <strong>Jump to:</strong>
@@ -19,76 +19,83 @@
 </div>
 
 <h2 id="new-session">1. Create a new session</h2>
-<p>From the <a href="/admin">Dashboard</a>, click <strong>+ New session</strong>. Fill in the match day of week, match time, reminder time/lead, players per week (must be a multiple of 4 — 8 for two courts, 12 for three), and the club name / court info that'll show up in every email and on every player-facing page for this session. A new session starts in <strong>draft</strong> — nothing player-facing exists yet until you build the roster and click Schedule.</p>
-<p>Also on this form: <strong>Admin status report email(s)</strong> — enter your own address (or a few, comma-separated) and a status report goes out before each week's match — who's confirmed, who hasn't, who needs a sub and whether it's filled, who swapped. Set how many hours before match time it fires (default 8). Leave the email field blank to turn this off entirely; there's also a <strong>Send status report now</strong> button on each week's card on the session detail page if you want to check what it looks like without waiting.</p>
-<p>Further down the same form: a <strong>Weather forecast</strong> checkbox and a latitude/longitude pair — see §9 below for what turning it on actually does and how to fix it if it stops updating.</p>
+<p>From the <a href="/admin">Dashboard</a>, click <strong>+ New session</strong>. Fill in the day of the week, match time, when reminders go out, players per week (a multiple of 4: 8 for two courts, 12 for three), and the club name and court info. The club and court info show up in every email and on every player page for this session. A new session starts as a <strong>draft</strong>, and players won't see anything until you've built the roster and clicked Schedule.</p>
+<p>The form also has <strong>Admin status report email(s)</strong>. Enter your email address (or several, separated by commas) and you'll get a status report before each week's match: who's confirmed, who hasn't, who needs a sub and whether it's been filled, and who swapped. You pick how many hours before the match it goes out (the default is 8). Leave the field blank to turn it off. Each week's card on the session detail page also has a <strong>Send status report now</strong> button if you want to see one without waiting.</p>
+<p>Further down the form is the <strong>Weather forecast</strong> checkbox and the latitude/longitude fields. See §9 for what that does and how to fix it if it stops updating.</p>
 
 <h2 id="roster">2. Build the roster &amp; set targets</h2>
-<p>On the same Edit page, the roster table only shows players already enrolled on this session — everyone else in the system is hidden by default so the table stays manageable as your player pool grows. Use the <strong>search box</strong> above the table to find anyone not currently showing (by name) and add them: clicking into their target field or typing a value pins their row visible. Each visible row's <strong>target games</strong> for the season have to sum to exactly <em>(number of match weeks) &times; (players per week)</em>; the page does this math live for you as you type so you can see whether it adds up before saving. A <strong>Remove</strong> button on each row zeroes that player's target and hides them again — the quick way to un-enroll someone without hunting for their row. New players get created from <a href="/admin/players">Players</a> first if they're not already in the system — a player is shared across every session, so someone already in another session just needs enrolling here, not re-creating. <strong>Priority</strong> is optional and only matters if this player is also enrolled in another session on the same day of week with overlapping dates — it's a note for whoever resolves a real conflict by hand, not something the scheduler enforces automatically (see §8 below). The season-long target you enter here is preserved even if you later have to lower someone's number mid-season (e.g. after a roster change) — the Stats page shows the original figure alongside the current one whenever they differ, so that history isn't lost.</p>
+<p>The roster table on the Edit page only shows players who are already in this session. Everyone else is hidden so the table doesn't get huge as your player list grows. To add someone who isn't showing, find them with the <strong>search box</strong> above the table. Once you click into their target field or type a number, their row stays visible.</p>
+<p>Each player's <strong>target games</strong> for the season have to add up to exactly <em>(number of match weeks) &times; (players per week)</em>. The page does this math as you type, so you know whether it works before you save. The <strong>Remove</strong> button on a row sets that player's target to zero and hides them again, which is the quick way to take someone out of the session.</p>
+<p>If a player isn't in the system yet, add them on the <a href="/admin/players">Players</a> page first. Players are shared across all sessions, so if someone is already in another session, you just add them here. You don't create them again.</p>
+<p><strong>Priority</strong> is optional. It only matters if this player is also in another session on the same day of the week with overlapping dates. It's a note for whoever sorts out a conflict by hand. The scheduler doesn't use it (see §8).</p>
+<p>If you lower someone's target partway through the season (after a roster change, for example), the original number is kept. The Stats page shows both numbers when they're different, so you don't lose track of what it used to be.</p>
 <img class="screenshot" src="/img/admin-guide/session-roster.png?v=<%= assetVersion %>" alt="Roster & target games table on a session's Edit page, with a live summary at the bottom confirming the entered targets add up correctly.">
-<p class="screenshot-caption">The live math at the bottom tells you the moment targets add up — no need to count by hand before clicking Schedule.</p>
-<p>Every player has two names, set on the <a href="/admin/players">Players</a> page: a <strong>Public name</strong> (what shows up everywhere a player might see it — schedule, My Page, PDF, calendar; short by convention, e.g. "Kyle K", so last names stay off public pages) and an optional <strong>Full name</strong> (admin pages and every email — a trusted-system context, not public). Leave Full name blank and the public name is used everywhere, including emails, until you fill it in. This only affects who sees what — the scheduler, targets, and everything else treat the two as the same player.</p>
+<p class="screenshot-caption">The summary at the bottom tells you when the targets add up, so there's no counting by hand before you click Schedule.</p>
+<p>Every player has two names, both set on the <a href="/admin/players">Players</a> page. The <strong>Public name</strong> is what shows up anywhere players can see it (schedule, My Page, PDF, calendar). Keep it short, like "Kyle K," so last names stay off public pages. The <strong>Full name</strong> is optional and is used on admin pages and in emails, which only you and that player see. If you leave Full name blank, the public name is used everywhere, including emails. This only changes what's displayed. The scheduler, targets, and everything else treat both names as the same player.</p>
 <img class="screenshot" src="/img/admin-guide/players.png?v=<%= assetVersion %>" alt="Add a player form on the Players page, showing separate Public name and Full name fields with explanations of where each one is shown.">
-<p class="screenshot-caption">Public name is what players see about each other; Full name is what you and the app's emails see. Neither is required beyond the public name.</p>
-<p>Separately, each session also has its own <strong>Manage subs</strong> page (next to Manage blackout dates on the session detail page) — a checklist of who, from your overall <a href="/admin/sub-list">Sub List</a>, should actually get emailed if this specific session's roster can't fill an open sub request. Worth setting up before you schedule: a sub who only plays Tuesdays shouldn't be emailed about a Thursday session's empty slot, and a session with nobody assigned here just goes straight to "unfilled" instead of escalating to anyone. Manage subs has two checklists, not just one: your overall Sub List, and every active <strong>player</strong> not already on this session's own roster — handy if two sessions' rosters can reasonably cover for each other (e.g. two smaller sessions at the same club), without having to duplicate someone as a separate Sub List entry just to make them eligible. The Sub List page itself also lets you edit a name or email in place (fixing a typo doesn't drop them off whatever sessions they're already assigned to) instead of only being able to remove and re-add — it has the same Public name field as Players, since a broader-sub-list entry can end up on a public page too the moment they actually fill a spot.</p>
+<p class="screenshot-caption">Players see each other's Public name. You and the emails use the Full name. Only the public name is required.</p>
+<p>Each session also has its own <strong>Manage subs</strong> page (next to Manage blackout dates on the session detail page). It's a checklist of the people from your <a href="/admin/sub-list">Sub List</a> who should get emailed when this session can't fill a sub request from its own roster. Set this up before you schedule. Someone who only plays Tuesdays shouldn't get emails about an open spot in a Thursday session. If a session has nobody checked here, an unfilled request just goes to "unfilled" without emailing anyone.</p>
+<p>Manage subs actually has two checklists: your Sub List, and every active <strong>player</strong> who isn't on this session's roster. The second one is useful when two sessions can cover for each other (say, two small sessions at the same club), and it saves you from adding the same person to the Sub List just so they can sub.</p>
+<p>On the Sub List page you can edit a name or email in place. Fixing a typo won't remove them from the sessions they're already assigned to. It also has the same Public name field as the Players page, since a sub's name shows up on public pages as soon as they fill a spot.</p>
 <img class="screenshot" src="/img/admin-guide/sub-list.png?v=<%= assetVersion %>" alt="Broader Sub List page showing Name, Public name, Email, and URL slug fields for adding a sub.">
-<p class="screenshot-caption">Same Public/Full name idea as Players — review the auto-shortened public name here before anyone claims a spot off a bad guess.</p>
+<p class="screenshot-caption">Same Public/Full name setup as Players. Check the automatically shortened public name before anyone takes a spot, in case it guessed wrong.</p>
 
 <h2 id="signups">2b. Or: let players sign up for themselves</h2>
-<p>Instead of typing every target games number in by hand, you can save the session first and use <strong>Sign-Ups</strong> on its detail page: check off who's going to be on the roster, set what full/half/quarter time mean as a percentage of this season's weeks (defaults to 75/50/25), and notify them. Each player picks a tier and sees exactly how many weeks it works out to; you review the results (the page flags it if the total doesn't add up to the available slots — the same math the roster page's own live summary already does, just applied to sign-ups instead of hand-typed numbers) and click <strong>Apply to roster</strong> when you're happy, which fills in target games on the Edit page exactly as if you'd typed them yourself. You can still hand-adjust anyone's number afterward. This is entirely optional — nothing about scheduling requires it.</p>
+<p>Instead of typing in everyone's target games, you can save the session and then use <strong>Sign-Ups</strong> on its detail page. Check off who's going to be on the roster, set what full, half, and quarter time mean as a percentage of the season's weeks (75/50/25 by default), and send the notice. Each player picks a level and sees how many weeks that comes out to. When you review the results, the page warns you if the total doesn't match the available spots (the same check the roster page does as you type). When it looks right, click <strong>Apply to roster</strong>. That fills in target games on the Edit page, the same as if you'd typed them yourself. You can still change anyone's number afterward. This is optional. You can schedule without it.</p>
 
 <h2 id="blackouts">3. Collect blackout dates</h2>
-<p>Before running the schedule, give players a chance to mark dates they already know they can't make. Go to the session's <strong>Manage blackout dates</strong> page and click <strong>Notify roster</strong> — this emails everyone currently enrolled a direct link to go check off their dates, pre-filled with their own name so there's no dropdown mix-up. This is a manual, repeatable action (not automatic on session creation), since you may still be adjusting the roster right after creating it. Players can keep updating their own blackout dates right up until you schedule — after that, the page locks and they switch to <strong>Request a Sub</strong> for anything that comes up later.</p>
-<p>A blackout date is a single universal fact about a player, not something tied to whichever session it was entered under — if a player is enrolled in two sessions that share a match date, blacking them out on that date from either session's page applies to both automatically. The <strong>Manage blackout dates</strong> page always shows a player's full set of dates regardless of which session you're looking at it from, and every checkbox there is fully editable — you never need to go find "the original session" to change one.</p>
-<p>To see everyone's dates across every active session at once, without clicking into each one — <a href="/admin/blackouts">Blackout Dates</a> in the nav (between Players and Sub List) is a single read-only page, one row per player, showing every session they're enrolled in and every date on record for them. A player with nothing entered yet still shows up with a dash, so it doubles as a quick check of who hasn't filled theirs in. Editing still only happens from a specific session's Manage blackout dates page — this view is purely for the at-a-glance picture.</p>
+<p>Before you run the schedule, give players a chance to mark dates they already know they can't make. On the session's <strong>Manage blackout dates</strong> page, click <strong>Notify roster</strong>. Everyone in the session gets an email with a link to enter their dates, with their name already filled in so nobody picks the wrong one. This doesn't happen automatically when you create a session, because you may still be changing the roster. You can send it again whenever you need to. Players can keep changing their blackout dates until you schedule. After that the page locks and they use <strong>Request a Sub</strong> instead.</p>
+<p>Blackout dates belong to the player, not to a session. If a player is in two sessions with a match on the same date, blacking out that date in either session covers both. The <strong>Manage blackout dates</strong> page always shows all of a player's dates no matter which session you open it from, and you can change any of them there. You never have to go find the session where a date was first entered.</p>
+<p>To see everyone's dates for every active session at once, use <a href="/admin/blackouts">Blackout Dates</a> in the nav (between Players and Sub List). It's a read-only page with one row per player, showing their sessions and every date they've entered. Players who haven't entered anything show a dash, so it's also a quick way to see who hasn't done it yet. You still make changes from a session's Manage blackout dates page. This page is just for looking.</p>
 
 <h2 id="schedule">4. Schedule the players</h2>
-<p>Once the roster and blackout dates are ready, go to the session's Edit page and click <strong>Schedule these players</strong>. This runs the scheduling engine against whatever's currently saved — every player hits their exact target, partner pairings get spread out evenly, and ball duty rotates proportional to games played. If something can't work out (targets don't add up, a week doesn't have enough available players, a player's own blackout dates make their target impossible), you'll get a specific, actionable message instead of a silent failure — most of these degrade gracefully (a short-staffed week gets flagged and filled with who's available, rather than blocking the rest of the season) rather than requiring you to fix everything by hand before anything schedules. Re-running this later (after a roster change, or once blackout dates settle) only touches open weeks — anything already played stays locked and untouched.</p>
+<p>When the roster and blackout dates are ready, go to the session's Edit page and click <strong>Schedule these players</strong>. The scheduler works from whatever's saved. Every player gets their target number of games, partners get mixed up evenly, and ball duty rotates based on how many games each person plays.</p>
+<p>If something doesn't work (the targets don't add up, a week doesn't have enough available players, or a player's blackout dates make their target impossible), you get a message telling you specifically what's wrong. In most cases it still builds the rest of the schedule. A short week, for example, gets flagged and filled with whoever's available instead of holding up the whole season. If you run it again later (after a roster change, or once blackout dates are in), it only changes weeks that haven't been played. Past weeks stay locked.</p>
 
-<h3>How targets actually get hit</h3>
-<p>In the normal case, every player hits their configured target exactly — the engine solves this as an exact combinatorial match between players and weeks, not a guess, so if a valid arrangement exists it finds it (targets have to sum to exactly <em>weeks &times; players per week</em> for that to even be possible, which is what the live math on the roster page is checking as you type). There are exactly two situations where a player ends up short of their target instead, and the app treats them very differently:</p>
-<p><strong>A whole week is short-staffed</strong> — too many blackout dates on one date to fill it to the normal size, so it gets capped down to the largest full doubles court the available players can fill. Nobody's target gets adjusted to compensate here; that was a deliberate call to leave rebalancing to you rather than have it happen silently and unevenly. Whoever's games that week would've covered just falls short for the season — the Stats page shows exactly who and by how much, and it's on you to make it up by hand if you want to (bump a target on the next re-schedule, pull in a sub, etc.).</p>
-<p><strong>One specific player's own blackout dates make their own target unreachable</strong> — e.g. they've blacked out more weeks than their target can actually fit into. Here the engine <em>does</em> auto-adjust: that player's target gets capped down to what they can actually achieve, and the exact shortfall is handed to other players with room, one game at a time, starting with whoever currently has the lowest target — so a multi-game deficit spreads across a few people rather than landing entirely on one. This never touches the target you actually entered on the roster page; it's purely how that one scheduling run's games get counted, and every adjustment made this way is called out directly in the flash message after you click "Schedule these players," and stays visible afterward on the Stats page. If there isn't enough spare room among everyone else to absorb it — or the shortfall is tangled up across several players and weeks at once rather than traceable to one player's own dates — it's reported as a conflict for you to resolve directly instead of guessed at.</p>
+<h3>How targets get met</h3>
+<p>Normally every player gets exactly their target. The scheduler solves it as an exact matching of players to weeks, not an estimate, so if a valid schedule exists it will find it. For that to be possible, targets have to add up to <em>weeks &times; players per week</em>, which is what the roster page checks as you type. There are only two cases where a player ends up short, and they're handled differently:</p>
+<p><strong>A whole week is short-staffed.</strong> Too many people blacked out the same date, so that week gets cut down to as many full courts as the available players can fill. Nobody's target is adjusted to make up for it. That's on purpose, so you decide how to rebalance instead of the app doing it quietly and unevenly. The players who would have played that week just end up short for the season. The Stats page shows who and by how much. If you want to make it up, that's up to you (raise a target the next time you re-schedule, bring in a sub, and so on).</p>
+<p><strong>A player's own blackout dates make their target impossible.</strong> For example, they blacked out more weeks than their target leaves room for. In this case the scheduler does adjust. That player's target is lowered to what they can actually play, and the extra games go to other players who have room, one game at a time, starting with whoever has the lowest target. That way a shortfall of several games is spread over a few people instead of landing on one. The target you typed on the roster page isn't changed. This only affects that one scheduling run. Every adjustment is listed in the message you see after clicking "Schedule these players," and on the Stats page afterward. If the other players don't have enough room to take the extra games, or the problem involves several players and weeks and can't be traced to one person's dates, it's reported as a conflict for you to fix instead of the app guessing.</p>
 
-<p>Once you're actually happy with the result and done adjusting, click <strong>Lock this schedule</strong> on the session detail page. It doesn't restrict anything further — the roster, re-scheduling, and blackout dates all keep working exactly the same — it's purely a marker (a badge plus a timestamp) so it's clear to you later that this version was the one you stood behind, not just whatever happened to exist after the first click. <strong>Unlock schedule</strong> reverses it just as freely if you need to make more changes after all.</p>
+<p>When you're happy with the schedule, click <strong>Lock this schedule</strong> on the session detail page. It doesn't block anything. You can still change the roster, re-schedule, and edit blackout dates. It just adds a badge and a timestamp so you can tell later which version you signed off on. <strong>Unlock schedule</strong> removes it if you need to make more changes.</p>
 
 <h2 id="week-to-week">5. Running it week to week</h2>
-<p>Most weeks need nothing from you — reminders, follow-ups, and sub-request fan-outs all run automatically in the background. When something does need a human: the session detail page lets you <strong>Reassign</strong> a slot, <strong>Mark confirmed</strong> on someone's behalf, edit <strong>ball duty</strong>, or <strong>Add a player</strong> to a week that's short-staffed. A player's own self-service actions (blackout dates, Request a Sub, Swap a Week) don't need you at all unless something gets stuck — a sub request nobody claims, or a swap nobody responds to, both get flagged for you automatically (see §7).</p>
-<p>The Reassign dropdown also has a <strong>— Needs a sub —</strong> option, for the rare case where you need to force the issue directly (e.g. a hard conflict a player hasn't dealt with themselves) rather than waiting on them. It flags that slot exactly like a player's own request would, but sends no email to anyone right away — candidates only get emailed once that week's normal reminder time arrives, same as everyone else's reminder. This is meant to stay a rare, edge-case tool: players already have Request a Sub and Swap a Week for the normal case, so reach for this only when you specifically need to act on someone's behalf.</p>
-<p>There's also a <strong>— One-time sub (not on roster) —</strong> option, for when a player lines up their own replacement completely outside the app — a friend, a guest, anyone not already a player and not on your Sub List. Pick it, type a name, and the app creates a minimal player record on the spot and slots them in as a confirmed sub for that one week; no email address is needed or asked for, so this person never receives any automated email (the Email Log shows their rows as "skipped — no email" rather than a failure, so it's not mistaken for something broken). Use this only for a genuine outside one-off — anyone who might play again belongs on the roster or the Sub List instead.</p>
-<p>Every open week's card also has a <strong>Send email to players</strong> button — a small compose form (subject + body, no template) that goes out as one email with every player currently scheduled or confirmed for that specific week in the To: field, not a fan-out to the whole roster. Handy for "practice moved to the next court over this week" type messages that don't fit any of the automatic templates. (Want to email a whole session's roster instead of one week, or test what a real template looks like? That's the separate <a href="/admin/email">Send Email</a> page, reachable from the nav.)</p>
+<p>Most weeks you won't have to do anything. Reminders, follow-ups, and sub requests all run on their own. When something does need you, the session detail page lets you <strong>Reassign</strong> a spot, <strong>Mark confirmed</strong> for someone, change <strong>ball duty</strong>, or <strong>Add a player</strong> to a short week. Players handle blackout dates, sub requests, and swaps themselves. You only need to get involved if something gets stuck, like a sub request nobody takes or a swap nobody answers. Both of those get flagged for you (see §7).</p>
+<p>The Reassign dropdown has a <strong>— Needs a sub —</strong> option for when you need to step in yourself, like when a player has a hard conflict and hasn't dealt with it. It marks the spot the same way the player's own request would, but it doesn't send any email right away. Candidates get emailed when that week's normal reminder time comes around. You shouldn't need this often. Players already have Request a Sub and Swap a Week, so save this for when you really have to act for someone.</p>
+<p>There's also <strong>— One-time sub (not on roster) —</strong>, for when a player finds a replacement completely outside the app: a friend, a guest, anyone who isn't a player and isn't on your Sub List. Pick it and type a name. The app creates a basic player record and puts them in as a confirmed sub for that one week. It doesn't ask for an email address, so this person never gets any automatic emails. In the Email Log their rows show "skipped — no email," which is expected and not an error. Only use this for a true one-time guest. Anyone who might play again should go on the roster or the Sub List.</p>
+<p>Each open week's card also has a <strong>Send email to players</strong> button. It's a simple form (subject and message, no template) that sends one email to everyone scheduled or confirmed for that week, not the whole roster. It's good for things like "we're on the next court over this week." To email a whole session's roster, or to test what one of the built-in emails looks like, use the <a href="/admin/email">Send Email</a> page in the nav.</p>
 <img class="screenshot" src="/img/admin-guide/session-weekly-status.png?v=<%= assetVersion %>" alt="A single week's card on the session detail page, showing each player's row with their status badge, Reassign dropdown, Resend link and Mark confirmed buttons, plus the week-level ball duty, Clear sub request, Send reminders now, and Send email to players controls.">
-<p class="screenshot-caption">One week's card: every player's badge and the Reassign / Resend link / Mark confirmed buttons on the left, the week-level controls (ball duty, sub request, reminders, email) on the right.</p>
+<p class="screenshot-caption">One week's card. On the left, each player's badge with Reassign, Resend link, and Mark confirmed. On the right, the controls for the whole week: ball duty, sub request, reminders, and email.</p>
 
 <h3>Player status badges (session detail page)</h3>
-<p>Each player row shows one badge — this is what to scan for when you're checking a week over. <span class="badge reminded">email sent - unconfirmed</span> is admin-only: it's the same underlying "scheduled" status a player would see on their own pages, just made visible to you once a reminder has actually gone out, so "waiting to hear back" and "hasn't been asked yet" don't look identical at a glance.</p>
+<p>Each player row shows one badge, and that's what you look at when checking over a week. The <span class="badge reminded">email sent - unconfirmed</span> badge is only shown to admins. To the player it's still just "scheduled." You see the difference so you can tell "reminded, no answer yet" apart from "hasn't been reminded yet."</p>
 <table class="wide">
   <thead><tr><th>Badge</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><span class="badge scheduled">scheduled</span></td><td>Down to play, no reminder sent yet.</td></tr>
-    <tr><td><span class="badge reminded">email sent - unconfirmed</span></td><td>Reminder sent, no response yet. Gains a <code>(&times;2)</code> suffix once the follow-up nudge also goes out — still just "scheduled" underneath, nothing to fix unless you want to.</td></tr>
+    <tr><td><span class="badge scheduled">scheduled</span></td><td>Playing, no reminder sent yet.</td></tr>
+    <tr><td><span class="badge reminded">email sent - unconfirmed</span></td><td>Reminder sent, no answer yet. It gets <code>(&times;2)</code> added once the follow-up goes out too. It's still "scheduled" underneath, so there's nothing you have to fix.</td></tr>
     <tr><td><span class="badge confirmed">confirmed</span></td><td>Player confirmed.</td></tr>
-    <tr><td><span class="badge needs_sub">needs sub</span></td><td>A sub was requested for this slot (by the player, or by you via — Needs a sub —) and it hasn't been filled yet.</td></tr>
+    <tr><td><span class="badge needs_sub">needs sub</span></td><td>Someone asked for a sub for this spot (the player, or you with — Needs a sub —) and it hasn't been filled.</td></tr>
     <tr><td><span class="badge subbed_out">subbed out</span></td><td>Someone else took this spot.</td></tr>
-    <tr><td><span class="badge double_booked">double booked</span></td><td>Also assigned in another session on this same date — see §8. Takes priority over "scheduled"/"confirmed"/"email sent - unconfirmed" for display, but drops back to the real status once that player's slot moves to needs-sub or subbed-out.</td></tr>
+    <tr><td><span class="badge double_booked">double booked</span></td><td>Also scheduled in another session on the same date (see §8). It shows in place of scheduled, confirmed, or email sent - unconfirmed. Once the spot changes to needs sub or subbed out, the real status shows again.</td></tr>
   </tbody>
 </table>
 
 <h2 id="timing">6. The full email/notification timeline</h2>
-<p>Section 5 covers what you do; this is the exact timing of what the app does on its own — the same decision trees on the player-facing <a href="/help#timing">How It Works</a> page, redrawn here from your side with the admin actions that intersect each flow, plus the separate ad-hoc pickup-game flow (mirroring <a href="/help#adhoc">How It Works</a>'s own version of it), and a sixth flow that's admin-only: the status report email addressed to you. Worth knowing cold, since it's what tells you whether something's actually stuck or just hasn't hit its next automatic step yet.</p>
+<p>Section 5 covers what you do. This section covers what the app does by itself, and when. The first few flows match the ones on the player's <a href="/help#timing">How It Works</a> page, shown from your side with the places you can step in. After those come the pickup game flow (also on <a href="/help#adhoc">How It Works</a>) and one that's only for you: the status report email. It's good to know these well, because they're how you tell whether something is really stuck or just hasn't reached its next automatic step.</p>
 
 <h3>Confirming you're playing</h3>
 <div class="flowchart">
   <div class="flow-step">
-    <div class="flow-when">2 days before the match (the admin can change this)</div>
+    <div class="flow-when">2 days before the match (you can change this)</div>
     <div class="flow-title">Reminder email sent</div>
-    <div class="flow-detail">Confirm and Need a sub buttons. Sent once per week, per player. On the session detail page, that player's badge switches from <span class="badge scheduled">scheduled</span> to <span class="badge reminded">email sent - unconfirmed</span> the moment this goes out.</div>
+    <div class="flow-detail">It has Confirm and Need a sub buttons. One per player per week. As soon as it goes out, that player's badge on the session detail page changes from <span class="badge scheduled">scheduled</span> to <span class="badge reminded">email sent - unconfirmed</span>.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-when">Configurable — hours before match time (default 27; "Follow-up email" on the session form)</div>
-    <div class="flow-title">Still hasn't responded? One follow-up nudge</div>
-    <div class="flow-detail">Same two buttons. Only goes out if they're still sitting on "scheduled" at that point — skipped entirely if they already confirmed or asked for a sub. Set as an hours-before-match lead time rather than a fixed clock time, so it can land during work hours the day before an evening match instead of the morning of. Adds a <code>(&times;2)</code> to that badge so you can tell "reminded once" from "reminded twice, still nothing" at a glance.</div>
+    <div class="flow-when">Hours before the match, set as "Follow-up email" on the session form (default 27)</div>
+    <div class="flow-title">No answer yet? One follow-up</div>
+    <div class="flow-detail">Same two buttons. It's only sent if they haven't confirmed or asked for a sub yet. It's set as a number of hours before the match instead of a time of day, so for an evening match it lands during the workday before instead of that morning. It also adds <code>(&times;2)</code> to the badge, so you can tell "reminded once" from "reminded twice and still nothing."</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
@@ -102,15 +109,15 @@
     <div class="flow-branch">
       <div class="flow-branch-label">They click Need a sub</div>
       <div class="flow-step">
-        <div class="flow-title">Jumps to Request a Sub</div>
-        <div class="flow-detail">See that flow below — an email goes out to the rest of the roster.</div>
+        <div class="flow-title">Goes to Request a Sub</div>
+        <div class="flow-detail">See that flow below. An email goes out to the rest of the roster.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">They click "Already found your own sub?"</div>
       <div class="flow-step">
-        <div class="flow-title">Jumps to I Found a Sub</div>
-        <div class="flow-detail">See that flow below — only the one named person gets emailed, not the whole roster.</div>
+        <div class="flow-title">Goes to I Found a Sub</div>
+        <div class="flow-detail">See that flow below. Only the one person they name gets emailed, not the whole roster.</div>
       </div>
     </div>
     <div class="flow-branch">
@@ -119,7 +126,7 @@
       <div class="flow-step urgent">
         <div class="flow-when">Match time arrives</div>
         <div class="flow-title">Nothing else happens automatically</div>
-        <div class="flow-detail">There's no third automated step the way there is for a sub request or a swap — those two emails are it. Status stays "scheduled" for good, the week locks, and both links stop working. The badge stays on <span class="badge reminded">email sent - unconfirmed (&times;2)</span> right up until lock, and the dashboard's "unconfirmed" flag is the other signal that something didn't get a response — from there it's entirely a manual call (Kyle, 2026-08-27: deliberately no auto-escalation here — reassign, call the player, or wait, on your own judgment).</div>
+        <div class="flow-detail">Unlike sub requests and swaps, there's no third step here. Those two emails are it. The status stays "scheduled," the week locks, and the links stop working. The badge stays at <span class="badge reminded">email sent - unconfirmed (&times;2)</span> until the week locks, and the dashboard shows an "unconfirmed" flag. After that it's up to you. There's no automatic escalation for this on purpose, so you can decide whether to reassign, call the player, or just wait.</div>
       </div>
     </div>
   </div>
@@ -132,58 +139,58 @@
       <div class="flow-branch-label">From a reminder email</div>
       <div class="flow-step">
         <div class="flow-title">Clicks "Need a sub"</div>
-        <div class="flow-detail">The link itself proves it's really them, so this goes straight to the confirm page below.</div>
+        <div class="flow-detail">The link already proves it's them, so they go straight to the confirm page below.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">From the Request a Sub page</div>
       <div class="flow-step">
-        <div class="flow-title">Picks their week — no link yet</div>
-        <div class="flow-detail">They get a verification email first. Nothing goes out to anyone else until they click the link in it — bot/mis-click protection, since this page has no login. Once it does fire, their own confirmation email names exactly who was just asked, when it escalates (see below — 24h by default, configurable per session) and to whom, and to contact you if nobody's confirmed by match time — so they're not left guessing or duplicating effort by texting someone who's already been emailed.</div>
+        <div class="flow-title">Picks their week (no link yet)</div>
+        <div class="flow-detail">They get an email to confirm it's them first. Nobody else is emailed until they click the link. Since this page has no login, that protects against bots and mis-clicks. Once the request goes out, their confirmation email tells them who was asked, when it escalates and to whom (24 hours by default, set per session; see below), and to contact you if nobody has confirmed by match time. That way they know where things stand and don't start texting people who were already emailed.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">You flag it directly (Reassign &rarr; "— Needs a sub —")</div>
+      <div class="flow-branch-label">You mark it directly (Reassign &rarr; "— Needs a sub —")</div>
       <div class="flow-step">
-        <div class="flow-title">No email to the player at all</div>
-        <div class="flow-detail">The fan-out below is held back until this week's normal reminder time instead of going out right away. A rare, edge-case tool — players already have the two paths on the left for the normal case.</div>
+        <div class="flow-title">No email to the player</div>
+        <div class="flow-detail">The email to the roster below waits until this week's normal reminder time instead of going out right away. You shouldn't need this often, since players have the two options on the left.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step pending">
-    <div class="flow-title">"Are you sure?" (player-initiated paths only)</div>
-    <div class="flow-detail">One more click — the point of no return, since it emails the rest of the roster right away.</div>
+    <div class="flow-title">"Are you sure?" (only when the player starts it)</div>
+    <div class="flow-detail">One more click. This is the step that emails the rest of the roster.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">Everyone not already playing that week gets an email</div>
-    <div class="flow-detail">Except anyone blacked out on that date — including a blackout carried over from another session sharing the same calendar date (see §3). First to click "I'll play" gets the spot.</div>
+    <div class="flow-detail">Except anyone with that date blacked out, including a blackout from another session on the same date (see §3). The first to click "I'll play" gets the spot.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">Someone claims it</div>
+      <div class="flow-branch-label">Someone takes it</div>
       <div class="flow-step success">
         <div class="flow-title">Spot filled</div>
-        <div class="flow-detail">Original player marked subbed out and gets their own "you're all set" email, new player confirmed, everyone else still playing that week notified too. Done.</div>
+        <div class="flow-detail">The original player is marked subbed out and gets an email saying they're all set. The new player is confirmed, and everyone else playing that week gets notified.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">Nobody claims it yet</div>
+      <div class="flow-branch-label">Nobody takes it yet</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step">
-        <div class="flow-when">24 hours before match (configurable per session, see Sessions -&gt; Edit)</div>
-        <div class="flow-title">Escalates to this session's sub list</div>
-        <div class="flow-detail">Only the subs assigned to this specific session via Manage subs get emailed — none assigned sends it straight to unfilled instead, no email.</div>
+        <div class="flow-when">24 hours before the match (set per session on the Edit page)</div>
+        <div class="flow-title">Goes to this session's sub list</div>
+        <div class="flow-detail">Only the subs checked for this session on Manage subs get emailed. If nobody's checked, it goes straight to unfilled and no email is sent.</div>
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-branches">
         <div class="flow-branch">
-          <div class="flow-branch-label">A sub claims it</div>
+          <div class="flow-branch-label">A sub takes it</div>
           <div class="flow-step success">
             <div class="flow-title">Spot filled</div>
-            <div class="flow-detail">Same as above. Done.</div>
+            <div class="flow-detail">Same as above.</div>
           </div>
         </div>
         <div class="flow-branch">
@@ -192,105 +199,110 @@
           <div class="flow-step urgent">
             <div class="flow-when">Match time arrives</div>
             <div class="flow-title">Marked unfilled</div>
-            <div class="flow-detail">Flagged on the dashboard and Status page. Add someone manually via the week card's "Add a player…" dropdown, or the week plays a player short.</div>
+            <div class="flow-detail">Flagged on the dashboard and the Status page. You can add someone with the "Add a player…" dropdown on the week's card, or the week plays one short.</div>
           </div>
         </div>
       </div>
     </div>
   </div>
-  <p class="flow-note">You can close this out at any point — <strong>Reassign</strong>, <strong>Mark confirmed</strong>, or <strong>Clear sub request</strong> if it was a mistake (puts the player back to "scheduled" so they're reminded normally again).</p>
+  <p class="flow-note">You can close this out at any point with <strong>Reassign</strong>, <strong>Mark confirmed</strong>, or <strong>Clear sub request</strong> if it was a mistake. Clearing it puts the player back to "scheduled," and they'll get the normal reminder.</p>
 </div>
 
 <h3>I Found a Sub</h3>
 <div class="flowchart">
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">From a reminder/follow-up email</div>
+      <div class="flow-branch-label">From a reminder or follow-up email</div>
       <div class="flow-step">
         <div class="flow-title">Clicks "Already found your own sub?"</div>
-        <div class="flow-detail">The link itself proves it's really them — straight to the picker below.</div>
+        <div class="flow-detail">The link already proves it's them, so they go straight to the picker below.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">From My Page</div>
       <div class="flow-step">
-        <div class="flow-title">Clicks "I found a sub" — no link yet</div>
-        <div class="flow-detail">Gets a verification email first, same bot/mis-click protection as the other two self-service flows.</div>
+        <div class="flow-title">Clicks "I found a sub" (no link yet)</div>
+        <div class="flow-detail">They get an email to confirm it's them first, same as the other self-service flows.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-title">Picks who they coordinated with</div>
-    <div class="flow-detail">A list of everyone on this session's own roster and sub list (blacked-out candidates shown, just flagged — this is a specific choice they've already made, not a blind fan-out), or "someone new" with a name and email if it's nobody the system knows yet.</div>
+    <div class="flow-title">Picks who they lined up</div>
+    <div class="flow-detail">They choose from everyone on this session's roster and sub list, or pick "someone new" and enter a name and email. People who have that date blacked out still show up, with a flag, since the player has already talked to whoever they're picking.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
       <div class="flow-branch-label">Existing player or sub</div>
       <div class="flow-step">
-        <div class="flow-title">Sub request opens, addressed to just that one person</div>
-        <div class="flow-detail">Same <code>sub_requests</code>/<code>sub_offers</code> machinery as any other sub — a plain confirm link, no race with anyone else.</div>
+        <div class="flow-title">A sub request goes to just that person</div>
+        <div class="flow-detail">It works like any other sub request, except only that one person gets the confirm link, so nobody else is racing for it.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">Brand-new person</div>
+      <div class="flow-branch-label">Someone new</div>
       <div class="flow-step">
         <div class="flow-title">Added to the Broader Sub List automatically</div>
-        <div class="flow-detail">Also linked to this specific session's sub list. You get an email (if this session has <strong>Admin report emails</strong> configured) naming who added them and why, and it always shows up on the <a href="/admin/status">Status page</a> and in the <a href="/admin/activity-log">Activity Log</a> regardless — worth a look on the <a href="/admin/sub-list">Sub List page</a> to tidy up their auto-generated slug or merge them with an existing entry under a different email.</div>
+        <div class="flow-detail">They're also added to this session's sub list. If this session has <strong>Admin report emails</strong> set up, you get an email saying who added them and why. Either way, it shows up on the <a href="/admin/status">Status page</a> and in the <a href="/admin/activity-log">Activity Log</a>. It's a good idea to check the <a href="/admin/sub-list">Sub List page</a> afterward to fix their automatically created URL slug, or to merge them with an existing entry that has a different email.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-title">Named person gets a confirm email</div>
-    <div class="flow-detail">Same wording as any other sub offer. If they don't respond, this falls into the exact same escalation-to-the-sub-list path as a normal Request a Sub (24h before match by default, configurable per session) — nothing special about how it was created changes what happens if it stalls.</div>
+    <div class="flow-title">That person gets a confirm email</div>
+    <div class="flow-detail">It's the same email as any other sub request. If they don't answer, it goes to the sub list the same way a regular Request a Sub does (24 hours before the match by default, set per session).</div>
   </div>
-  <p class="flow-note">The original player's own confirmation email explains the fallback up front, so nobody's left wondering. Their assignment shows <span class="badge needs_sub">needs sub</span> exactly like any other in-progress sub request the whole time.</p>
+  <p class="flow-note">The original player's confirmation email explains what happens if the person doesn't answer. Their spot shows <span class="badge needs_sub">needs sub</span> the whole time, like any other open sub request.</p>
 </div>
 
 <h3>Swap a Week</h3>
 <div class="flowchart">
   <div class="flow-step">
     <div class="flow-title">A player proposes a trade</div>
-    <div class="flow-detail">One of their own upcoming weeks, a specific teammate, and one of that teammate's weeks they'd rather play instead.</div>
+    <div class="flow-detail">One of their upcoming weeks, a specific teammate, and one of that teammate's weeks they'd rather play.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step pending">
+    <div class="flow-title">They confirm it's them</div>
+    <div class="flow-detail">Same email check as the other self-service flows. Nothing goes to the other player until they click the link.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">The other player gets an email to accept or decline</div>
-    <div class="flow-detail">Nothing changes until they respond.</div>
+    <div class="flow-detail">Nothing changes until they answer.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
       <div class="flow-branch-label">They accept</div>
       <div class="flow-step success">
-        <div class="flow-title">Swap complete</div>
-        <div class="flow-detail">Both slots trade places and go straight to confirmed. Ball duty stays put — it's attached to the week, not the player — so double-check it's still on someone actually playing that week.</div>
+        <div class="flow-title">Swap done</div>
+        <div class="flow-detail">The two spots trade places and both are confirmed. Ball duty doesn't move with them, because it belongs to the week, not the player. Check that it's still on someone who's playing that week.</div>
       </div>
     </div>
     <div class="flow-branch">
       <div class="flow-branch-label">They decline</div>
       <div class="flow-step urgent">
         <div class="flow-title">Nothing changes</div>
-        <div class="flow-detail">Both players notified. The original weeks stand.</div>
+        <div class="flow-detail">Both players are notified. The original weeks stay as they were.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">No response yet</div>
+      <div class="flow-branch-label">No answer yet</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step">
-        <div class="flow-when">48 hours before the earlier of the two match dates</div>
-        <div class="flow-title">One nudge email</div>
-        <div class="flow-detail">Sent to the recipient only.</div>
+        <div class="flow-when">48 hours before the earlier of the two dates</div>
+        <div class="flow-title">One reminder email</div>
+        <div class="flow-detail">Sent only to the person who hasn't answered.</div>
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-branches">
         <div class="flow-branch">
-          <div class="flow-branch-label">They respond</div>
+          <div class="flow-branch-label">They answer</div>
           <div class="flow-step">
             <div class="flow-title">Accept or decline</div>
-            <div class="flow-detail">Same outcomes as above.</div>
+            <div class="flow-detail">Same as above.</div>
           </div>
         </div>
         <div class="flow-branch">
@@ -298,52 +310,52 @@
           <div class="flow-arrow">&#8595;</div>
           <div class="flow-step urgent">
             <div class="flow-title">Proposal expires</div>
-            <div class="flow-detail">The earlier week's about to lock, so the trade can't happen. No email — it quietly closes out so both players' weeks are free to swap with someone else.</div>
+            <div class="flow-detail">The earlier week is about to lock, so the swap can't happen. No email goes out. It just closes, and both players are free to swap those weeks with someone else.</div>
           </div>
         </div>
       </div>
     </div>
   </div>
-  <p class="flow-note">You can cancel a pending swap directly from the session detail page. Reassigning either side's slot while a swap is still pending cancels it automatically too, so a stale swap can't silently override a manual fix.</p>
+  <p class="flow-note">You can cancel a pending swap from the session detail page. If you reassign either spot while a swap is pending, the swap is canceled automatically, so an old swap can't undo a change you made by hand.</p>
 </div>
 
 <h3>Ad-hoc pickup games</h3>
-<p>Regular sessions only, above — an ad-hoc (pickup-game) session (a separate type you pick with a radio button when creating it, fixed for that session's whole life) runs a completely different flow with none of the confirm/sub/swap machinery. There's no season roster, no targets, no blackout dates, no fairness math, no confirm step; signing up for a court <em>is</em> a player's confirmation.</p>
+<p>Everything above is for regular sessions. An ad-hoc (pickup game) session is a separate type. You choose it with a radio button when you create the session, and it can't be changed later. It doesn't use any of the confirm, sub, or swap steps. There's no season roster, no targets, no blackout dates, and no fairness math. Signing up for a court <em>is</em> the player's confirmation.</p>
 <div class="flowchart">
   <div class="flow-step">
-    <div class="flow-when">Configurable — hours before match time (default 56; "Invite email" on the session form)</div>
-    <div class="flow-title">Invite email sent to every active roster player</div>
-    <div class="flow-detail">One single-use "I'm in" link each. First-come-first-served — a court forms the instant 4 people have signed up, no waiting for any deadline.</div>
+    <div class="flow-when">Hours before the match, set as "Invite email" on the session form (default 56)</div>
+    <div class="flow-title">Invite email goes to every active player on the roster</div>
+    <div class="flow-detail">Each person gets a single-use "I'm in" link. It's first come, first served. A court forms as soon as 4 people sign up, with no deadline to wait for.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-title">Sign-ups accumulate</div>
-    <div class="flow-detail">Every complete group of 4, in sign-up order, becomes its own court — no cap on how many can fill. The week's card on the session detail page shows the live breakdown (courts formed / waiting group / not yet signed up) at any point, computed fresh, not stored.</div>
+    <div class="flow-title">Sign-ups come in</div>
+    <div class="flow-detail">Each group of 4, in the order they signed up, becomes its own court, with no limit on courts. The week's card on the session detail page shows the current breakdown at any time: courts formed, the group still waiting, and who hasn't signed up.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
     <div class="flow-branch">
-      <div class="flow-branch-label">Sign-ups land on a clean multiple of 4</div>
+      <div class="flow-branch-label">Sign-ups come out to a multiple of 4</div>
       <div class="flow-step success">
         <div class="flow-title">No reminder needed</div>
-        <div class="flow-detail">Every court's already full.</div>
+        <div class="flow-detail">All the courts are full.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">There's a leftover group of 1-3</div>
+      <div class="flow-branch-label">1 to 3 people left over</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-step pending">
-        <div class="flow-when">Configurable — hours before match time (default 30; "Reminder email" on the session form)</div>
-        <div class="flow-title">One reminder, to stragglers only</div>
-        <div class="flow-detail">Only sent to whoever on the roster hasn't signed up yet — nobody already on a full court gets it.</div>
+        <div class="flow-when">Hours before the match, set as "Reminder email" on the session form (default 30)</div>
+        <div class="flow-title">One reminder, only to people who haven't signed up</div>
+        <div class="flow-detail">Nobody who's already on a full court gets it.</div>
       </div>
     </div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-when">Configurable — hours before match time (default 24; "Final roster email" on the session form)</div>
-    <div class="flow-title">Courts finalize</div>
-    <div class="flow-detail">Every complete group gets materialized into real <code>week_assignments</code> rows, status <code>confirmed</code> directly. Idempotent — safe if this ever runs twice for the same week.</div>
+    <div class="flow-when">Hours before the match, set as "Final roster email" on the session form (default 24)</div>
+    <div class="flow-title">Courts are set</div>
+    <div class="flow-detail">Every full group is saved to the schedule as confirmed. If this step ever runs twice for the same week, nothing gets duplicated.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-branches">
@@ -351,56 +363,56 @@
       <div class="flow-branch-label">A court formed</div>
       <div class="flow-step success">
         <div class="flow-title">"You're in" email to that court</div>
-        <div class="flow-detail">Names their teammates and court number. Done.</div>
+        <div class="flow-detail">Tells them their teammates and court number.</div>
       </div>
     </div>
     <div class="flow-branch">
-      <div class="flow-branch-label">A group never reached 4</div>
+      <div class="flow-branch-label">A group didn't get to 4</div>
       <div class="flow-step urgent">
         <div class="flow-title">"Not enough signed up" email</div>
-        <div class="flow-detail">Sent to whoever was left in the leftover group. That group doesn't play this time — no <code>week_assignments</code> rows for them.</div>
+        <div class="flow-detail">Goes to the people in the leftover group. They don't play this week and aren't added to the schedule.</div>
       </div>
     </div>
   </div>
-  <p class="flow-note">You can sign a player up or withdraw them manually from the week's card at any point before it finalizes — the only way to fix a mistake, since players have no self-service "undo" once they've clicked "I'm in." There's currently no equivalent of Reassign for a court that's already finalized — see the backlog note in CLAUDE.md if a pickup week ever genuinely needs reshuffling after the fact.</p>
+  <p class="flow-note">You can sign someone up or take them off from the week's card any time before the courts are set. That's the only way to fix a mistake, because players can't undo "I'm in" themselves. There's no Reassign for a court that's already been set. If a pickup week ever needs to be shuffled after that point, see the backlog note in CLAUDE.md.</p>
 </div>
 
 <h3>Admin status report</h3>
-<p>The only one of these five that's addressed to you, not a player — see §1 for how to turn it on. No branches: it's a single scheduled send per configured address, per week, and only for regular sessions (an ad-hoc session has no confirm/sub/swap state for it to summarize).</p>
+<p>This is the only one sent to you instead of a player. See §1 for how to turn it on. There are no branches. It's one email per address, per week, and only for regular sessions (a pickup session doesn't have confirmations, subs, or swaps to report on).</p>
 <div class="flowchart">
   <div class="flow-step">
-    <div class="flow-when">N hours before match time (default 8, set per session)</div>
-    <div class="flow-title">Status report emailed to every configured address</div>
-    <div class="flow-detail">Who's confirmed, who hasn't, who needs a sub and whether it's filled, who swapped and with whom, ball duty. Live at send time, not a snapshot from whenever the config was set.</div>
+    <div class="flow-when">N hours before the match (default 8, set per session)</div>
+    <div class="flow-title">Status report emailed to each address you entered</div>
+    <div class="flow-detail">Who's confirmed, who hasn't, who needs a sub and whether it's filled, who swapped with whom, and ball duty. It reflects where things stand when it's sent.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step success">
-    <div class="flow-title">Done — nothing to respond to</div>
-    <div class="flow-detail">Adding a new address later and re-triggering only emails the new one; anyone already sent to for that week is skipped, not re-sent.</div>
+    <div class="flow-title">Done. Nothing to reply to.</div>
+    <div class="flow-detail">If you add an address later and send it again, only the new address gets it. Anyone who already got that week's report won't get a second copy.</div>
   </div>
-  <p class="flow-note">Don't want to wait? <strong>Send status report now</strong> on the week's card sends the identical report immediately, same dedup rules — safe to click more than once.</p>
+  <p class="flow-note">If you don't want to wait, <strong>Send status report now</strong> on the week's card sends the same report right away. It follows the same rule, so clicking it more than once is fine.</p>
 </div>
 
 <h2 id="monitoring">7. Keeping an eye on things</h2>
-<p>The <a href="/admin/status">Status page</a> is the single best place to check — it flattens everything that needs a human across every session (unfilled sub requests, short-staffed weeks, unconfirmed players, stale swaps, double-bookings) into one list, plus a preview of what the reminder system is about to do on its own over the next several days, so you can confirm it's actually running without waiting for match day. The <a href="/admin">Dashboard</a> shows the same flags per-session. The <a href="/admin/activity-log">Activity Log</a> and <a href="/admin/email-log">Email Log</a> give you a full history of who changed what and every email the app has sent, in case a player says "I never got that." (A one-time sub added via Reassign shows up there as "skipped — no email," not a failure — see §5. A weather forecast that's stopped updating shows up there too — see §9.)</p>
+<p>The <a href="/admin/status">Status page</a> is the best place to check. It lists everything that needs your attention across all sessions (unfilled sub requests, short-staffed weeks, unconfirmed players, swaps nobody answered, double-bookings). It also shows what the reminder system is about to send over the next several days, so you can see it's running without waiting for match day. The <a href="/admin">Dashboard</a> shows the same flags for each session. The <a href="/admin/activity-log">Activity Log</a> and <a href="/admin/email-log">Email Log</a> have a full history of who changed what and every email the app has sent, for when a player says "I never got that." (A one-time sub added through Reassign shows up there as "skipped — no email," which isn't an error; see §5. A weather forecast that stopped updating shows up there too; see §9.)</p>
 <img class="screenshot" src="/img/admin-guide/session-dashboard-alerts.png?v=<%= assetVersion %>" alt="One session's card on the dashboard listing five flags: weeks needing attention, unconfirmed assignments, an unfilled sub request, overlapping enrollment, and an actual double-booking.">
-<p class="screenshot-caption">Every flag a session can raise, stacked on one card — in practice you'll usually see none of these ("All clear") or just one or two.</p>
-<p><a href="/admin/stats">Stats Summary</a> is a different, one-page view for a different question — not "what's stuck," but "how's every active session actually doing": roster size, weeks played, confirmed/not-yet-confirmed counts, open subs, and ball-duty issues per session, plus the full per-player target/played/ball-duty breakdown underneath each one. The per-session Stats page (reachable from that session's own detail page) shows the identical breakdown plus a partner-pairing matrix and sub history, for whenever you need the full detail on just one session.</p>
-<p>Separate from all of that, <a href="/admin/backup">Backup</a> lets you create a manual backup or trigger the off-site push on demand (both also run automatically overnight) — worth knowing where it is even though it's not part of running any one session.</p>
+<p class="screenshot-caption">Every kind of flag a session can show, all on one card. Normally you'll see none of these ("All clear") or just one or two.</p>
+<p><a href="/admin/stats">Stats Summary</a> is for checking how each active session is going overall: roster size, weeks played, confirmed and unconfirmed counts, open subs, and ball duty problems, with each player's target, games played, and ball duty listed underneath. Each session's own Stats page (linked from its detail page) has the same breakdown plus a partner-pairing grid and sub history, for when you want all the detail on one session.</p>
+<p><a href="/admin/backup">Backup</a> is where you can make a backup or push one off-site whenever you want. Both also run automatically every night. It isn't part of running a session, but it's good to know where it is.</p>
 <img class="screenshot" src="/img/admin-guide/dashboard.png?v=<%= assetVersion %>" alt="Admin dashboard showing three session cards, two of them with red-bordered flags for players enrolled in or actually double-booked into another overlapping session.">
-<p class="screenshot-caption">Each session card on the dashboard flags its own trouble spots directly — here, two sessions sharing players on overlapping dates. Click into the session to fix it.</p>
+<p class="screenshot-caption">Each session card on the dashboard shows its own problems. Here, two sessions share players on overlapping dates. Click into a session to fix it.</p>
 
 <h2 id="multi-session">8. Running more than one session at once</h2>
-<p>Multiple concurrent sessions are fully supported — different clubs, different courts, or a first-half/second-half split. If the same player ends up enrolled in two sessions that meet the same day of week with overlapping dates, that's flagged for you as a risk the moment you save the roster. It's a warning only — the scheduler doesn't automatically prevent it — so it's worth actually checking whether the two schedules end up colliding once both are generated. If a player really does end up double-booked, it's flagged everywhere: the session detail page, dashboard, Status page, and — just as importantly — directly to the player themselves on their own schedule, PDF, and calendar, so they can sort it out (request a sub or a swap) without needing you to catch it first.</p>
-<p>Both of these show up as compact tables on the session detail page rather than a long stack of boxes — a player flagged against several dates or sessions still only takes up one or two rows. They roll off differently, though: <strong>double-booked</strong> clears itself automatically once either side's week is actually played and locked, so it only ever shows a real, upcoming conflict. <strong>Overlapping enrollment</strong> deliberately does not — it stays visible for the life of both sessions regardless of whether the specific shared dates have passed, since it's a standing enrollment risk, not a single incident. Blackout dates factor into this too: they're universal across sessions (see §3), so blacking a player out on a shared date in either session is often the simplest way to actually resolve a real conflict once you've decided who should sit it out.</p>
+<p>You can run several sessions at the same time: different clubs, different courts, or a season split into two halves. If the same player is in two sessions that play on the same day of the week with overlapping dates, you'll get a warning when you save the roster. It's only a warning. The scheduler doesn't prevent it, so check whether the two schedules actually collide once both are made. If a player does end up double-booked, it's flagged everywhere: the session detail page, the dashboard, the Status page, and also on the player's own schedule, PDF, and calendar. That way they can fix it themselves with a sub request or a swap without waiting for you to notice.</p>
+<p>Both warnings show up as small tables on the session detail page, so a player flagged on several dates only takes up a row or two. They go away at different times. <strong>Double-booked</strong> clears itself once either week has been played and locked, so it only shows conflicts that are still ahead. <strong>Overlapping enrollment</strong> stays for as long as both sessions are active, even after the shared dates pass, because it's a warning about how the player is enrolled, not about one particular date. Blackout dates apply across sessions (see §3), so once you've decided which session a player should sit out, blacking out that date is often the easiest fix.</p>
 
 <h2 id="weather-setup">9. Weather forecast</h2>
-<p>Turn it on per session from that session's Edit page (§1) — a checkbox plus a latitude/longitude pair for the match location (a <a href="https://www.latlong.net/" target="_blank" rel="noopener">latlong.net</a> link is right there if you don't have coordinates handy). It's off by default, and both coordinates are required before it'll actually turn on — saving with the checkbox checked and either field blank is rejected with no change made. Once it's on, players see a small forecast (temperature, condition, chance of rain) next to each upcoming date on the public Season Schedule and Next 4 Weeks pages, and it's folded into their confirmation reminder email (or the "you're in" email for a pickup game) — see the player-facing <a href="/help#weather">Weather forecast</a> section for what that actually looks like to them. You'll see the same widget on this session's own detail page, next to each week's date.</p>
-<p>It's pulled from OpenWeatherMap's free forecast API, using one API key set once for the whole server (<code>OPENWEATHER_API_KEY</code> in <code>.env</code> — see <code>.env.example</code>) and shared by every session. A session with the checkbox on but no key configured just silently shows nothing, same as if the checkbox were off — not an error.</p>
-<p>Refreshed automatically roughly once an hour, starting once that week's first email goes out and continuing until an hour after match time — not before, and not indefinitely after. Don't want to wait for the next automatic pass, or want to check it's actually working? <strong>Update weather now</strong> on the week's card (next to Send email to players) fetches immediately, bypassing both the timing window and the once-an-hour cache — and either flashes the new forecast or a plain error message (a bad API key, or OpenWeatherMap being unreachable, most commonly), logging whichever happened to the Activity Log so there's a record beyond just what flashed on screen for that one click.</p>
-<p>The automatic hourly pass logs failures too, but throttled — a session stuck on a bad key or bad coordinates would otherwise fail every single minute it's inside its display window, which would flood the Activity Log with the same failure over and over. Instead it logs at most once an hour per session (<code>weather.refresh_failed</code>, attributed to "System (automatic)" since there's no admin action behind an automatic cron pass) — enough to notice something's actually stuck without burying everything else on that page. If you ever see one of these, the <strong>Update weather now</strong> button is also the fastest way to confirm whether a fix (a corrected API key, corrected coordinates) actually worked.</p>
+<p>Turn it on for a session from its Edit page (§1). There's a checkbox and fields for the latitude and longitude of the courts, with a <a href="https://www.latlong.net/" target="_blank" rel="noopener">latlong.net</a> link right there if you need to look them up. It's off by default, and both coordinates are required. If you check the box and leave either one blank, the save is rejected and nothing changes. Once it's on, players see a small forecast (temperature, conditions, chance of rain) next to each upcoming date on the Season Schedule and Next 4 Weeks pages, and it's included in their reminder email (or the "you're in" email for pickup games). See the player-side <a href="/help#weather">Weather forecast</a> section for what that looks like. You'll also see the forecast next to each week's date on the session detail page.</p>
+<p>The forecast comes from OpenWeatherMap's free API. There's one API key for the whole server (<code>OPENWEATHER_API_KEY</code> in <code>.env</code>; see <code>.env.example</code>), and every session uses it. If the checkbox is on but there's no key, nothing shows up, the same as if the checkbox were off. It doesn't show an error.</p>
+<p>It updates about once an hour, starting when that week's first email goes out and stopping an hour after the match. To update it right away, or to check that it's working, click <strong>Update weather now</strong> on the week's card (next to Send email to players). That skips both the timing window and the hourly limit. You'll see either the new forecast or an error message, usually a bad API key or OpenWeatherMap being down. Either way, the result is also written to the Activity Log so there's a record of it.</p>
+<p>The automatic hourly updates log failures too, but no more than once an hour per session. Otherwise a session with a bad key or bad coordinates would log the same failure every minute and bury everything else in the Activity Log. These entries show up as <code>weather.refresh_failed</code> from "System (automatic)," since no admin triggered them. If you see one, fix the key or coordinates and click <strong>Update weather now</strong> to make sure the fix worked.</p>
 
 <h2 id="wrapping-up">10. Wrapping up a session</h2>
-<p>Once a session's over, <strong>Archive</strong> it from the session detail page — this hides it from the dashboard and every player-facing page and stops all further reminder emails, without deleting anything; you can always unarchive it later to look something up. If a session was only ever test/dummy data, <strong>Delete</strong> it instead from the Edit page (permanent, with confirmation) — this never deletes the players themselves, since they're shared across sessions.</p>
+<p>When a session is over, <strong>Archive</strong> it from the session detail page. That hides it from the dashboard and all player pages and stops any more reminder emails, but it doesn't delete anything. You can unarchive it later if you need to look something up. If a session was only test data, <strong>Delete</strong> it from the Edit page instead. That's permanent, and it asks you to confirm first. Deleting a session never deletes the players, since they're shared with other sessions.</p>
 
 <%- include('../partials/footer') %>
