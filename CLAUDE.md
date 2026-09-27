@@ -2015,3 +2015,28 @@ Design:
 - Suspend-then-resume on a follow-up deleted the row.
 - Over HTTP against a running server: login, `/admin/status` rendered the checkboxes and the renamed nav, and `/admin/status/suspend` checked and unchecked correctly with flashes and log entries. `send-reminders` flashed the new re-send text, and `/admin/guide` rendered.
 - Escalation suspension wasn't exercised end-to-end (it's the same one-line `skipIfSuspended()` gate); worth watching the Activity Log the first time it's used for real.
+
+
+### Email Log preview popup; sub-confirmed email names who the sub replaced (Kyle, 2026-09-27)
+
+Two requests in one message.
+
+**1) See the actual email from the Email Log.** Kyle: "In the admin console in the email log site, is there a way to show what the email looks like that was actually sent out, maybe linking from the subject that pulls up a pop up window to show that individual email?" Until now `email_log` stored only recipient/subject/category/status/week — never the body — so there was nothing to show.
+
+- **New column `email_log.body_html`** (nullable `TEXT`; added to `schema.sql` and via a bare `ensureColumn('email_log', 'body_html', 'TEXT')` in `db/index.js` — no default, nothing to backfill). Rows logged before this change stay `NULL` and simply have no preview.
+- **`email.js`'s `sendMail()`** now computes `bodyHtml = wrapEmailHtml(html)` once (after the `test` override block) and uses it both as the nodemailer `html` and as the stored `body_html` on all three `INSERT INTO email_log` paths (sent / logged_dev_mode, failed, skipped_no_email). So the stored copy is byte-for-byte what went out, wrapper included.
+- **`GET /admin/email-log`** no longer selects `el.*` (that would drag up to 300 full bodies into the list page); it selects explicit columns plus `(el.body_html IS NOT NULL) AS has_body`. Keep it that way if new columns are added to `email_log`.
+- **New route `GET /admin/email-log/:id/body`** (behind `requireAdmin` like everything else in `admin.js`) returns the stored body as a tiny standalone HTML document, or 404 if there's no stored body. It sets a strict `Content-Security-Policy` (`default-src 'none'; img-src * data:; style-src 'unsafe-inline'; sandbox`) and CSS `a { pointer-events: none }`.
+- **`email_log.ejs`**: subjects with a stored body become links; clicking opens a `<dialog>` with To/sent time and an `<iframe sandbox>` pointing at the body route (plain link fallback without `showModal`). Closes via button, click outside, or Esc; the iframe is blanked on close.
+- **Why links are disabled in the preview:** stored bodies contain the recipient's real one-click tokens (Confirm, Need a sub, claim-sub, etc.). Clicking one from the admin page would act as that player. The iframe `sandbox` (no `allow-popups`/`allow-top-navigation`), the CSP `sandbox` directive, and `pointer-events: none` together make links inert; the popup says "Links are disabled in this preview." Don't loosen any of these without replacing that protection.
+- Storage cost is a few KB per email in SQLite; nothing prunes `email_log`, same as before.
+
+**2) Sub-confirmed group email names who the sub is replacing.** Kyle: old wording "Shawn Anderson will be subbing in for Monday, Sep 28" → wanted "Shawn Anderson will be subbing for Jim Newell on Monday Sept 28" so the group knows whose spot changed hands.
+
+- **`sendSubFilledNotice()`** gained `originalName = null`. When present: "`<sub>` will be subbing for `<original>` on `<fmtDate>`. See you on the court!"; when absent it falls back to the old wording, so any future caller that omits it doesn't break.
+- **`subFlow.js`'s `claimSub()`** passes `originalName: fullName(originalPlayerForLog)` (the original assignment's player, already looked up there for the activity log). Full name, per the emails-use-full-names rule.
+- **`testEmail.js`'s `sub_filled`** template passes `originalName` (second "other" roster player, or "Test Player"), so Admin → Send Email → Test a template previews the new wording.
+- Date format kept as the app-wide `fmtDate()` ("Monday, Sep 28"), not Kyle's typed "Monday Sept 28", for consistency with every other email; told Kyle, easy to change if he wants.
+- Only `claimSub()` sends this email. The admin sub-list/one-time-sub Reassign branches don't send a group notice at all (unchanged).
+
+**Verified** on a copy of the project and DB under `$HOME/t` (never the connected `data/tennis.db`), with SMTP unset so `sendMail()` used dev mode: `sendSubFilledNotice()` with Shawn Anderson/Jim Newell logged a row whose `body_html` contained "Shawn Anderson will be subbing for Jim Newell on Wednesday, Dec 30"; the body route returned 302 to login when unauthenticated, 200 with the CSP header when authenticated (auth stubbed in the test harness), and 404 for an older row with no stored body; the Email Log list page rendered the new link only for the row with a body. The popup itself wasn't clicked through in a real browser. Line endings stayed LF on every edited file. Touched files: `db/schema.sql`, `db/index.js`, `services/email.js`, `services/subFlow.js`, `services/testEmail.js`, `routes/admin.js`, `views/admin/email_log.ejs`, `README.md`.
