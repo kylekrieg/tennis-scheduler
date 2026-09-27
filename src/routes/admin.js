@@ -16,6 +16,7 @@ const { generateRawToken, hashToken } = require('../services/tokens');
 const tokenStore = require('../services/tokenStore');
 const email = require('../services/email');
 const subFlow = require('../services/subFlow');
+const emailThreads = require('../services/emailThreads');
 const adminReport = require('../services/adminReport');
 const cron = require('../services/cron');
 const backup = require('../services/backup');
@@ -3959,6 +3960,14 @@ router.get('/sessions/:id/stats', (req, res) => {
   // nullable (only set once a request actually escalates), left as '—' in
   // the view when absent rather than converted.
   const statsTz = getTimezone();
+  // "Email trail" link per row (Kyle, 2026-09-27) — only when that request
+  // actually has tagged emails (anything before 2026-09-27 has none).
+  const trailCounts = new Map(
+    db
+      .prepare("SELECT thread_key, COUNT(*) AS n FROM email_log WHERE thread_key LIKE 'sub:%' GROUP BY thread_key")
+      .all()
+      .map((r) => [r.thread_key, r.n])
+  );
   const subHistory = rawSubHistory.map((s) => {
     const requestedParts = utcToZonedParts(new Date(`${s.created_at.replace(' ', 'T')}Z`), statsTz);
     const escalatedDisplay = s.escalated_at
@@ -3969,6 +3978,7 @@ router.get('/sessions/:id/stats', (req, res) => {
       : null;
     return {
       ...s,
+      emailTrailCount: trailCounts.get(subFlow.subThreadKey(s.id)) || 0,
       requestedDisplay: `${email.fmtDate(requestedParts.date)}, ${email.fmtTime(requestedParts.time)}`,
       escalatedDisplay,
     };
@@ -4534,6 +4544,12 @@ router.post('/email', asyncHandler(async (req, res) => {
 
 router.get('/email-log', (req, res) => {
   const { category, status, q } = req.query;
+  // view: 'grouped' (default) shows each sub request's emails as one
+  // collapsible trail; 'list' is the original one-row-per-email view.
+  // thread: show just one trail (linked from the Stats page's Sub History).
+  // Kyle, 2026-09-27 — see emailThreads.js.
+  const view = req.query.view === 'list' ? 'list' : 'grouped';
+  const thread = typeof req.query.thread === 'string' && /^sub:\d+$/.test(req.query.thread) ? req.query.thread : '';
 
   const clauses = [];
   const params = [];
@@ -4549,6 +4565,10 @@ router.get('/email-log', (req, res) => {
     clauses.push('el.to_email LIKE ?');
     params.push(`%${q}%`);
   }
+  if (thread) {
+    clauses.push('el.thread_key = ?');
+    params.push(thread);
+  }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
   // Selects the session's own day/time/court/club columns alongside name (not
@@ -4557,21 +4577,43 @@ router.get('/email-log', (req, res) => {
   // applied to the Activity Log, Sub List, and All Blackout Dates pages, and
   // now a standing rule (Kyle, 2026-09-02): wherever a session name is shown,
   // include name/day/time/court/club together, not the bare name alone.
-  const rows = db
-    .prepare(
-      `SELECT el.id, el.to_email, el.subject, el.category, el.status, el.sent_at, el.related_week_id,
+  // body_html itself is deliberately not selected (only whether one exists) —
+  // 300 full bodies would bloat this page; the preview popup loads one at a time.
+  const selectCols = `SELECT el.id, el.to_email, el.subject, el.category, el.status, el.sent_at, el.related_week_id, el.thread_key,
               (el.body_html IS NOT NULL) as has_body,
               w.match_date, s.id as session_id, s.name as session_name,
               s.match_day_of_week as session_match_day_of_week, s.match_time as session_match_time,
               s.court_info as session_court_info, s.club_name as session_club_name
        FROM email_log el
        LEFT JOIN weeks w ON w.id = el.related_week_id
-       LEFT JOIN sessions s ON s.id = w.session_id
-       ${where}
-       ORDER BY el.sent_at DESC
-       LIMIT 300`
-    )
+       LEFT JOIN sessions s ON s.id = w.session_id`;
+  let rows = db
+    .prepare(`${selectCols} ${where} ORDER BY el.sent_at DESC, el.id DESC ${thread ? '' : 'LIMIT 300'}`)
     .all(...params);
+
+  // Grouped view: the 300-row cap can cut a trail in half, so pull in the
+  // rest of any sub-request trail that's partly on the page (same filters).
+  if (view === 'grouped' && !thread) {
+    const keys = [...new Set(rows.map((r) => r.thread_key).filter((k) => k && k.startsWith('sub:')))];
+    if (keys.length) {
+      const have = new Set(rows.map((r) => r.id));
+      const extraWhere = [...clauses, `el.thread_key IN (${keys.map(() => '?').join(',')})`];
+      const extra = db
+        .prepare(`${selectCols} WHERE ${extraWhere.join(' AND ')}`)
+        .all(...params, ...keys)
+        .filter((r) => !have.has(r.id));
+      if (extra.length) {
+        rows = rows.concat(extra).sort((x, y) => (x.sent_at < y.sent_at ? 1 : x.sent_at > y.sent_at ? -1 : y.id - x.id));
+      }
+    }
+  }
+
+  // email_log.sent_at is stored via SQLite's plain `datetime('now')`, which
+  // is UTC — converted here to the app's configured timezone (Kyle,
+  // 2026-08-28), explicitly parsed as UTC first since the stored string has
+  // no 'Z'/'T' (a bare 'YYYY-MM-DD HH:MM:SS' would otherwise be read as local
+  // server time by JS's Date constructor).
+  const emailLogTz = getTimezone();
   rows.forEach((r) => {
     r.sessionForTitle = r.session_id && r.session_name
       ? {
@@ -4582,27 +4624,14 @@ router.get('/email-log', (req, res) => {
           club_name: r.session_club_name,
         }
       : null;
-  });
-
-  // email_log.sent_at is stored via SQLite's plain `datetime('now')`, which
-  // is UTC — never converted anywhere on the way in (see schema.sql and
-  // email.js's sendMail()). Kyle, 2026-08-28, asking whether this page shows
-  // UTC or local: it was UTC, unconverted, unlike every other time shown to
-  // a human elsewhere in the app (match/reminder times, the Status page's
-  // upcoming-actions preview) which all go through tz.js first. Converted
-  // here to the app's one configured timezone (app_settings, same value
-  // every other display conversion uses) via the same utcToZonedParts()
-  // built for the Status page's lead-hours preview — the stored string has
-  // no 'Z'/'T', so it's explicitly parsed as UTC first (a bare
-  // 'YYYY-MM-DD HH:MM:SS' string would otherwise be parsed as *local server
-  // time* by JS's Date constructor, which is wrong here since it's UTC).
-  const emailLogTz = getTimezone();
-  rows.forEach((r) => {
-    const utcInstant = new Date(`${r.sent_at.replace(' ', 'T')}Z`);
-    const parts = utcToZonedParts(utcInstant, emailLogTz);
+    const parts = utcToZonedParts(new Date(`${r.sent_at.replace(' ', 'T')}Z`), emailLogTz);
     r.sentDateDisplay = email.fmtDate(parts.date);
     r.sentTimeDisplay = email.fmtTime(parts.time);
   });
+
+  const items = view === 'grouped' || thread
+    ? emailThreads.groupRows(rows)
+    : rows.map((r) => ({ type: 'row', row: r }));
 
   const categories = db.prepare('SELECT DISTINCT category FROM email_log ORDER BY category').all().map((r) => r.category);
   const counts = db
@@ -4613,9 +4642,12 @@ router.get('/email-log', (req, res) => {
   res.render('admin/email_log', {
     title: 'Email Log',
     wideMain: true,
-    rows,
+    items,
+    rowCount: rows.length,
     categories,
     counts,
+    view,
+    thread,
     filters: { category: category || '', status: status || '', q: q || '' },
     emailLogTz,
   });

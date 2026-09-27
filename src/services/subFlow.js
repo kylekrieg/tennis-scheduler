@@ -311,6 +311,7 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
       session,
       claimToken: rawToken,
       requestingPlayerName,
+      threadKey: subThreadKey(subRequestId),
     });
   }
 
@@ -385,6 +386,7 @@ async function createSubRequest(weekAssignmentId) {
     return subRequestId;
   })();
 
+  adoptPendingSubThread(weekAssignmentId, subRequestId);
   const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, fullName(player));
 
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
@@ -394,7 +396,7 @@ async function createSubRequest(weekAssignmentId) {
   // Also tells them exactly who was just emailed and what happens next —
   // see sendSubRequestOwnConfirmation()'s own doc comment (Kyle, 2026-08-27).
   const sessionSubs = sessionSubList(session.id);
-  await email.sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs });
+  await email.sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, threadKey: subThreadKey(subRequestId) });
 
   // Activity log — player self-service "Need a sub" (Kyle, 2026-09-09: wants
   // a searchable breadcrumb of player actions — confirms, sub requests, and
@@ -617,6 +619,7 @@ async function claimSub(rawToken) {
       session,
       subName: fullName(subPlayer),
       originalName: originalPlayerForLog ? fullName(originalPlayerForLog) : null,
+      threadKey: subThreadKey(subRequest.id),
     });
   }
 
@@ -629,7 +632,7 @@ async function claimSub(rawToken) {
   // teammate.
   const originalPlayer = db.prepare('SELECT * FROM players WHERE id = ?').get(originalAssignment.player_id);
   if (originalPlayer) {
-    await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: fullName(subPlayer) });
+    await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: fullName(subPlayer), threadKey: subThreadKey(subRequest.id) });
   }
 
   return { ok: true, week, subPlayer };
@@ -793,15 +796,17 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     return { subRequestId, rawToken: raw };
   })();
 
+  adoptPendingSubThread(weekAssignmentId, subRequestId);
   await email.sendSelfArrangedSubInvite({
     recipient: candidate,
     week,
     session,
     claimToken: rawToken,
     requestingPlayerName: fullName(player),
+    threadKey: subThreadKey(subRequestId),
   });
 
-  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName });
+  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName, threadKey: subThreadKey(subRequestId) });
 
   // Activity log — "I found a sub" itself (Kyle, 2026-09-09), separate from
   // the isNewPerson-only entry below: this fires every time regardless of
@@ -831,6 +836,7 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
         newPersonName: candidate.fullName,
         newPersonEmail: candidate.email,
         addedByPlayerName: fullName(player),
+        threadKey: subThreadKey(subRequestId),
       });
     }
   }
@@ -1011,7 +1017,7 @@ async function escalateOverdueRequests() {
           'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
         ).run(req.id, candidate.id, hashToken(raw), 'pending');
       }
-      await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw });
+      await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw, threadKey: subThreadKey(req.id) });
     }
   }
 
@@ -1101,7 +1107,35 @@ function resolveSubRequestFiller({ assignmentId, team, court, currentPlayerId, o
   return null;
 }
 
+/**
+ * Email Log grouping (Kyle, 2026-09-27): every email that belongs to one sub
+ * request's trail — the requester's verification + own notice, the roster
+ * fan-out, the sub-list escalation, the "sub confirmed" notices, and the
+ * "I found a sub" invite/notice/admin alert — is tagged with this key in
+ * email_log.thread_key, so /admin/email-log can show the whole trail as one
+ * group. See admin.js's GET /email-log and emailThreads.js.
+ */
+function subThreadKey(subRequestId) {
+  return `sub:${subRequestId}`;
+}
+
+/** The self-service verification emails (Request a Sub / "I found a sub"
+ * from My Page) go out *before* the sub request exists, so public.js tags
+ * them 'pending-sub:<assignment id>'. Once the real request is created this
+ * re-tags them into its trail. */
+function pendingSubThreadKey(weekAssignmentId) {
+  return `pending-sub:${weekAssignmentId}`;
+}
+function adoptPendingSubThread(weekAssignmentId, subRequestId) {
+  db.prepare('UPDATE email_log SET thread_key = ? WHERE thread_key = ?').run(
+    subThreadKey(subRequestId),
+    pendingSubThreadKey(weekAssignmentId)
+  );
+}
+
 module.exports = {
+  subThreadKey,
+  pendingSubThreadKey,
   createSubRequest,
   adminFlagNeedsSub,
   fanOutPendingAdminFlagsForWeek,

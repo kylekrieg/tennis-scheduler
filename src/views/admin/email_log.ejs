@@ -32,16 +32,34 @@
       <option value="skipped_no_email" <%= filters.status === 'skipped_no_email' ? 'selected' : '' %>>Skipped (no email on file)</option>
     </select>
   </div>
+  <input type="hidden" name="view" value="<%= view === 'list' ? 'list' : '' %>">
   <div><button class="btn neutral" type="submit">Filter</button></div>
-  <% if (filters.q || filters.category || filters.status) { %><div><a class="btn neutral" href="/admin/email-log">Clear</a></div><% } %>
+  <% if (filters.q || filters.category || filters.status) { %><div><a class="btn neutral" href="/admin/email-log<%= view === 'list' ? '?view=list' : '' %>">Clear</a></div><% } %>
 </form>
 
-<table class="wide">
-  <thead><tr><th style="white-space:nowrap;min-width:170px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
-  <tbody>
-    <% rows.forEach(function(r) { %>
-      <tr>
-        <td class="muted" style="white-space:nowrap;">
+<%
+  function qs(overrides) {
+    var o = Object.assign({ q: filters.q, category: filters.category, status: filters.status, view: view }, overrides || {});
+    var parts = [];
+    Object.keys(o).forEach(function (k) { if (o[k] && !(k === 'view' && o[k] === 'grouped')) parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(o[k])); });
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+%>
+<% if (thread) { %>
+  <div class="flag" style="margin-bottom:8px;">Showing the email trail for one sub request. <a href="/admin/email-log">Show all emails</a></div>
+<% } else { %>
+  <div class="actions" style="margin-bottom:8px;">
+    <span class="muted">View:</span>
+    <% if (view === 'grouped') { %><strong>Grouped by sub request</strong><% } else { %><a href="/admin/email-log<%= qs({ view: 'grouped' }) %>">Grouped by sub request</a><% } %>
+    <span class="muted">·</span>
+    <% if (view === 'list') { %><strong>Individual emails</strong><% } else { %><a href="/admin/email-log<%= qs({ view: 'list' }) %>">Individual emails</a><% } %>
+    <% if (view === 'grouped') { %><span class="muted">— each sub request's emails (request, roster, sub list, confirmed) are collapsed into one line; click it to open the trail. Emails sent before 2026-09-27 aren't grouped.</span><% } %>
+  </div>
+<% } %>
+
+<% function emailRow(r, opts) { opts = opts || {}; %>
+      <tr<% if (opts.parent) { %> class="thread-child" data-parent="<%= opts.parent %>"<% } %>>
+        <td class="muted" style="white-space:nowrap;<% if (opts.parent) { %>padding-left:28px;<% } %>">
           <%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>
         </td>
         <td><%= r.to_email %></td>
@@ -62,10 +80,56 @@
           <% } else { %>—<% } %>
         </td>
       </tr>
+<% } %>
+
+<table class="wide">
+  <thead><tr><th style="white-space:nowrap;min-width:170px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
+  <tbody>
+    <% items.forEach(function(item) { %>
+      <% if (item.type === 'row') { emailRow(item.row); return; } %>
+      <% var g = item, info = g.info; %>
+      <tr class="thread-head" data-thread="<%= g.domId %>" style="background:var(--bg-soft);">
+        <td class="muted" style="white-space:nowrap;"><%= g.latest.sentDateDisplay %>, <%= g.latest.sentTimeDisplay %></td>
+        <td colspan="5">
+          <button type="button" class="btn small neutral thread-toggle" data-thread="<%= g.domId %>" aria-expanded="<%= thread ? 'true' : 'false' %>" style="margin-right:6px;"><%= thread ? '▾' : '▸' %></button>
+          <% if (info) { %>
+            <strong><%= info.selfArranged ? 'Found own sub' : 'Sub request' %> — <%= info.requester %>, <%= fmtDate(info.matchDate) %></strong>
+            <span class="muted">· <%= sessionFullTitle(info.session) %></span>
+            <% var st = info.status; %>
+            <span class="badge <%= (st === 'filled' || st === 'resolved_manually') ? 'confirmed' : (st === 'unfilled' ? 'needs_sub' : 'reminded') %>"><%= info.statusLabel %></span>
+            <% if (info.filledBy) { %><span>filled by <strong><%= info.filledBy %></strong></span><% } %>
+          <% } else { %>
+            <strong>Sub request</strong> <span class="muted">(details no longer available)</span>
+          <% } %>
+          <span class="muted">· <%= g.count %> email<%= g.count === 1 ? '' : 's' %> · <%= g.stages.map(function (st) { return st.label + ' (' + st.rows.length + ')'; }).join(' → ') %></span>
+          <% if (g.note) { %><div class="muted" style="margin-top:4px;font-size:0.9em;">⏱ <%= g.note %></div><% } %>
+        </td>
+      </tr>
+      <% g.stages.forEach(function (st) { %>
+        <tr class="thread-child" data-parent="<%= g.domId %>">
+          <td colspan="6" style="padding-left:28px;font-weight:600;font-size:0.9em;"><%= st.label %> <span class="muted" style="font-weight:normal;">(<%= st.rows.length %>)</span></td>
+        </tr>
+        <% st.rows.forEach(function (r) { emailRow(r, { parent: g.domId }); }); %>
+      <% }) %>
     <% }) %>
-    <% if (rows.length === 0) { %><tr><td colspan="6" class="muted">No emails match this filter.</td></tr><% } %>
+    <% if (items.length === 0) { %><tr><td colspan="6" class="muted">No emails match this filter.</td></tr><% } %>
   </tbody>
 </table>
+<script>
+(function () {
+  var expandAll = <%= thread ? 'true' : 'false' %>;
+  function setOpen(id, open) {
+    document.querySelectorAll('tr.thread-child[data-parent="' + id + '"]').forEach(function (tr) { tr.style.display = open ? '' : 'none'; });
+    var btn = document.querySelector('.thread-toggle[data-thread="' + id + '"]');
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? '▾' : '▸'; }
+  }
+  document.querySelectorAll('.thread-toggle').forEach(function (btn) {
+    var id = btn.getAttribute('data-thread');
+    setOpen(id, expandAll);
+    btn.addEventListener('click', function () { setOpen(id, btn.getAttribute('aria-expanded') !== 'true'); });
+  });
+})();
+</script>
 
 <dialog id="email-preview" style="width:min(720px,95vw);max-height:90vh;padding:0;border:1px solid var(--border);border-radius:8px;">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-soft);">

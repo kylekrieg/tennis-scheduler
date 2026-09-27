@@ -106,7 +106,7 @@ function wrapEmailHtml(innerHtml) {
 // trying to send to it rather than attempting a doomed SMTP send.
 const NO_EMAIL_DOMAIN = 'no-email.invalid';
 
-async function sendMail({ to, subject, html, text, category, relatedWeekId = null, session = null, test = false }) {
+async function sendMail({ to, subject, html, text, category, relatedWeekId = null, session = null, threadKey = null, test = false }) {
   // Club name is per-session (a single install can run sessions for
   // different clubs/locations) — every template passes its `session` through
   // here so the subject prefix is correct without each one repeating this
@@ -133,6 +133,7 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
     finalSubject = `[TEST] ${finalSubject}`;
     category = 'test';
     relatedWeekId = null;
+    threadKey = null;
   }
 
   // Exactly what goes out (wrapped), stored on every email_log row so the
@@ -147,8 +148,8 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
   // visibly different from a real failed send on the Email Log page.
   if (!to || (typeof to === 'string' && to.endsWith(`@${NO_EMAIL_DOMAIN}`))) {
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(to || '(no email on file)', finalSubject, category, 'skipped_no_email', relatedWeekId, bodyHtml);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html, thread_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(to || '(no email on file)', finalSubject, category, 'skipped_no_email', relatedWeekId, bodyHtml, threadKey);
     return true;
   }
 
@@ -169,14 +170,14 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
       status = 'logged_dev_mode';
     }
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(to, finalSubject, category, status, relatedWeekId, bodyHtml);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html, thread_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(to, finalSubject, category, status, relatedWeekId, bodyHtml, threadKey);
     return true;
   } catch (err) {
     console.error(`[email] failed to send to ${to}:`, err.message);
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(to, finalSubject, category, 'failed', relatedWeekId, bodyHtml);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html, thread_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(to, finalSubject, category, 'failed', relatedWeekId, bodyHtml, threadKey);
     return false;
   }
 }
@@ -575,7 +576,7 @@ async function sendFollowUpReminder({ player, week, session, confirmToken, needS
  * *before*, as the actual consent gate — nothing is emailed to the rest of
  * the roster until the recipient of *this* email clicks through.
  */
-async function sendSubRequestVerification({ player, week, session, needSubToken, test = false }) {
+async function sendSubRequestVerification({ player, week, session, needSubToken, threadKey = null, test = false }) {
   const needSubUrl = `${siteUrl()}/need-sub/${needSubToken}`;
   const subject = `Confirm your sub request — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -586,7 +587,7 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
     <p class="muted" style="color:#888;">Didn't request this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: player.email, subject, html, category: 'sub_request_verification', relatedWeekId: week.id, session, test });
+  return sendMail({ to: player.email, subject, html, category: 'sub_request_verification', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -611,7 +612,7 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
  * already were) — this copy always matches whatever that session is actually
  * configured to do, not a hardcoded number.
  */
-async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, test = false }) {
+async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, threadKey = null, test = false }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   // Full names throughout (Kyle, 2026-09-07). `candidates` are raw players
   // rows (fanOutSubRequest()'s allCandidates); `sessionSubs` mixes
@@ -633,7 +634,7 @@ async function sendSubRequestOwnConfirmation({ player, week, session, candidates
     <p><strong>Didn't request this yourself?</strong> Reach out right away so it can be sorted out before someone else claims the slot.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: player.email, subject, html, category: 'sub_request_self_notice', relatedWeekId: week.id, session, test });
+  return sendMail({ to: player.email, subject, html, category: 'sub_request_self_notice', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -648,7 +649,7 @@ async function sendSubRequestOwnConfirmation({ player, week, session, candidates
  * site themselves. claimSub() now sends this to them directly, once, right
  * after the group notice.
  */
-async function sendSubFilledOriginalNotice({ recipient, week, session, subName, test = false }) {
+async function sendSubFilledOriginalNotice({ recipient, week, session, subName, threadKey = null, test = false }) {
   const subject = `Your sub is confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
@@ -656,7 +657,7 @@ async function sendSubFilledOriginalNotice({ recipient, week, session, subName, 
     <p>Good news — <strong>${subName}</strong> will be covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. You're all set, no further action needed.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'sub_filled_original', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: 'sub_filled_original', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -722,7 +723,7 @@ async function sendSignupNotice({ recipient, session, test = false }) {
   return sendMail({ to: recipient.email, subject, html, category: 'signup_notice', session, test });
 }
 
-async function sendSubRequestFanout({ recipient, week, session, claimToken, requestingPlayerName, test = false }) {
+async function sendSubRequestFanout({ recipient, week, session, claimToken, requestingPlayerName, threadKey = null, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `Sub needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -733,10 +734,10 @@ async function sendSubRequestFanout({ recipient, week, session, claimToken, requ
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'sub_request', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: 'sub_request', relatedWeekId: week.id, session, threadKey, test });
 }
 
-async function sendEscalationEmail({ recipient, week, session, claimToken, test = false }) {
+async function sendEscalationEmail({ recipient, week, session, claimToken, threadKey = null, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `[Sub still needed] ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -747,14 +748,14 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, test 
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'escalation', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: 'escalation', relatedWeekId: week.id, session, threadKey, test });
 }
 
 // originalName (Kyle, 2026-09-27): who the sub is replacing, so the rest of
 // the group knows whose spot changed hands ("Shawn will be subbing for Jim on
 // Monday, Sep 28") instead of just that *someone* got a sub. Falls back to
 // the old wording if a caller ever doesn't pass it.
-async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, test = false }) {
+async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, threadKey = null, test = false }) {
   const subject = `Sub confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const subLine = originalName
     ? `${subName} will be subbing for ${originalName} on ${fmtDate(week.match_date)}. See you on the court!`
@@ -766,7 +767,7 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'sub_filled', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: 'sub_filled', relatedWeekId: week.id, session, threadKey, test });
 }
 
 // --- "I found a sub" (subFlow.js's arrangeSelfSub()) -----------------------
@@ -783,7 +784,7 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
  * broader_sub_list if this person hasn't subbed in before, notifies the
  * rest of the week's group, notifies the original player once claimed).
  */
-async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken, requestingPlayerName, test = false }) {
+async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken, requestingPlayerName, threadKey = null, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `${requestingPlayerName} asked you to sub in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -795,7 +796,7 @@ async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken,
     <p class="muted" style="color:#888;">Didn't agree to this? No action needed — nothing changes unless you click the button above, and ${requestingPlayerName} will be nudged to find someone else if it isn't confirmed before match time.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'self_arranged_sub_invite', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: 'self_arranged_sub_invite', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -808,7 +809,7 @@ async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken,
  * own choice, "falls back to normal escalation" — no special-casing needed
  * here beyond saying so).
  */
-async function sendSelfArrangedSubConfirmation({ player, week, session, subName, test = false }) {
+async function sendSelfArrangedSubConfirmation({ player, week, session, subName, threadKey = null, test = false }) {
   const subject = `Sub request sent to ${subName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
@@ -822,7 +823,7 @@ async function sendSelfArrangedSubConfirmation({ player, week, session, subName,
     <p><strong>Named the wrong person, or they didn't actually agree?</strong> Reach out right away so it can be sorted out before match time.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: player.email, subject, html, category: 'self_arranged_sub_self_notice', relatedWeekId: week.id, session, test });
+  return sendMail({ to: player.email, subject, html, category: 'self_arranged_sub_self_notice', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -839,7 +840,7 @@ async function sendSelfArrangedSubConfirmation({ player, week, session, subName,
  * Status page listing — this email is an addition on top of that, not the
  * only signal.
  */
-async function sendNewSubListEntryAlert({ session, week, newPersonName, newPersonEmail, addedByPlayerName, test = false }) {
+async function sendNewSubListEntryAlert({ session, week, newPersonName, newPersonEmail, addedByPlayerName, threadKey = null, test = false }) {
   const to = (session.admin_report_emails || '').trim();
   if (!to) return true; // nothing configured — the Activity Log/Status page entry is the only signal, and that's already handled by the caller.
   const subListUrl = `${siteUrl()}/admin/sub-list`;
@@ -853,7 +854,7 @@ async function sendNewSubListEntryAlert({ session, week, newPersonName, newPerso
     <p>They've been added to the Broader Sub List and this session's sub pool automatically, with an auto-generated name/URL slug. Worth a quick look to clean up the slug or merge them with an existing entry if this is actually someone already on file under a different email:</p>
     <p><a href="${subListUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Review the Sub List</a></p>
   `;
-  return sendMail({ to, subject, html, category: 'new_sub_list_entry_alert', relatedWeekId: week.id, session, test });
+  return sendMail({ to, subject, html, category: 'new_sub_list_entry_alert', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -868,7 +869,7 @@ async function sendNewSubListEntryAlert({ session, week, newPersonName, newPerso
  * entirely — that link already went to the right inbox, since it's the same
  * per-assignment token every other button in that email already uses.
  */
-async function sendFoundSubVerification({ player, week, session, foundSubToken, test = false }) {
+async function sendFoundSubVerification({ player, week, session, foundSubToken, threadKey = null, test = false }) {
   const url = `${siteUrl()}/found-sub/${foundSubToken}`;
   const subject = `Confirm — I found a sub — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -879,7 +880,7 @@ async function sendFoundSubVerification({ player, week, session, foundSubToken, 
     <p class="muted" style="color:#888;">Didn't do this? No action needed — nothing changes and no one else is notified unless you click the button above.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: player.email, subject, html, category: 'found_sub_verification', relatedWeekId: week.id, session, test });
+  return sendMail({ to: player.email, subject, html, category: 'found_sub_verification', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**

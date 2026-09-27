@@ -368,7 +368,8 @@ CREATE TABLE IF NOT EXISTS email_log (
   status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only) | skipped_no_email (recipient has a @no-email.invalid placeholder address, e.g. a one-time sub added with no email on file — see email.js's NO_EMAIL_DOMAIN)
   sent_at         TEXT NOT NULL DEFAULT (datetime('now')),
   related_week_id INTEGER REFERENCES weeks(id),
-  body_html       TEXT -- the exact HTML body as sent (wrapped), so the Email Log page can show what a recipient actually saw. NULL for rows logged before this column existed (Kyle, 2026-09-27).
+  body_html       TEXT, -- the exact HTML body as sent (wrapped), so the Email Log page can show what a recipient actually saw. NULL for rows logged before this column existed (Kyle, 2026-09-27).
+  thread_key      TEXT -- groups emails that belong to one event on the Email Log page, e.g. 'sub:<sub_requests.id>' for every email in one sub request's trail. 'pending-sub:<week_assignments.id>' marks a verification email sent before the sub request exists; it's re-tagged to 'sub:<id>' once the request is created. NULL = ungrouped (every email before 2026-09-27, and every non-sub email for now).
 );
 
 -- Audit trail of admin-triggered changes, added 2026-08-10 for accountability

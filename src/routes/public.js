@@ -1035,6 +1035,7 @@ router.post('/request-sub/start', requestSubStartLimiter, asyncHandler(async (re
     week,
     session,
     needSubToken: raw,
+    threadKey: subFlow.pendingSubThreadKey(assignment.id),
   });
 
   res.render('message', {
@@ -1087,6 +1088,7 @@ router.post('/found-sub/start', foundSubStartLimiter, asyncHandler(async (req, r
     week,
     session,
     foundSubToken: raw,
+    threadKey: subFlow.pendingSubThreadKey(assignment.id),
   });
 
   res.render('message', {

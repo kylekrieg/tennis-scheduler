@@ -37,6 +37,11 @@ ensureColumn('email_log', 'status', "TEXT NOT NULL DEFAULT 'sent'");
 // page can pop up "what did this person actually get". Bare nullable column —
 // every older row simply has no stored body (nothing to backfill from).
 ensureColumn('email_log', 'body_html', 'TEXT');
+// thread_key (Kyle, 2026-09-27): groups one event's emails (a whole sub
+// request's trail) on the Email Log page. Bare nullable column — older rows
+// stay ungrouped on purpose rather than guessing which request they belong to.
+ensureColumn('email_log', 'thread_key', 'TEXT');
+raw.exec('CREATE INDEX IF NOT EXISTS idx_email_log_thread_key ON email_log(thread_key)');
 // Multi-court support: every existing row predates courts, so they're all
 // implicitly court 1 — exactly what the default backfills.
 ensureColumn('week_assignments', 'court', 'INTEGER NOT NULL DEFAULT 1');

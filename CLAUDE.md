@@ -2040,3 +2040,37 @@ Two requests in one message.
 - Only `claimSub()` sends this email. The admin sub-list/one-time-sub Reassign branches don't send a group notice at all (unchanged).
 
 **Verified** on a copy of the project and DB under `$HOME/t` (never the connected `data/tennis.db`), with SMTP unset so `sendMail()` used dev mode: `sendSubFilledNotice()` with Shawn Anderson/Jim Newell logged a row whose `body_html` contained "Shawn Anderson will be subbing for Jim Newell on Wednesday, Dec 30"; the body route returned 302 to login when unauthenticated, 200 with the CSP header when authenticated (auth stubbed in the test harness), and 404 for an older row with no stored body; the Email Log list page rendered the new link only for the row with a body. The popup itself wasn't clicked through in a real browser. Line endings stayed LF on every edited file. Touched files: `db/schema.sql`, `db/index.js`, `services/email.js`, `services/subFlow.js`, `services/testEmail.js`, `routes/admin.js`, `views/admin/email_log.ejs`, `README.md`.
+
+
+### Email Log groups each sub request's emails into one trail (Kyle, 2026-09-27)
+
+Kyle: following a sub request's emails in the Email Log was hard, especially when a request comes in inside the escalation window and the roster and broader sub list get emailed at the same time. He asked to group them, plus the "sub confirmed" emails. Settled before building: tag emails with the event they belong to (built general, switched on for sub requests only), leave older emails ungrouped rather than guess, grouped view by default with a toggle, and "sub confirmed" emails live inside the request they filled.
+
+- **New column `email_log.thread_key`** (nullable `TEXT`, bare `ensureColumn` + `idx_email_log_thread_key` index in `db/index.js`; also in `schema.sql`). `sendMail()` takes `threadKey` and stores it; a `test: true` send forces it to `NULL` like category/week.
+- **Keys.** `sub:<sub_requests.id>` for every email in a request's trail, via `subFlow.subThreadKey()`. The ten sub email functions in `email.js` accept `threadKey` and pass it through: verification (both kinds), requester's own notice, roster fan-out, escalation, both "sub confirmed" notices, and the three "I found a sub" emails. Tagged at the call sites in `subFlow.js`: `fanOutSubRequest`, `createSubRequest`, `claimSub`, `arrangeSelfSub`, `escalateOverdueRequests`. The admin-flag path is covered because its deferred fan-out goes through `fanOutSubRequest`.
+- **Verification emails come before the request exists.** `public.js`'s `/request-sub/start` and `/found-sub/start` tag them `pending-sub:<week_assignments.id>` (`subFlow.pendingSubThreadKey()`). `createSubRequest()`/`arrangeSelfSub()` call `adoptPendingSubThread()` right after inserting the request, re-tagging every `pending-sub:<that assignment>` row to `sub:<id>`. A verification nobody clicks keeps its pending tag and shows as a plain row. The reminder email's own "Need a sub" link skips verification, so that trail starts at the roster step.
+- **New `services/emailThreads.js`.** `groupRows()` turns the newest-first rows into items: untagged rows stay single; each `sub:` thread becomes one group placed where its newest email falls. `buildGroup()` splits a thread into steps by category, in fixed order rather than timestamp:
+  1. Request
+  2. Sent to the roster
+  3. Invite to the sub they named
+  4. Escalated to the sub list
+  5. Admin alert
+  6. Sub confirmed
+
+  Unknown categories go to "Other". It adds a note when roster and sub-list emails are within 10 minutes of each other. `describeSubThread()` builds the header (requester, match, session, request status, filled-by via `subFlow.resolveSubRequestFiller()`, same as Sub History). It fetches the session in a separate query on purpose: joining `s.*` overwrote the request's `id`/`status` (caught in testing).
+- **`GET /admin/email-log`**: `?view=list` gives the old one-row-per-email view; the default is grouped. `?thread=sub:<id>` shows one trail, uncapped and expanded. The query now also selects `thread_key` and orders by `sent_at DESC, id DESC`. In grouped view, any trail partly inside the 300-row cap gets its remaining rows pulled in with the same filters, so a trail is never shown half. Filters apply to emails, so a filtered trail shows only its matching emails. Still never selects `body_html` in the list.
+- **`email_log.ejs`**:
+  - View toggle, with the filter form keeping the current view.
+  - One shaded header row per trail with a ▸/▾ toggle: requester, date, session title, status badge, filled-by, email count, and step counts.
+  - Step sub-headers and indented email rows underneath.
+  - Children are hidden by JS on load, so they stay visible without JS.
+  - The row markup is one in-template `emailRow()` function used by both views.
+- **Stats page Sub History** gained an "Emails" column: an "Email trail (N)" link to `?thread=sub:<id>`, shown only when that request has tagged emails.
+
+**Verified** on a copy of the project and DB under `$HOME/t2` (never the connected `data/tennis.db`), dev-mode email, auth stubbed:
+- Moved an unlocked week to tomorrow (inside the 30h escalation window), sent a pending verification, then ran `createSubRequest` → `escalateOverdueRequests` → `claimSub`. That produced 16 tagged emails: Request 2, Roster 2, Sub list 7, Confirmed 5. No `pending-sub:` rows were left over.
+- Grouped page: one trail header with "filled", "filled by Shawn Anderson", and the within-minutes note. List view has no headers. `?thread=` shows the expanded trail with "Show all emails". `?category=escalation` still groups. Stats shows "Email trail (16)".
+- "I found a sub" with a brand-new person grouped as Request 2 / Invite 1 / Admin alert 1.
+- The expand/collapse script itself wasn't clicked in a real browser.
+
+Touched files: `db/schema.sql`, `db/index.js`, `services/email.js`, `services/subFlow.js`, `services/emailThreads.js` (new), `routes/public.js`, `routes/admin.js`, `views/admin/email_log.ejs`, `views/admin/stats.ejs`, `README.md`. Swaps, bulk custom emails and reminder batches aren't grouped yet; they'd each need a new key format and a stage list in `emailThreads.js`.
