@@ -120,6 +120,7 @@
 
 <h2 style="margin-top:32px;">Upcoming automated actions</h2>
 <p class="muted">What the reminder system is going to do on its own over the next <%= days %> days — reminders and week-locks are exact; follow-up nudges and sub-escalations depend on who's still unconfirmed or unfilled by the time they'd actually fire, so those are "as of right now," not a guarantee.</p>
+<p class="muted">Check <strong>Suspend</strong> on a line to stop that one action from firing automatically (uncheck it to resume, any time before it's due). Once its time passes while suspended, it's logged in the <a href="/admin/activity-log">Activity Log</a> as "Suspended — did not fire," drops off this list, and is complete — it won't fire later, so handle it manually (e.g. "Send reminders now" or "Resend link" on the session page). Week locks can't be suspended.</p>
 <div class="actions" style="margin-top:0;">
   <% [7, 14, 21, 30].forEach(function(d) { %>
     <a class="btn small <%= d === days ? 'green' : 'neutral' %>" href="/admin/status?days=<%= d %>"><%= d %> days</a>
@@ -131,11 +132,11 @@
 <% } else { %>
   <table class="compact" style="margin-top:16px;">
     <thead>
-      <tr><th>When</th><th>Action</th><th>Session / week</th><th>Who</th></tr>
+      <tr><th>When</th><th>Action</th><th>Session / week</th><th>Who</th><th>Suspend</th></tr>
     </thead>
     <tbody>
       <% upcoming.forEach(function(e) { %>
-        <tr>
+        <tr<% if (e.suspension) { %> style="opacity:0.6;"<% } %>>
           <td class="<%= e.overdue ? '' : 'muted' %>">
             <%= fmtDate(e.atDate) %> <%= fmtTime(e.atTime) %>
             <% if (e.overdue) { %><br><span class="badge needs_sub">overdue</span><% } %>
@@ -146,6 +147,7 @@
             <% } else if (e.type === 'escalation') { %>Sub escalation <span class="muted">(as of now)</span>
             <% } else if (e.type === 'lock') { %>Week locks
             <% } %>
+            <% if (e.suspension) { %><br><span class="badge needs_sub">suspended</span><% } %>
           </td>
           <td>
             <a href="/admin/sessions/<%= e.session.id %>"><%= sessionFullTitle(e.session) %></a>
@@ -154,6 +156,22 @@
           <td>
             <% if (e.recipients.length === 0) { %><span class="muted">—</span>
             <% } else { %><%= e.recipients.join(', ') %><% } %>
+          </td>
+          <td>
+            <% if (e.suspendable) { %>
+              <form method="post" action="/admin/status/suspend" style="margin:0;">
+                <input type="hidden" name="week_id" value="<%= e.week.id %>">
+                <input type="hidden" name="action_type" value="<%= e.type %>">
+                <input type="hidden" name="days" value="<%= days %>">
+                <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:normal;white-space:nowrap;">
+                  <input type="checkbox" name="suspended" value="1" style="width:auto;margin:0;" <%= e.suspension ? 'checked' : '' %>
+                    onchange="if (confirm(this.checked ? 'Suspend this automated action? It will not fire automatically — once its time passes it will need to be handled manually.' : 'Resume this automated action on its normal schedule?')) { this.form.submit(); } else { this.checked = !this.checked; }">
+                  Suspend
+                </label>
+                <% if (e.suspension) { %><span class="muted" style="font-size:12px;">by <%= e.suspension.suspended_by_name %></span><% } %>
+                <noscript><button class="btn small neutral" type="submit">Save</button></noscript>
+              </form>
+            <% } else { %><span class="muted">—</span><% } %>
           </td>
         </tr>
       <% }) %>

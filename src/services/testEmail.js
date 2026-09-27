@@ -264,6 +264,7 @@ const TEMPLATES = {
       week: ctx.week,
       session: ctx.session,
       subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      originalName: (ctx.others[1] && fullName(ctx.others[1])) || 'Test Player',
       test: true,
     }),
   },
@@ -271,6 +272,11 @@ const TEMPLATES = {
     label: 'Found your own sub — "confirm it\'s you" gate',
     fn: 'sendFoundSubVerification',
     build: (ctx) => ({ player: ctx.player, week: ctx.week, session: ctx.session, foundSubToken: fakeToken(), test: true }),
+  },
+  personal_events_link: {
+    label: 'My Page — "add my other dates" link',
+    fn: 'sendPersonalEventsLink',
+    build: (ctx) => ({ player: ctx.player, editToken: fakeToken(), test: true }),
   },
   self_arranged_invite: {
     label: 'Found your own sub — invite to the sub',

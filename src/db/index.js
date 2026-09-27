@@ -33,6 +33,10 @@ function hasColumn(table, column) {
   return raw.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
 ensureColumn('email_log', 'status', "TEXT NOT NULL DEFAULT 'sent'");
+// body_html (Kyle, 2026-09-27): the exact HTML body sent, so the Email Log
+// page can pop up "what did this person actually get". Bare nullable column —
+// every older row simply has no stored body (nothing to backfill from).
+ensureColumn('email_log', 'body_html', 'TEXT');
 // Multi-court support: every existing row predates courts, so they're all
 // implicitly court 1 — exactly what the default backfills.
 ensureColumn('week_assignments', 'court', 'INTEGER NOT NULL DEFAULT 1');

@@ -611,7 +611,13 @@ async function claimSub(rawToken) {
     .all(originalAssignment.week_id);
 
   for (const recipient of groupRows) {
-    await email.sendSubFilledNotice({ recipient, week, session, subName: fullName(subPlayer) });
+    await email.sendSubFilledNotice({
+      recipient,
+      week,
+      session,
+      subName: fullName(subPlayer),
+      originalName: originalPlayerForLog ? fullName(originalPlayerForLog) : null,
+    });
   }
 
   // Kyle, 2026-08-27: the original requester's own row just flipped to
@@ -948,6 +954,12 @@ async function escalateOverdueRequests() {
     const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
     const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
     if (now < escalateAt) continue;
+
+    // Admin suspended this week's sub escalation from the Status page (Kyle,
+    // 2026-09-27) — leave the request 'open' and don't email the broader
+    // sub list; logged once as "Suspended — did not fire". Lazy require to
+    // avoid any load-order cycle.
+    if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) continue;
 
     escalatedCount++;
 

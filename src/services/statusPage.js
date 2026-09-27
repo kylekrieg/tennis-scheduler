@@ -2,6 +2,7 @@
 const db = require('../db');
 const { zonedTimeToUtc, addDays, utcToZonedParts } = require('./tz');
 const { getTimezone } = require('./settings');
+const { suspensionMap, SUSPENDABLE } = require('./automationSuspend');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, SESSION_DISPLAY_ORDER } = require('./sessionHelper');
 
 /**
@@ -348,32 +349,33 @@ function getUpcomingActions(days = 21) {
       // request escalation runs independently of the reminders toggle).
       // "As of now" preview: only a request that's currently open would
       // escalate; if it gets filled before the deadline, it never will.
-      const openRequest = db
+      const openRequests = db
         .prepare(
           `SELECT sr.id, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
            JOIN week_assignments wa ON wa.id = sr.week_assignment_id
            JOIN players p ON p.id = wa.player_id
            WHERE wa.week_id = ? AND sr.status = 'open'`
         )
-        .get(week.id);
-      if (openRequest) {
-        // 24h before match, on the wall clock, in this session's own
-        // timezone — computed as a date/time pair (not just `matchAt` minus
-        // a millisecond offset) so it stays a clean, correctly-labeled local
-        // time even across a DST boundary in between.
-        const escalateDate = addDays(week.match_date, -1);
-        const escalateAt = zonedTimeToUtc(escalateDate, session.match_time, tz);
+        .all(week.id);
+      if (openRequests.length > 0) {
+        // Fixed 2026-09-27: this used to preview a hard-coded "24h before
+        // match", but subFlow.escalateOverdueRequests() actually fires at
+        // match time minus session.escalation_lead_hours — mirror that
+        // exactly (same approach as the follow-up entry above), so the
+        // preview and the Suspend checkbox line up with the real firing time.
+        const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
+        const escalateLocal = utcToZonedParts(escalateAt, tz);
         if (escalateAt <= windowEnd) {
           events.push({
             type: 'escalation',
             at: escalateAt,
-            atDate: escalateDate,
-            atTime: session.match_time,
+            atDate: escalateLocal.date,
+            atTime: escalateLocal.time,
             overdue: escalateAt < now,
             speculative: true,
             session,
             week,
-            recipients: [`sub request for ${openRequest.original_player_name}'s slot → broader sub list`],
+            recipients: openRequests.map((r) => `sub request for ${r.original_player_name}'s slot → broader sub list`),
           });
         }
       }
@@ -397,8 +399,23 @@ function getUpcomingActions(days = 21) {
     }
   }
 
-  events.sort((a, b) => a.at - b.at);
-  return events;
+  // Suspend checkboxes (Kyle, 2026-09-27 — see automationSuspend.js).
+  // A suspension whose due time already passed (skipped_at set) is
+  // complete: it's dropped from this "upcoming" list entirely (the Activity
+  // Log has the "Suspended — did not fire" entry). A still-pending one stays
+  // on the list, flagged so the view can render its checkbox as checked.
+  const suspensions = suspensionMap();
+  const visible = [];
+  for (const e of events) {
+    e.suspendable = SUSPENDABLE.includes(e.type);
+    const row = e.suspendable ? suspensions.get(`${e.week.id}:${e.type}`) : null;
+    if (row && row.skipped_at) continue;
+    e.suspension = row || null;
+    visible.push(e);
+  }
+
+  visible.sort((a, b) => a.at - b.at);
+  return visible;
 }
 
 module.exports = { getAttentionItems, getUpcomingActions };

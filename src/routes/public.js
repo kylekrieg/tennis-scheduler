@@ -11,6 +11,7 @@ const { streamSeasonPDF, streamAllSessionsPDF } = require('../services/pdf');
 const subFlow = require('../services/subFlow');
 const swapFlow = require('../services/swapFlow');
 const email = require('../services/email');
+const personalEvents = require('../services/personalEvents');
 const { ensureWeeksExist } = require('../services/scheduleRun');
 const signup = require('../services/signup');
 const adhocFlow = require('../services/adhocFlow');
@@ -55,6 +56,11 @@ const signupLimiter = rateLimiter({ name: 'signup-post', windowMs: 60 * 60 * 100
 // assignment that isn't this player's own. Generous (20/hour/IP) since a
 // player fixing several weeks' backlog of scores in one sitting is normal
 // use, not abuse.
+// Other-dates dates on My Page (Kyle, 2026-09-26) — the link request sends
+// an email, so it's capped tight like the other email-triggering starts; the
+// add/delete posts are already gated by an emailed token, so a looser cap.
+const otherDatesLinkLimiter = rateLimiter({ name: 'other-dates-link', windowMs: 60 * 60 * 1000, max: 5 });
+const otherDatesEditLimiter = rateLimiter({ name: 'other-dates-edit', windowMs: 60 * 60 * 1000, max: 60 });
 const scoreEntryLimiter = rateLimiter({ name: 'score-entry', windowMs: 60 * 60 * 1000, max: 20 });
 
 // Stamps each assignment row with `doubleBooked` (the other session it
@@ -1828,6 +1834,21 @@ router.get('/me/:idOrSlug', (req, res) => {
   const feedUrlHttps = `${req.protocol}://${req.get('host')}/calendar/feed/${playerId}.ics`;
   const feedUrlWebcal = feedUrlHttps.replace(/^https?:\/\//, 'webcal://');
 
+  // "My Other Dates" (Kyle, 2026-09-26) — see personalEvents.js. Read-only
+  // unless a valid emailed edit token for THIS player is in ?edit=.
+  const localToday = utcToZonedParts(new Date(), getTimezone()).date;
+  const editTokenRaw = typeof req.query.edit === 'string' ? req.query.edit : null;
+  const otherDatesEditable = !!(editTokenRaw && personalEvents.findPlayerByEditToken(editTokenRaw, playerId));
+  const otherDates = {
+    events: personalEvents.upcomingEvents(playerId, localToday),
+    editable: otherDatesEditable,
+    editToken: otherDatesEditable ? editTokenRaw : null,
+    linkInvalid: !!editTokenRaw && !otherDatesEditable,
+    today: localToday,
+    notice: ['added', 'deleted'].includes(req.query.pe) ? req.query.pe : null,
+    error: personalEvents.ERROR_MESSAGES[req.query.pe_err] || null,
+  };
+
   res.render('me', {
     title: 'My Page',
     player,
@@ -1835,7 +1856,97 @@ router.get('/me/:idOrSlug', (req, res) => {
     draftSessions,
     feedUrlHttps,
     feedUrlWebcal,
+    otherDates,
   });
+});
+
+// --- "My Other Dates" (Kyle, 2026-09-26) ----------------------------------
+// Player-entered tennis outside this app's sessions, folded into their .ics
+// download and subscribe feed. Editing requires an emailed link (My Page has
+// no login and this writes into a calendar on the player's phone) — see
+// personalEvents.js for the full reasoning.
+
+function findPlayerByIdOrSlug(raw) {
+  let player = db.prepare('SELECT * FROM players WHERE slug = ?').get(raw);
+  if (!player && /^\d+$/.test(raw)) player = db.prepare('SELECT * FROM players WHERE id = ?').get(Number(raw));
+  return player || null;
+}
+
+function otherDatesUrl(player, token, extra) {
+  return `/me/${encodeURIComponent(player.slug || player.id)}?edit=${encodeURIComponent(token)}${extra ? '&' + extra : ''}#other-dates`;
+}
+
+function otherDatesBadLink(res, player) {
+  return res.status(403).render('message', {
+    title: 'My Other Dates',
+    heading: 'That edit link has expired',
+    body: 'Edit links work for ' + personalEvents.EDIT_TOKEN_DAYS + ' days. Go back to My Page and click "Email me a link to add dates" to get a fresh one.',
+    tone: 'error',
+    myPageId: player ? (player.slug || player.id) : undefined,
+  });
+}
+
+router.post('/me/:idOrSlug/other-dates/request-link', otherDatesLinkLimiter, asyncHandler(async (req, res) => {
+  const genericOk = {
+    title: 'My Other Dates',
+    heading: 'Check your email',
+    body: "If that's a valid player, we've emailed a link to the address on file. Nothing has changed yet.",
+    tone: 'ok',
+  };
+  // Same identical-looking response for a bot as for a real request — see honeypot.js.
+  if (honeypot.isBot(req)) return res.render('message', genericOk);
+  const player = findPlayerByIdOrSlug(req.params.idOrSlug);
+  if (!player) return res.render('message', genericOk);
+  if (!player.email || player.email.endsWith('@' + email.NO_EMAIL_DOMAIN)) {
+    return res.render('message', {
+      title: 'My Other Dates',
+      heading: 'No email on file',
+      body: "There's no email address on file for this player, so we can't send an edit link. Ask your admin to add one.",
+      tone: 'error',
+      myPageId: player.slug || player.id,
+    });
+  }
+  const raw = personalEvents.issueEditToken(player.id);
+  await email.sendPersonalEventsLink({ player, editToken: raw, days: personalEvents.EDIT_TOKEN_DAYS });
+  res.render('message', {
+    title: 'My Other Dates',
+    heading: 'Check your email',
+    body: `We've emailed a link to the address on file for ${player.name}. Click it to add or remove your other dates — it works for ${personalEvents.EDIT_TOKEN_DAYS} days, so you can bookmark it.`,
+    tone: 'ok',
+    myPageId: player.slug || player.id,
+  });
+}));
+
+router.post('/me/:idOrSlug/other-dates/add', otherDatesEditLimiter, (req, res) => {
+  const player = findPlayerByIdOrSlug(req.params.idOrSlug);
+  const token = typeof req.body.edit === 'string' ? req.body.edit : null;
+  if (!player || !personalEvents.findPlayerByEditToken(token, player.id)) return otherDatesBadLink(res, player);
+  const localToday = utcToZonedParts(new Date(), getTimezone()).date;
+  const parsed = personalEvents.parseEventInput(req.body, localToday);
+  if (parsed.error) return res.redirect(otherDatesUrl(player, token, `pe_err=${parsed.error}`));
+  const result = personalEvents.addEvent(player.id, parsed.value, localToday);
+  if (result.error) return res.redirect(otherDatesUrl(player, token, `pe_err=${result.error}`));
+  const place = personalEvents.placeLabel({ club: parsed.value.club, court: parsed.value.court });
+  logPlayerActivity({
+    playerName: player.full_name || player.name,
+    action: 'other_dates.add',
+    description: `added another date on ${parsed.value.eventDate} at ${parsed.value.startTime}${place ? ` (${place})` : ''} to their calendar`,
+  });
+  res.redirect(otherDatesUrl(player, token, 'pe=added'));
+});
+
+router.post('/me/:idOrSlug/other-dates/:eventId/delete', otherDatesEditLimiter, (req, res) => {
+  const player = findPlayerByIdOrSlug(req.params.idOrSlug);
+  const token = typeof req.body.edit === 'string' ? req.body.edit : null;
+  if (!player || !personalEvents.findPlayerByEditToken(token, player.id)) return otherDatesBadLink(res, player);
+  const removed = personalEvents.deleteEvent(player.id, Number(req.params.eventId));
+  if (!removed) return res.redirect(otherDatesUrl(player, token, 'pe_err=not_found'));
+  logPlayerActivity({
+    playerName: player.full_name || player.name,
+    action: 'other_dates.delete',
+    description: `removed a date on ${removed.event_date} at ${removed.start_time} from their calendar`,
+  });
+  res.redirect(otherDatesUrl(player, token, 'pe=deleted'));
 });
 
 router.get('/claim-sub/:token', (req, res) => {

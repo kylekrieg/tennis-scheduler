@@ -28,7 +28,7 @@ This is where you'll spend your time running a season, so it's the part to look 
 </td>
 <td width="50%">
 
-**One week on the session detail page.** Each player's status with Reassign, Resend link, and Mark confirmed, plus ball duty and the buttons that apply to the whole week.
+**One week on the session detail page.** Each player's status with Reassign, Resend link, and Mark confirmed, plus ball duty and the buttons that apply to the whole week. "Send reminders now" re-sends the reminder to everyone playing that week, even players who already got one.
 <img src="src/public/img/admin-guide/session-weekly-status.png" alt="A week's card on the session detail page with player rows and controls" width="100%">
 
 </td>
@@ -108,7 +108,7 @@ The in-app `/help` page covers all of this, with a mockup of every email. A few 
 - **Roster and targets.** Totals are checked as you type. Each player has a short **Public name** that other players see and an optional **Full name** for admin pages and emails.
 - **Player-pair rules.** For example, "these two should never play the same week" or "these two should always play the same week." The app checks whether the rule can actually be met and tells you if it can't, instead of quietly ignoring it.
 - **Two-level sub list.** A site-wide **Broader Sub List**, and for each session, the subset of those people who get emailed when that session comes up short.
-- **Status page and dashboard flags.** One place to see everything a person needs to deal with: short-staffed weeks, unfilled subs, swaps nobody answered, double-bookings, paused reminders. It also previews the reminder emails due over the next 7 to 30 days, so you can see the system is running.
+- **Status page and dashboard flags.** One place to see everything a person needs to deal with: short-staffed weeks, unfilled subs, swaps nobody answered, double-bookings, paused reminders. It also previews the reminder emails due over the next 7 to 30 days, so you can see the system is running. Each reminder, follow-up, and sub-escalation line has a Suspend checkbox that stops that one action from firing; if its time passes while suspended, the Activity Log records "Suspended — did not fire" and you handle it by hand.
 - **Multiple sessions at once.** Different clubs, different courts, or a season split into two halves. Each session has its own name, color, and club info, which show up in its emails. If the same player is enrolled in overlapping sessions, you get a warning when you save the roster. If they end up actually double-booked, **Resolve conflicts…** suggests fixes.
 - **Activity Log and Email Log.** A record of every admin action and every email sent, for when someone says "I never got that."
 - **Manual controls.** Reassign a spot, mark someone confirmed, change ball duty, send a one-off email (to a player, a roster, a week, or a test of any template), and add a **one-time sub (not on roster)** for someone who was lined up outside the app.

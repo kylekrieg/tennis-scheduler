@@ -135,6 +135,10 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
     relatedWeekId = null;
   }
 
+  // Exactly what goes out (wrapped), stored on every email_log row so the
+  // admin Email Log page can show the actual email (Kyle, 2026-09-27).
+  const bodyHtml = html ? wrapEmailHtml(html) : null;
+
   // One-time subs added without a real email on file get a placeholder
   // @no-email.invalid address so players.email's NOT NULL UNIQUE constraint
   // is satisfied — never actually attempt to send there (would just fail,
@@ -143,8 +147,8 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
   // visibly different from a real failed send on the Email Log page.
   if (!to || (typeof to === 'string' && to.endsWith(`@${NO_EMAIL_DOMAIN}`))) {
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(to || '(no email on file)', finalSubject, category, 'skipped_no_email', relatedWeekId);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(to || '(no email on file)', finalSubject, category, 'skipped_no_email', relatedWeekId, bodyHtml);
     return true;
   }
 
@@ -156,7 +160,7 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
         from: fromAddress(),
         to,
         subject: finalSubject,
-        html: wrapEmailHtml(html),
+        html: bodyHtml,
         text: text || html.replace(/<[^>]+>/g, ' '),
       });
       status = 'sent';
@@ -165,14 +169,14 @@ async function sendMail({ to, subject, html, text, category, relatedWeekId = nul
       status = 'logged_dev_mode';
     }
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(to, finalSubject, category, status, relatedWeekId);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(to, finalSubject, category, status, relatedWeekId, bodyHtml);
     return true;
   } catch (err) {
     console.error(`[email] failed to send to ${to}:`, err.message);
     db.prepare(
-      'INSERT INTO email_log (to_email, subject, category, status, related_week_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(to, finalSubject, category, 'failed', relatedWeekId);
+      'INSERT INTO email_log (to_email, subject, category, status, related_week_id, body_html) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(to, finalSubject, category, 'failed', relatedWeekId, bodyHtml);
     return false;
   }
 }
@@ -746,12 +750,19 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, test 
   return sendMail({ to: recipient.email, subject, html, category: 'escalation', relatedWeekId: week.id, session, test });
 }
 
-async function sendSubFilledNotice({ recipient, week, session, subName, test = false }) {
+// originalName (Kyle, 2026-09-27): who the sub is replacing, so the rest of
+// the group knows whose spot changed hands ("Shawn will be subbing for Jim on
+// Monday, Sep 28") instead of just that *someone* got a sub. Falls back to
+// the old wording if a caller ever doesn't pass it.
+async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, test = false }) {
   const subject = `Sub confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const subLine = originalName
+    ? `${subName} will be subbing for ${originalName} on ${fmtDate(week.match_date)}. See you on the court!`
+    : `${subName} will be subbing in for ${fmtDate(week.match_date)}. See you on the court!`;
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${fullName(recipient)},</p>
-    <p>${subName} will be subbing in for ${fmtDate(week.match_date)}. See you on the court!</p>
+    <p>${subLine}</p>
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
@@ -869,6 +880,28 @@ async function sendFoundSubVerification({ player, week, session, foundSubToken, 
     ${footer(session)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'found_sub_verification', relatedWeekId: week.id, session, test });
+}
+
+/**
+ * "Edit my other dates" link (Kyle, 2026-09-26) — see personalEvents.js.
+ * My Page has no login, so adding/deleting other-dates dates (which land in
+ * the player's calendar feed) needs proof of inbox ownership first. Unlike
+ * the single-use sub/swap verification links, this one is reusable for
+ * personalEvents.EDIT_TOKEN_DAYS so the player can bookmark it. Not tied to
+ * any session, so no matchBanner/session footer.
+ */
+async function sendPersonalEventsLink({ player, editToken, days = 30, test = false }) {
+  const url = `${siteUrl()}/me/${player.slug || player.id}?edit=${editToken}#other-dates`;
+  const subject = 'Your link to add other dates to your calendar';
+  const html = `
+    <p>Hi ${fullName(player)},</p>
+    <p>Here's your link to add (or remove) games you're playing outside the league — another league, a club match, a pickup game. Anything you add shows up in your calendar download and your subscribed calendar alongside your league matches.</p>
+    <p><a href="${url}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Add my other dates dates</a></p>
+    <p>This link works for ${days} days, so feel free to bookmark it. Don't forward it — anyone with it can edit your list.</p>
+    <p class="muted" style="color:#888;">Didn't ask for this? No action needed — nothing changes unless someone uses the link.</p>
+    <p style="font-size:12px;color:#666;">My Page: <a href="${siteUrl()}/me/${player.slug || player.id}">${siteUrl()}/me/${player.slug || player.id}</a></p>
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'personal_events_link', test });
 }
 
 // --- Direct player-to-player swaps (swapFlow.js) ---------------------------
@@ -1249,6 +1282,7 @@ module.exports = {
   sendSelfArrangedSubConfirmation,
   sendNewSubListEntryAlert,
   sendFoundSubVerification,
+  sendPersonalEventsLink,
   sendSwapProposalVerification,
   sendSwapRequestEmail,
   sendSwapNudge,

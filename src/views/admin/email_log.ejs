@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>Email Log</h1>
-<p class="muted">Every email the app has sent or attempted, most recent first (last 300). "Sent" times are shown in this app's configured timezone (<%= emailLogTz %>), not UTC.<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
+<p class="muted">Every email the app has sent or attempted, most recent first (last 300). Click a subject to see the email exactly as it was sent (emails sent before this feature was added have no stored copy). "Sent" times are shown in this app's configured timezone (<%= emailLogTz %>), not UTC.<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
 
 <div class="actions" style="margin-bottom:8px;">
   <span class="badge confirmed">sent: <%= counts.sent || 0 %></span>
@@ -45,7 +45,10 @@
           <%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>
         </td>
         <td><%= r.to_email %></td>
-        <td><%= r.subject %></td>
+        <td>
+          <% if (r.has_body) { %><a href="/admin/email-log/<%= r.id %>/body" class="email-preview-link" data-subject="<%= r.subject %>" data-to="<%= r.to_email %>" data-sent="<%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>"><%= r.subject %></a>
+          <% } else { %><%= r.subject %><% } %>
+        </td>
         <td><span class="badge scheduled"><%= r.category %></span></td>
         <td>
           <% if (r.status === 'sent') { %><span class="badge confirmed">sent</span>
@@ -63,4 +66,37 @@
     <% if (rows.length === 0) { %><tr><td colspan="6" class="muted">No emails match this filter.</td></tr><% } %>
   </tbody>
 </table>
+
+<dialog id="email-preview" style="width:min(720px,95vw);max-height:90vh;padding:0;border:1px solid var(--border);border-radius:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-soft);">
+    <div style="min-width:0;">
+      <div id="email-preview-subject" style="font-weight:600;overflow-wrap:anywhere;"></div>
+      <div class="muted" style="font-size:0.9em;">To <span id="email-preview-to"></span> · <span id="email-preview-sent"></span></div>
+      <div class="muted" style="font-size:0.85em;">Links are disabled in this preview.</div>
+    </div>
+    <button type="button" class="btn neutral" id="email-preview-close">Close</button>
+  </div>
+  <iframe id="email-preview-frame" title="Email preview" sandbox style="display:block;width:100%;height:70vh;border:0;background:#fff;"></iframe>
+</dialog>
+<script>
+(function () {
+  var dlg = document.getElementById('email-preview');
+  var frame = document.getElementById('email-preview-frame');
+  if (!dlg || typeof dlg.showModal !== 'function') return; // very old browser: link just opens the body in a new page
+  document.querySelectorAll('.email-preview-link').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      document.getElementById('email-preview-subject').textContent = a.dataset.subject;
+      document.getElementById('email-preview-to').textContent = a.dataset.to;
+      document.getElementById('email-preview-sent').textContent = a.dataset.sent;
+      frame.src = a.getAttribute('href');
+      dlg.showModal();
+    });
+  });
+  function close() { dlg.close(); }
+  document.getElementById('email-preview-close').addEventListener('click', close);
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); }); // click outside to close
+  dlg.addEventListener('close', function () { frame.src = 'about:blank'; });
+})();
+</script>
 <%- include('../partials/footer') %>

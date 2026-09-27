@@ -157,7 +157,7 @@
           <% } %>
         </div>
         <% if (!r.week.locked) { %>
-          <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-reminders">
+          <form method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/send-reminders" onsubmit="return confirm('Send the confirmation reminder email to everyone scheduled or confirmed for this week — including anyone who already got one?');">
             <button class="btn small neutral" type="submit">Send reminders now</button>
           </form>
           <% if (session.admin_report_emails) { %>

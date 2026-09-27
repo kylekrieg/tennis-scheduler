@@ -75,7 +75,8 @@ src/services/               business logic — one file per concern (see filenam
   adhocFlow.js                first-come-first-served pickup-game logic
   cron.js                     in-process setInterval loop (not node-cron) — reminders, escalations, week locking
   sessionHelper.js            resolveSession(), overlap/double-booking detection
-  statusPage.js               aggregates "needs attention" across all sessions
+  statusPage.js               aggregates "needs attention" across all sessions + upcoming automated actions preview
+  automationSuspend.js        per-line Suspend checkboxes on the Status page (suspended_actions table)
   activityLog.js              admin audit trail
   tz.js                        the only place wall-clock times get converted to UTC — always route through here
 src/routes/

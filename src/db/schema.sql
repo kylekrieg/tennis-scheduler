@@ -367,7 +367,8 @@ CREATE TABLE IF NOT EXISTS email_log (
   category        TEXT NOT NULL, -- reminder | followup_reminder | sub_request | escalation | sub_filled | custom | confirmation | adhoc_invite | adhoc_reminder | adhoc_final | adhoc_not_enough | score_reminder (this list is not exhaustive — several categories added since have never been backfilled in here, e.g. admin_report/admin_report_manual, blackout_notice, sub_filled_original, the swap_* categories, test)
   status          TEXT NOT NULL DEFAULT 'sent', -- sent | failed | logged_dev_mode (no SMTP configured, console-only) | skipped_no_email (recipient has a @no-email.invalid placeholder address, e.g. a one-time sub added with no email on file — see email.js's NO_EMAIL_DOMAIN)
   sent_at         TEXT NOT NULL DEFAULT (datetime('now')),
-  related_week_id INTEGER REFERENCES weeks(id)
+  related_week_id INTEGER REFERENCES weeks(id),
+  body_html       TEXT -- the exact HTML body as sent (wrapped), so the Email Log page can show what a recipient actually saw. NULL for rows logged before this column existed (Kyle, 2026-09-27).
 );
 
 -- Audit trail of admin-triggered changes, added 2026-08-10 for accountability
@@ -500,4 +501,58 @@ CREATE TABLE IF NOT EXISTS master_stat_resets (
   created_by     TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   undone_at      TEXT
+);
+
+-- Player-entered "other tennis" (Kyle, 2026-09-26): matches a player is
+-- playing OUTSIDE any session in this app (another league, a club match,
+-- a pickup game elsewhere). Purely a calendar convenience — folded into the
+-- player's .ics download and subscribe feed so all their tennis lives in one
+-- calendar. Deliberately NOT tied to blackout dates or scheduling in any way.
+CREATE TABLE IF NOT EXISTS personal_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id         INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  event_date        TEXT NOT NULL,              -- 'YYYY-MM-DD'
+  start_time        TEXT NOT NULL,              -- 'HH:MM' 24h, same naive wall-clock convention as sessions.match_time
+  duration_minutes  INTEGER NOT NULL DEFAULT 90,
+  club              TEXT,                       -- free text, optional
+  court             TEXT,                       -- free text, optional
+  notes             TEXT,                       -- free text, optional
+  created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_personal_events_player ON personal_events(player_id, event_date);
+
+-- Emailed "edit my other tennis" links. My Page has no login, so adding or
+-- deleting entries needs proof the browser belongs to that player: a link
+-- emailed to their own address. Reusable (not single-use) until expires_at,
+-- so a player can bookmark it; only the SHA-256 hash is stored, same as every
+-- other token in this app (tokens.js).
+CREATE TABLE IF NOT EXISTS personal_event_tokens (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TEXT NOT NULL,                    -- ISO timestamp (UTC)
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Suspended automated actions (Kyle, 2026-09-27): a per-line "Suspend"
+-- checkbox on the admin Status page's "Upcoming automated actions" table.
+-- One row per (week, action type) — action_type is one of 'reminder',
+-- 'followup', 'escalation' (the three email-sending cron passes; week
+-- locking is bookkeeping with no manual equivalent, so it isn't suspendable).
+-- While a row exists, the matching cron pass skips that week. The first
+-- tick at/after the action's due time writes a "Suspended — did not fire"
+-- entry to admin_activity_log and stamps skipped_at; from then on the
+-- action is COMPLETE (never fires later, can't be un-suspended) — finishing
+-- the job is up to an admin by some manual route (Send reminders now,
+-- Resend link, Reassign, etc.). Unchecking before the due time deletes the
+-- row, which puts the action back on its normal schedule.
+CREATE TABLE IF NOT EXISTS suspended_actions (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_id             INTEGER NOT NULL REFERENCES weeks(id) ON DELETE CASCADE,
+  action_type         TEXT NOT NULL CHECK (action_type IN ('reminder', 'followup', 'escalation')),
+  suspended_by_id     INTEGER, -- admins.id; deliberately no FK (name is snapshotted below, same as admin_activity_log)
+  suspended_by_name   TEXT NOT NULL,
+  suspended_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  skipped_at          TEXT, -- set when the due time passed while suspended ("did not fire" logged); NULL = still pending
+  UNIQUE (week_id, action_type)
 );

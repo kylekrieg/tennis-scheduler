@@ -3,6 +3,21 @@ const { createEvents } = require('ics');
 const db = require('../db');
 const { sessionPublicLabel } = require('./email');
 const { doubleBookingMapForSession, sessionsForPlayer } = require('./sessionHelper');
+const personalEvents = require('./personalEvents');
+
+// Sorts events chronologically by their [y, mo, d, hh, mm] start (Kyle,
+// 2026-09-26: "make sure all dates are sorted by date") — league matches and
+// My Other Dates entries are gathered separately, so without this they'd be
+// grouped by source in the file rather than interleaved in date order.
+function sortByStart(events) {
+  return events.sort((a, b) => {
+    for (let i = 0; i < 5; i++) {
+      const d = (a.start[i] || 0) - (b.start[i] || 0);
+      if (d) return d;
+    }
+    return 0;
+  });
+}
 
 const DEFAULT_DURATION_MINUTES = 90; // not specified in the spec; adjust here if match length differs
 
@@ -51,7 +66,15 @@ function buildPlayerICS(playerId, sessionId) {
     };
   }).filter(Boolean);
 
-  const { error, value } = createEvents(events);
+  // Player-entered "other dates" (Kyle, 2026-09-26) that falls inside this
+  // session's date range, so the one-time download is one calendar with
+  // everything for that stretch — see personalEvents.js.
+  for (const ev of personalEvents.eventsInRange(playerId, session.start_date, session.end_date)) {
+    const e = personalEvents.toIcsEvent(ev);
+    if (e) events.push(e);
+  }
+
+  const { error, value } = createEvents(sortByStart(events));
   if (error) return { error: error.message || String(error) };
   return { value };
 }
@@ -129,7 +152,15 @@ function buildPlayerFeedICS(playerId) {
     }
   }
 
-  const { error, value } = createEvents(events, { calName: `Doubles — ${player.name}` });
+  // Player-entered "other dates" (Kyle, 2026-09-26) — every row, so the
+  // subscribed calendar holds all of this player's tennis. Stable
+  // personal-<id> uids let a deleted/edited entry update in place.
+  for (const ev of personalEvents.allEvents(playerId)) {
+    const e = personalEvents.toIcsEvent(ev);
+    if (e) events.push(e);
+  }
+
+  const { error, value } = createEvents(sortByStart(events), { calName: `Doubles — ${player.name}` });
   if (error) return { error: error.message || String(error) };
   return { value };
 }

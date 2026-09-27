@@ -39,7 +39,7 @@
 
   <div class="card wide" style="margin-top:16px;">
     <h2 style="margin-top:0;">Master Leaderboard (all sessions combined)</h2>
-    <p class="muted">Every scored week across every session that has stats on, archived sessions included, counting <strong><%= masterBaseline ? 'matches dated ' + masterBaseline + ' and later' : 'from the very beginning' %></strong>. Manage or reset it on the <a href="/admin/master-stats">Master Board</a> page; per-season boards are on the <a href="/admin/seasons">Seasons</a> page. Broken out per-session further down.</p>
+    <p class="muted">Every scored week across every session that has stats on, archived sessions included, counting <strong><%= masterBaseline ? 'matches dated ' + masterBaseline + ' and later' : 'from the very beginning' %></strong>. Manage or reset it on the <a href="/admin/master-stats">Master Leaderboard</a> page; per-season boards are on the <a href="/admin/seasons">Seasons</a> page. Broken out per-session further down.</p>
     <% if (overallLeaderboard.length === 0) { %>
       <p class="muted">No scores entered yet.</p>
     <% } else { %>

@@ -11,6 +11,7 @@ const adminReport = require('./adminReport');
 const gameScores = require('./gameScores');
 const weather = require('./weather');
 const { ensureWeeksExist } = require('./scheduleRun');
+const automationSuspend = require('./automationSuspend');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 
@@ -22,7 +23,7 @@ const CHECK_INTERVAL_MS = 60 * 1000; // check every minute
  * this week). Shared by the automatic cron pass and the admin's manual
  * "Send reminders now" button.
  */
-async function sendReminderEmailsForWeek(week, session) {
+async function sendReminderEmailsForWeek(week, session, { force = false } = {}) {
   const assignments = db
     .prepare(
       `SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
@@ -37,7 +38,11 @@ async function sendReminderEmailsForWeek(week, session) {
     const already = db
       .prepare(`SELECT id FROM email_log WHERE category = 'reminder' AND related_week_id = ? AND to_email = ?`)
       .get(week.id, a.email);
-    if (already) continue;
+    // `force` (Kyle, 2026-09-27): the admin's manual "Send reminders now"
+    // button re-sends to everyone regardless of dedup — e.g. after an SMTP
+    // provider glitch where the original send was logged as 'sent' but
+    // never actually arrived. The automatic cron pass never passes force.
+    if (already && !force) continue;
 
     // A fresh token identifies the row; /confirm/:token, /need-sub/:token,
     // and (as of 2026-09-07) /found-sub/:token are all distinguished by URL
@@ -97,7 +102,13 @@ async function processReminders() {
         const reminderAt = zonedTimeToUtc(reminderDate, session.reminder_time, tz);
         if (now < reminderAt) continue;
 
-        await sendReminderEmailsForWeek(week, session);
+        // Admin suspended this week's reminder from the Status page — skip
+        // (logged once as "Suspended — did not fire", then complete). The
+        // admin-flag fan-out below is a separate sub-request action and
+        // still runs on its normal schedule.
+        if (!automationSuspend.skipIfSuspended(week, session, 'reminder')) {
+          await sendReminderEmailsForWeek(week, session);
+        }
         // Any slot an admin flagged "Needs a sub" (see subFlow.js's
         // adminFlagNeedsSub()) sends no email at flag time — the fan-out to
         // the non-playing roster waits for this exact moment, the first time
@@ -120,14 +131,18 @@ async function processReminders() {
 /**
  * Admin-triggered: send this week's confirmation reminders right now,
  * regardless of the configured reminder_days_before/reminder_time schedule.
- * Still skips anyone already reminded for this week, so it's safe to use as
- * a "did everyone get it yet?" catch-all rather than a forced re-send.
+ * Changed 2026-09-27 (Kyle): this is now a FORCED re-send to everyone
+ * scheduled/confirmed for the week, even if they were already reminded —
+ * the old "skip anyone already reminded" behavior made it useless for
+ * recovering from an SMTP glitch where the original reminders were logged
+ * as sent but never delivered. Each re-send mints an additional token, so
+ * links in any earlier reminder keep working too (see tokenStore.js).
  */
 async function sendRemindersNowForWeek(weekId) {
   const week = db.prepare('SELECT * FROM weeks WHERE id = ?').get(weekId);
   if (!week) throw new Error('Week not found');
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
-  return sendReminderEmailsForWeek(week, session);
+  return sendReminderEmailsForWeek(week, session, { force: true });
 }
 
 /**
@@ -161,6 +176,7 @@ async function processFollowUps() {
         const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
         const followUpAt = new Date(matchAt.getTime() - session.follow_up_lead_hours * 60 * 60 * 1000);
         if (now < followUpAt || now >= matchAt) continue;
+        if (automationSuspend.skipIfSuspended(week, session, 'followup')) continue;
 
         const assignments = db
           .prepare(

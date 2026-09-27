@@ -21,6 +21,7 @@ const cron = require('../services/cron');
 const backup = require('../services/backup');
 const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
+const automationSuspend = require('../services/automationSuspend');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, weekEmailRecipients, orderAssignmentsWithSubGroups, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
@@ -295,6 +296,37 @@ router.get('/status', (req, res) => {
   // "Six pre-launch cleanup items" for the documented table.wide-is-dead-CSS
   // trap this avoids).
   res.render('admin/status', { title: 'Status', attention, upcoming, days, flashMsg: popFlash(req), wideMain: true });
+});
+
+// Suspend / resume one line of "Upcoming automated actions" (Kyle,
+// 2026-09-27). The checkbox auto-submits this form; `suspended` is present
+// only when the box is checked. See automationSuspend.js for the lifecycle
+// and logging (who suspended/resumed it, and the "Suspended — did not fire"
+// entry the cron pass writes when its due time arrives).
+router.post('/status/suspend', (req, res) => {
+  const days = Number(req.body.days) || 21;
+  const weekId = Number(req.body.week_id);
+  const actionType = String(req.body.action_type || '');
+  try {
+    if (req.body.suspended) {
+      const r = automationSuspend.suspend(req, weekId, actionType);
+      flash(req, r.already
+        ? 'That action was already suspended.'
+        : `${automationSuspend.LABELS[actionType]} for ${email.sessionFullTitle(r.session)} (${r.week.match_date}) suspended — it won't fire automatically. Once its time passes, it'll need to be handled manually.`);
+    } else {
+      const r = automationSuspend.unsuspend(req, weekId, actionType);
+      if (r.completed) {
+        flash(req, 'That action\'s time has already passed while suspended, so it\'s complete and can\'t be resumed — handle it manually.', 'error');
+      } else if (r.notFound) {
+        flash(req, 'That action wasn\'t suspended.');
+      } else {
+        flash(req, `${automationSuspend.LABELS[actionType]} for ${email.sessionFullTitle(r.session)} (${r.week.match_date}) resumed — it'll fire on its normal schedule.`);
+      }
+    }
+  } catch (err) {
+    flash(req, `Error: ${err.message}`, 'error');
+  }
+  res.redirect(`/admin/status?days=${days}`);
 });
 
 // All-active-sessions stats summary (Kyle, 2026-09-01): "if we were going to
@@ -2944,13 +2976,27 @@ router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(asy
   res.redirect(`/admin/sessions/${req.params.id}`);
 }));
 
+// Forced re-send as of 2026-09-27 (Kyle): after a power outage + SMTP
+// provider glitch, the original reminders were logged as sent but never
+// arrived, and this button refused with "everyone has already been
+// reminded". It now always re-sends to everyone scheduled/confirmed for the
+// week — see cron.js's sendRemindersNowForWeek(). Logged to the Activity Log
+// since it's now a deliberate, visible-to-players action.
 router.post('/sessions/:id/weeks/:weekId/send-reminders', asyncHandler(async (req, res) => {
   try {
-    const count = await cron.sendRemindersNowForWeek(req.params.weekId);
+    const week = db.prepare('SELECT * FROM weeks WHERE id = ? AND session_id = ?').get(req.params.weekId, req.params.id);
+    if (!week) throw new Error('Week not found');
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+    const count = await cron.sendRemindersNowForWeek(week.id);
     if (count === 0) {
-      flash(req, 'Nothing to send — everyone scheduled for this week has already been reminded.');
+      flash(req, 'Nothing to send — nobody is currently scheduled or confirmed for this week.');
     } else {
-      flash(req, `Sent ${count} reminder email(s) for this week just now.`);
+      flash(req, `Sent ${count} reminder email(s) for this week just now (re-sent to everyone scheduled or confirmed, including anyone already reminded).`);
+      logActivity(req, {
+        action: 'week.send_reminders',
+        description: `Manually sent reminder emails to ${count} player(s) for ${email.sessionFullTitle(session)} — week of ${week.match_date}`,
+        sessionId: session.id,
+      });
     }
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -4513,7 +4559,9 @@ router.get('/email-log', (req, res) => {
   // include name/day/time/court/club together, not the bare name alone.
   const rows = db
     .prepare(
-      `SELECT el.*, w.match_date, s.id as session_id, s.name as session_name,
+      `SELECT el.id, el.to_email, el.subject, el.category, el.status, el.sent_at, el.related_week_id,
+              (el.body_html IS NOT NULL) as has_body,
+              w.match_date, s.id as session_id, s.name as session_name,
               s.match_day_of_week as session_match_day_of_week, s.match_time as session_match_time,
               s.court_info as session_court_info, s.club_name as session_club_name
        FROM email_log el
@@ -4571,6 +4619,22 @@ router.get('/email-log', (req, res) => {
     filters: { category: category || '', status: status || '', q: q || '' },
     emailLogTz,
   });
+});
+
+// The exact HTML body of one logged email (Kyle, 2026-09-27), loaded into a
+// sandboxed iframe by the Email Log page's popup when a subject is clicked.
+// Served as its own tiny HTML document rather than inlined into the list
+// page, so 300 rows don't drag 300 full email bodies along with them.
+router.get('/email-log/:id/body', (req, res) => {
+  const row = db.prepare('SELECT body_html FROM email_log WHERE id = ?').get(req.params.id);
+  if (!row || !row.body_html) return res.status(404).type('text/plain').send('No stored body for this email.');
+  // Belt-and-braces with the iframe's own sandbox: no scripts, and links in
+  // the preview can't be followed (they carry the recipient's real one-click
+  // tokens, e.g. "I'm playing" / "Need a sub", which must not fire from here).
+  res.set('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src 'unsafe-inline'; sandbox");
+  res.type('html').send(
+    `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:16px;background:#fff;}a{pointer-events:none;cursor:default;}</style></head><body>${row.body_html}</body></html>`
+  );
 });
 
 // --- Admin activity log ----------------------------------------------------

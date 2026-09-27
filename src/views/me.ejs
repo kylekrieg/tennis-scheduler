@@ -2,6 +2,71 @@
 <h1><%= player.name %>'s Page</h1>
 <p class="muted">Bookmark this page — the URL stays the same and always shows your current schedule across every session you're in.</p>
 
+<%# "My Other Dates" (Kyle, 2026-09-26) — tennis outside this app, added so
+    the calendar download + subscribe feed hold everything. Read-only unless
+    opened from the emailed edit link (see personalEvents.js). %>
+<% const ot = otherDates; const slugOrId = player.slug || player.id; %>
+<details id="other-dates" class="card wide" style="margin-bottom:20px;"<%= (ot.editable || ot.linkInvalid) ? ' open' : '' %>>
+  <summary style="cursor:pointer;font-weight:600;font-size:calc(17px * var(--text-scale, 1));">
+    My Other Dates<% if (ot.events.length) { %> <span class="muted" style="font-weight:normal;">(<%= ot.events.length %> upcoming)</span><% } %>
+  </summary>
+  <p class="muted" style="margin-top:8px;">Playing somewhere else too — another league, a club match, a pickup game? Add it here and it shows up in your <a href="/calendar">calendar download</a> and subscribed calendar next to your league matches, so everything you play is in one place. This is only for your calendar — it doesn't change your league schedule.</p>
+
+  <% if (ot.notice === 'added') { %><p class="notice">Added. Your subscribed calendar will pick it up the next time it refreshes.</p><% } %>
+  <% if (ot.notice === 'deleted') { %><p class="notice">Removed.</p><% } %>
+  <% if (ot.error) { %><p class="flag error"><%= ot.error %></p><% } %>
+  <% if (ot.linkInvalid) { %><p class="flag error">That edit link has expired or isn't valid. Request a fresh one below.</p><% } %>
+
+  <% if (ot.events.length === 0) { %>
+    <p class="muted">No other dates added yet.</p>
+  <% } else { %>
+    <div class="table-scroll">
+    <table class="wide">
+      <thead><tr><th style="white-space:nowrap;">Date</th><th>Time</th><th>Where</th><th>Notes</th><% if (ot.editable) { %><th></th><% } %></tr></thead>
+      <tbody>
+        <% ot.events.forEach(function(ev) { %>
+          <tr>
+            <td style="white-space:nowrap;"><%= fmtDate(ev.event_date) %></td>
+            <td style="white-space:nowrap;"><%= fmtTime(ev.start_time) %> <span class="muted">(<%= ev.duration_minutes %> min)</span></td>
+            <td><%= [ev.club, ev.court].filter(Boolean).join(', ') || '—' %></td>
+            <td><%= ev.notes || '' %></td>
+            <% if (ot.editable) { %>
+              <td>
+                <form method="POST" action="/me/<%= encodeURIComponent(slugOrId) %>/other-dates/<%= ev.id %>/delete" class="inline" onsubmit="return confirm('Remove this date from your calendar?');">
+                  <input type="hidden" name="edit" value="<%= ot.editToken %>">
+                  <button type="submit" class="btn small red">Delete</button>
+                </form>
+              </td>
+            <% } %>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    </div>
+  <% } %>
+
+  <% if (ot.editable) { %>
+    <h3 style="margin-bottom:6px;">Add a date</h3>
+    <form method="POST" action="/me/<%= encodeURIComponent(slugOrId) %>/other-dates/add" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+      <input type="hidden" name="edit" value="<%= ot.editToken %>">
+      <label>Date<br><input type="date" name="event_date" min="<%= ot.today %>" required></label>
+      <label>Start time<br><input type="time" name="start_time" required></label>
+      <label>Length (min)<br><input type="number" name="duration_minutes" value="90" min="15" max="600" step="15" style="width:90px;"></label>
+      <label>Club / location<br><input type="text" name="club" maxlength="120" placeholder="e.g. Riverside Club"></label>
+      <label>Court<br><input type="text" name="court" maxlength="120" placeholder="e.g. Court 3" style="width:110px;"></label>
+      <label>Notes<br><input type="text" name="notes" maxlength="120" placeholder="optional"></label>
+      <button type="submit" class="btn green">Add</button>
+    </form>
+    <p class="muted" style="font-size:calc(13px * var(--text-scale, 1));margin-top:8px;">You're editing from your emailed link — bookmark this page if you'll add more later. Don't share this link.</p>
+  <% } else { %>
+    <form method="POST" action="/me/<%= encodeURIComponent(slugOrId) %>/other-dates/request-link" class="inline">
+      <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+      <button type="submit" class="btn">Email me a link to add dates</button>
+    </form>
+    <p class="muted" style="font-size:calc(13px * var(--text-scale, 1));margin-top:8px;">To keep anyone else from changing your calendar, adding or removing dates happens from a link we email to you.</p>
+  <% } %>
+</details>
+
 <% if (draftSessions.length > 0) { %>
   <% draftSessions.forEach(function(s) { %>
     <p class="notice" style="border-left:4px solid <%= sessionColor(s) %>;">
