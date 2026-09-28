@@ -4762,4 +4762,96 @@ router.get('/activity-log', (req, res) => {
   });
 });
 
+// --- News / announcements (Kyle, 2026-09-28) ----------------------------
+// Admin side of the public /news blog + site-wide banner. Screenshots upload
+// one at a time via fetch() as a raw request body (no multer dependency —
+// see newsEditor.js) and are stored in the DB by news.saveImage().
+const news = require('../services/news');
+
+function newsFormLocals(post) {
+  return { bannerStyles: news.BANNER_STYLES, bannerStyleLabels: news.BANNER_STYLE_LABELS, today: news.localToday(), post };
+}
+
+router.get('/news', (req, res) => {
+  const today = news.localToday();
+  const live = news.activeBanner();
+  const posts = news.listAll().map((p) => ({
+    ...p,
+    date: news.localDate(p.published_at || p.created_at),
+    bannerLive: news.bannerIsLive(p, today),
+    bannerShowing: !!(live && live.id === p.id),
+  }));
+  res.render('admin/news', { title: 'News', posts, flashMsg: popFlash(req) });
+});
+
+router.get('/news/new', (req, res) => {
+  res.render('admin/news_form', {
+    title: 'New post',
+    ...newsFormLocals({ id: null, title: '', body: '', published: 0, pinned: 0, show_banner: 0, banner_text: '', banner_style: 'info', banner_until: '' }),
+    flashMsg: popFlash(req),
+  });
+});
+
+router.get('/news/:id(\\d+)/edit', (req, res) => {
+  const post = news.getPost(req.params.id);
+  if (!post) { flash(req, 'That post no longer exists.', 'error'); return res.redirect('/admin/news'); }
+  res.render('admin/news_form', { title: `Edit: ${post.title}`, ...newsFormLocals(post), flashMsg: popFlash(req) });
+});
+
+// Re-renders the editor with what was typed (rather than redirecting) so a
+// validation error never throws away a long post body.
+function renderNewsFormError(req, res, id, body, message) {
+  const post = { id, ...body, published: body.published ? 1 : 0, pinned: body.pinned ? 1 : 0, show_banner: body.show_banner ? 1 : 0 };
+  res.status(400).render('admin/news_form', { title: id ? 'Edit post' : 'New post', ...newsFormLocals(post), flashMsg: { message, type: 'error' } });
+}
+
+router.post('/news', (req, res) => {
+  const r = news.parseForm(req.body);
+  if (r.error) return renderNewsFormError(req, res, null, req.body, r.error);
+  const id = news.createPost(r.values, req.session.adminName);
+  logActivity(req, { action: 'news.create', description: `Created news post "${r.values.title}"${r.values.published ? ' (published)' : ' (draft)'}${r.values.show_banner && r.values.published ? ' with site banner' : ''}` });
+  flash(req, r.values.published ? `"${r.values.title}" is published.` : `"${r.values.title}" saved as a draft — players can't see it until you tick Published.`);
+  res.redirect(`/admin/news/${id}/edit`);
+});
+
+router.post('/news/:id(\\d+)', (req, res) => {
+  const before = news.getPost(req.params.id);
+  if (!before) { flash(req, 'That post no longer exists.', 'error'); return res.redirect('/admin/news'); }
+  const r = news.parseForm(req.body);
+  if (r.error) return renderNewsFormError(req, res, before.id, req.body, r.error);
+  news.updatePost(before.id, r.values);
+  const changes = [];
+  if (!before.published && r.values.published) changes.push('published');
+  if (before.published && !r.values.published) changes.push('unpublished');
+  if (!before.show_banner && r.values.show_banner) changes.push('banner on');
+  if (before.show_banner && !r.values.show_banner) changes.push('banner off');
+  logActivity(req, { action: 'news.update', description: `Edited news post "${r.values.title}"${changes.length ? ` (${changes.join(', ')})` : ''}` });
+  flash(req, `"${r.values.title}" saved.`);
+  res.redirect(`/admin/news/${before.id}/edit`);
+});
+
+router.post('/news/:id(\\d+)/delete', (req, res) => {
+  const post = news.deletePost(req.params.id);
+  if (post) {
+    logActivity(req, { action: 'news.delete', description: `Deleted news post "${post.title}"` });
+    flash(req, `"${post.title}" deleted.`);
+  }
+  res.redirect('/admin/news');
+});
+
+router.post(
+  '/news/images',
+  express.raw({ type: () => true, limit: news.MAX_IMAGE_BYTES }),
+  (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) return res.status(400).json({ error: 'No image received.' });
+    const r = news.saveImage(req.body, req.get('X-File-Name'));
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json(r);
+  }
+);
+
+router.post('/news/preview', (req, res) => {
+  res.type('html').send(news.renderBody(req.body.body || ''));
+});
+
 module.exports = router;

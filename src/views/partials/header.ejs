@@ -38,6 +38,7 @@
     <a href="/swap">Swap a Week</a>
     <a href="/calendar">Calendar</a>
     <a href="/pdf">Print Schedule</a>
+    <a href="/news">News</a>
     <a href="/help">How It Works</a>
     <a href="/stats">Stats</a>
     <a href="/scores">Enter Scores</a>
@@ -48,4 +49,23 @@
     <button id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
   </nav>
 </header>
+<% if (typeof newsBanner !== 'undefined' && newsBanner) { %>
+<div class="news-banner <%= newsBanner.style %>" id="news-banner" data-key="<%= newsBanner.key %>" role="region" aria-label="Announcement">
+  <a class="news-banner-text" href="/news/<%= newsBanner.id %>"><span><%= newsBanner.text %></span> <span class="news-banner-more">Read more →</span></a>
+  <button type="button" class="news-banner-close" aria-label="Dismiss announcement" title="Dismiss">×</button>
+</div>
+<script>
+  // Runs inline (not deferred) so a banner this browser already dismissed
+  // never flashes on screen. Dismissal is per browser and keyed to the post's
+  // last edit — see news.js activeBanner().
+  (function () {
+    var el = document.getElementById('news-banner');
+    try { if (localStorage.getItem('dismissedNewsBanner') === el.getAttribute('data-key')) { el.remove(); return; } } catch (e) {}
+    el.querySelector('.news-banner-close').addEventListener('click', function () {
+      try { localStorage.setItem('dismissedNewsBanner', el.getAttribute('data-key')); } catch (e) {}
+      el.remove();
+    });
+  })();
+</script>
+<% } %>
 <main class="<%= typeof wideMain !== 'undefined' && wideMain ? 'wide' : '' %>">

@@ -1,0 +1,8 @@
+<%- include('partials/header', {title}) %>
+<p class="muted"><a href="/news">← All news</a></p>
+<article class="news-post">
+  <h1><%= post.title %></h1>
+  <p class="muted news-meta"><%= date ? fmtDate(date) : '' %><% if (post.author_name) { %> · <%= post.author_name %><% } %><% if (updated) { %> · updated <%= fmtDate(updated) %><% } %></p>
+  <div class="news-body"><%- html %></div>
+</article>
+<%- include('partials/footer') %>

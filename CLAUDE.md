@@ -2074,3 +2074,48 @@ Kyle: following a sub request's emails in the Email Log was hard, especially whe
 - The expand/collapse script itself wasn't clicked in a real browser.
 
 Touched files: `db/schema.sql`, `db/index.js`, `services/email.js`, `services/subFlow.js`, `services/emailThreads.js` (new), `routes/public.js`, `routes/admin.js`, `views/admin/email_log.ejs`, `views/admin/stats.ejs`, `README.md`. Swaps, bulk custom emails and reminder batches aren't grouped yet; they'd each need a new key format and a stage list in `emailThreads.js`.
+
+### News posts and the announcement banner (Kyle, 2026-09-28)
+
+Kyle: "Can we configure an announcement banner on the tennis scheduler app? I'd like to put together a blog style page which I can upload screenshots and provide some text on announcing new features of the program or even announce a happy hour after the season is over. The blog should be multipurpose."
+
+**What it is:**
+- A public blog at `/news` (list) and `/news/:id` (post). There's a "News" link in the player nav.
+- Admins manage posts at `/admin/news` (new "News" link in the admin nav). Each post has these fields:
+  - title and body
+  - Published (drafts 404 publicly)
+  - Pinned (sorts first)
+  - an optional **site banner**
+- The banner is a colored strip under the header on every player-facing page (`partials/header.ejs`), linking to the post. Its settings:
+  - optional short text (blank = the title)
+  - a color: `info` blue / `celebrate` green / `alert` amber
+  - an optional inclusive end date (`banner_until`, a `YYYY-MM-DD` in the site timezone). After that date the banner stops showing but the post stays up.
+  - If several posts have a live banner, the pinned post wins, then the newest.
+- Players can dismiss the banner with ×. The dismissal is saved in `localStorage` (`dismissedNewsBanner`) and keyed to `id:updated_at`, so editing the post brings the banner back once. An inline script placed right after the banner markup hides an already-dismissed banner before first paint (no flash).
+- `app.js` sets `res.locals.newsBanner = activeBanner()` in the same per-request middleware as `siteTitle`. It's skipped for `/admin*` paths because `admin_header.ejs` doesn't show the banner.
+
+**Post body format:** a deliberately tiny Markdown-ish syntax, rendered server-side by `news.renderBody()`. There's no Markdown dependency, and every piece of text is HTML-escaped, so raw HTML never passes through.
+- Supported: `#`/`##`/`###` headings (rendered as h2 to h4), `**bold**`, `*italic*`, `[text](url)`, bare URLs, `-`/`1.` lists, `> quote` and `---`.
+- `![caption](/news/img/N)` on its own line renders as a full-width figure with a caption.
+- URLs are limited to http(s), mailto and same-site `/paths`.
+- The editor shows a cheat sheet and a Preview button (`POST /admin/news/preview`).
+
+**Screenshots are stored in the DB, not on disk** (`announcement_images`, a BLOB). That way the existing VACUUM INTO backups, local and offsite, include them with no changes. A file-based uploads folder would have been silently left out of every backup.
+- Images are served at `/news/img/:id` with a 1-year immutable cache header. That's safe because ids are AUTOINCREMENT and an image never changes.
+- **Upload path:** `newsEditor.js` resizes anything wider than 1600px in the browser (canvas). It then POSTs each file as a raw body to `POST /admin/news/images` (`express.raw`, 10 MB cap), so no multer or other new dependency was needed. The response inserts `![](/news/img/N)` at the cursor.
+- The editor also accepts screenshots pasted straight into the textarea, or dragged onto it.
+- The type is sniffed from magic bytes (PNG, JPEG, GIF, WebP only). SVG is refused because it can carry script. Responses send `nosniff`.
+- **Must use `db.raw.prepare` for BLOB inserts and reads.** The `db.prepare()` shim's `normalizeParams` turns a Buffer into a plain object.
+- **Cleanup:** images upload with `announcement_id = NULL`, and `claimImages()` links them to the post on save. Deleting a post removes images only it referenced (a `/news/img/N` pasted into another post keeps that image). Images uploaded and then abandoned without saving stay as orphans. That's harmless and small, and a candidate for the stale-token cleanup sweep in the backlog.
+
+Activity Log gets `news.create`, `news.update` (with published/unpublished/banner on/off noted) and `news.delete` entries.
+
+**Verified** on a throwaway DB (never `data/tennis.db`), via `app.js` directly (no cron), with scripted HTTP:
+- login, upload, rejecting a fake-PNG SVG, image GET headers
+- create, and a validation error keeping the typed body
+- draft 404, banner shown on `/schedule`, banner hidden after `banner_until`
+- delete removing its images, and Activity Log entries
+- Also screenshotted `/schedule`, `/news`, a post and the editor in Chromium (desktop light, mobile dark).
+- Paste and drag-drop upload weren't exercised in a real browser.
+
+Touched files: `db/schema.sql`, `services/news.js` (new), `app.js`, `routes/public.js`, `routes/admin.js`, `views/news.ejs`, `views/news_post.ejs`, `views/admin/news.ejs`, `views/admin/news_form.ejs` (all new), `partials/header.ejs`, `partials/admin_header.ejs`, `public/js/newsEditor.js` (new), `public/css/style.css`. There's no email-out of a post yet; a natural follow-up is a "Send this post to all players" button that reuses the Custom email all-players mode.

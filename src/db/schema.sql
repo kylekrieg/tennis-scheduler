@@ -557,3 +557,40 @@ CREATE TABLE IF NOT EXISTS suspended_actions (
   skipped_at          TEXT, -- set when the due time passed while suspended ("did not fire" logged); NULL = still pending
   UNIQUE (week_id, action_type)
 );
+
+-- News posts / announcement banner (Kyle, 2026-09-28): a multipurpose blog
+-- (new-feature write-ups with screenshots, an end-of-season happy hour, etc.)
+-- shown at /news, plus an optional banner on every player-facing page that
+-- links to one post. body is a tiny Markdown-ish syntax rendered (escaped)
+-- by src/services/news.js. show_banner + banner_until control the banner;
+-- when several posts qualify, the pinned/newest one wins. published_at is
+-- stamped the first time a post is published and kept through later edits.
+CREATE TABLE IF NOT EXISTS announcements (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  title         TEXT NOT NULL,
+  body          TEXT NOT NULL DEFAULT '',
+  published     INTEGER NOT NULL DEFAULT 0,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  show_banner   INTEGER NOT NULL DEFAULT 0,
+  banner_text   TEXT,                            -- short banner line; blank = use the title
+  banner_style  TEXT NOT NULL DEFAULT 'info',    -- 'info' | 'celebrate' | 'alert'
+  banner_until  TEXT,                            -- 'YYYY-MM-DD' (site timezone), inclusive; NULL = no end
+  author_name   TEXT,
+  published_at  TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Screenshots/photos for news posts, stored in the DB (not on disk) so the
+-- existing VACUUM INTO backups include them automatically. Served at
+-- /news/img/:id. announcement_id is NULL between upload and the post's first
+-- save; deleting a post removes the images only it referenced.
+CREATE TABLE IF NOT EXISTS announcement_images (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  announcement_id  INTEGER REFERENCES announcements(id) ON DELETE SET NULL,
+  mime             TEXT NOT NULL,
+  bytes            INTEGER NOT NULL,
+  original_name    TEXT,
+  data             BLOB NOT NULL,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);

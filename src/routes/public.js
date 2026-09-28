@@ -2005,4 +2005,45 @@ router.post('/adhoc-signup/:token', (req, res) => {
   });
 });
 
+// --- News / announcements (Kyle, 2026-09-28) ----------------------------
+// Public blog of admin-written posts; see news.js and CLAUDE.md's "News
+// posts and the announcement banner". Drafts (published = 0) 404 here —
+// admins preview them from the editor instead.
+const news = require('../services/news');
+
+router.get('/news', (req, res) => {
+  const posts = news.listPublished().map((p) => ({
+    ...p,
+    date: news.localDate(p.published_at),
+    excerpt: news.excerpt(p.body),
+    thumb: news.firstImage(p.body),
+  }));
+  res.render('news', { title: 'News', posts });
+});
+
+router.get('/news/img/:id', (req, res) => {
+  const img = /^\d+$/.test(req.params.id) ? news.getImage(req.params.id) : null;
+  if (!img) return res.status(404).end();
+  // Image ids are AUTOINCREMENT (never reused) and an image's bytes never
+  // change once uploaded, so it's safe to let browsers/Cloudflare cache hard.
+  res.set('Content-Type', img.mime);
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(Buffer.from(img.data));
+});
+
+router.get('/news/:id', (req, res) => {
+  const post = /^\d+$/.test(req.params.id) ? news.getPost(req.params.id) : null;
+  if (!post || !post.published) {
+    return res.status(404).render('message', { title: 'Not found', heading: 'Post not found', body: 'That news post does not exist or is no longer published.', tone: 'error' });
+  }
+  res.render('news_post', {
+    title: post.title,
+    post,
+    date: news.localDate(post.published_at),
+    updated: post.updated_at !== post.created_at && news.localDate(post.updated_at) !== news.localDate(post.published_at) ? news.localDate(post.updated_at) : null,
+    html: news.renderBody(post.body),
+  });
+});
+
 module.exports = router;

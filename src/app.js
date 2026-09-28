@@ -8,6 +8,7 @@ const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
 const { fmtDate, fmtTime, sessionPublicLabel, sessionFullTitle, sessionColor } = require('./services/email');
 const { getSiteTitle } = require('./services/settings');
+const { activeBanner } = require('./services/news');
 const { weatherIconUrl, weatherSummaryText } = require('./services/weather');
 const { fullName } = require('./services/playerName');
 
@@ -85,6 +86,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // brand, per Kyle's own scoping of this to "public facing pages."
 app.use((req, res, next) => {
   res.locals.siteTitle = getSiteTitle();
+  // Site-wide announcement banner (Kyle, 2026-09-28) — the one published news
+  // post with "show banner" on and an unexpired end date, rendered by
+  // partials/header.ejs. Admin pages use admin_header.ejs, which doesn't show
+  // it, so skip the lookup there.
+  res.locals.newsBanner = req.path.startsWith('/admin') ? null : activeBanner();
   next();
 });
 

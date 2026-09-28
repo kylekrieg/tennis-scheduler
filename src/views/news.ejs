@@ -1,0 +1,24 @@
+<%- include('partials/header', {title}) %>
+<h1>News</h1>
+<p class="muted">Announcements, new features, and get-togethers.</p>
+
+<% if (posts.length === 0) { %>
+  <p class="muted" style="margin-top:24px;">Nothing posted yet — check back later.</p>
+<% } %>
+
+<div class="news-list">
+<% posts.forEach(function (p) { %>
+  <article class="news-card">
+    <% if (p.thumb) { %>
+      <a class="news-thumb" href="/news/<%= p.id %>" tabindex="-1" aria-hidden="true"><img src="<%= p.thumb %>" alt="" loading="lazy"></a>
+    <% } %>
+    <div class="news-card-body">
+      <h2><a href="/news/<%= p.id %>"><%= p.title %></a></h2>
+      <p class="muted news-meta"><% if (p.pinned) { %><span class="badge scheduled">📌 Pinned</span> <% } %><%= p.date ? fmtDate(p.date) : '' %><% if (p.author_name) { %> · <%= p.author_name %><% } %></p>
+      <% if (p.excerpt) { %><p class="news-excerpt"><%= p.excerpt %></p><% } %>
+      <a class="news-more" href="/news/<%= p.id %>">Read more →</a>
+    </div>
+  </article>
+<% }) %>
+</div>
+<%- include('partials/footer') %>
