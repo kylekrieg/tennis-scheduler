@@ -1,0 +1,93 @@
+<%- include('../partials/admin_header', {title}) %>
+<h1>Combined Log</h1>
+<p class="muted">The <a href="/admin/activity-log">Activity Log</a> and the <a href="/admin/email-log">Email Log</a> on one timeline, newest first (last <%= limit %> entries), so you can match an action (by an admin, a player, or the system) to the emails that went out around it. Emails of the same kind for the same week sent within a few minutes of each other are collapsed into one line; click it to see each one. Times are in <%= tz %>.</p>
+
+<form method="get" class="card wide" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+  <div style="flex:1;min-width:160px;">
+    <label for="q">Contains</label>
+    <input type="text" name="q" id="q" value="<%= filters.q %>" placeholder="description, subject, recipient">
+  </div>
+  <div style="min-width:160px;">
+    <label for="session">Session</label>
+    <select name="session" id="session">
+      <option value="">All</option>
+      <% sessions.forEach(function(s) { %>
+        <option value="<%= s.id %>" <%= String(filters.session) === String(s.id) ? 'selected' : '' %>><%= sessionFullTitle(s) %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div style="min-width:140px;">
+    <label for="type">Show</label>
+    <select name="type" id="type">
+      <option value="">Actions and emails</option>
+      <option value="activity" <%= filters.type === 'activity' ? 'selected' : '' %>>Actions only</option>
+      <option value="email" <%= filters.type === 'email' ? 'selected' : '' %>>Emails only</option>
+    </select>
+  </div>
+  <div><button class="btn neutral" type="submit">Filter</button></div>
+  <% if (filters.q || filters.session || filters.type) { %><div><a class="btn neutral" href="/admin/combined-log">Clear</a></div><% } %>
+</form>
+
+<% function sessionCell(r) { %>
+  <% if (r.session_id && r.sessionForTitle) { %><a href="/admin/sessions/<%= r.session_id %>"><%= sessionFullTitle(r.sessionForTitle) %></a><% if (r.match_date) { %> — <%= r.match_date %><% } %>
+  <% } else { %>—<% } %>
+<% } %>
+<% function statusBadge(st) { %>
+  <% if (st === 'sent') { %><span class="badge confirmed">sent</span>
+  <% } else if (st === 'failed') { %><span class="badge needs_sub">failed</span>
+  <% } else if (st === 'skipped_no_email') { %><span class="badge scheduled">skipped — no email</span>
+  <% } else { %><span class="badge scheduled">logged only</span><% } %>
+<% } %>
+
+<table class="wide">
+  <thead><tr><th style="white-space:nowrap;min-width:150px;">When</th><th>Type</th><th>Who</th><th>What</th><th>Session / week</th></tr></thead>
+  <tbody>
+    <% items.forEach(function(it, i) { %>
+      <% if (it.kind === 'activity') { var r = it.row; %>
+        <tr>
+          <td class="muted" style="white-space:nowrap;"><%= r.display %></td>
+          <td><span class="badge reminded">action</span></td>
+          <td><%= r.admin_name %></td>
+          <td><span class="badge scheduled"><%= r.action %></span> <%= r.description %></td>
+          <td class="muted"><% sessionCell(r) %></td>
+        </tr>
+      <% } else if (it.rows.length === 1) { var e = it.first; %>
+        <tr>
+          <td class="muted" style="white-space:nowrap;"><%= e.display %></td>
+          <td><span class="badge confirmed">email</span></td>
+          <td><%= e.playerNames || e.to_email %></td>
+          <td><span class="badge scheduled"><%= e.category %></span>
+            <% if (e.has_body) { %><a href="/admin/email-log/<%= e.id %>/body" target="_blank" rel="noopener"><%= e.subject %></a><% } else { %><%= e.subject %><% } %>
+            <% if (e.status !== 'sent') { statusBadge(e.status); } %></td>
+          <td class="muted"><% sessionCell(e) %></td>
+        </tr>
+      <% } else { var e = it.first; %>
+        <tr>
+          <td class="muted" style="white-space:nowrap;"><%= e.display %></td>
+          <td><span class="badge confirmed">email ×<%= it.rows.length %></span></td>
+          <td><%= it.names %></td>
+          <td>
+            <details>
+              <summary style="cursor:pointer;"><span class="badge scheduled"><%= it.category %></span> <%= e.subject %><% if (it.rows.length > 1) { %> <span class="muted">and <%= it.rows.length - 1 %> more</span><% } %><% if (it.failed) { %> <span class="badge needs_sub"><%= it.failed %> failed</span><% } %></summary>
+              <table style="margin-top:6px;">
+                <% it.rows.forEach(function(x) { %>
+                  <tr>
+                    <td class="muted" style="white-space:nowrap;"><%= x.display %></td>
+                    <td><%= x.playerNames || '—' %></td>
+                    <td class="muted"><%= x.to_email %></td>
+                    <td><% if (x.has_body) { %><a href="/admin/email-log/<%= x.id %>/body" target="_blank" rel="noopener"><%= x.subject %></a><% } else { %><%= x.subject %><% } %></td>
+                    <td><% statusBadge(x.status); %></td>
+                  </tr>
+                <% }) %>
+              </table>
+            </details>
+          </td>
+          <td class="muted"><% sessionCell(e) %></td>
+        </tr>
+      <% } %>
+    <% }) %>
+    <% if (items.length === 0) { %><tr><td colspan="5" class="muted">Nothing matches this filter.</td></tr><% } %>
+  </tbody>
+</table>
+<p class="muted">Email subjects open the email as it was sent, in a new tab, with its links disabled. Many automatic emails (reminders, follow-ups) have no matching action row, since the cron sends them without logging a separate action.</p>
+<%- include('../partials/footer') %>

@@ -254,6 +254,34 @@ function hasActiveConcurrentSubRequest(weekId) {
  * Sets `fanout_sent_at`, which is what makes this safe to only ever run once
  * per request (see fanOutPendingAdminFlagsForWeek()'s WHERE clause).
  */
+// --- Per-request email ordering (Kyle, 2026-09-29) --------------------------
+// Everything that emails about one sub request runs through this chain, so a
+// request's emails always go out in order: the roster fan-out, then (if the
+// match is already inside the escalation window) the sub-list escalation,
+// then the requester's own confirmation — and a "sub found" notice never
+// lands in the middle of request emails still being sent. Without it, the
+// 60s cron escalation pass or a fast claim click could run while a fan-out
+// was mid-loop (each send is an await), interleaving the emails. In-memory
+// is enough: the app runs as one Node process (PM2 fork mode).
+const subRequestLocks = new Map();
+function withSubRequestLock(subRequestId, fn) {
+  const key = Number(subRequestId);
+  const prev = subRequestLocks.get(key) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  subRequestLocks.set(key, tail);
+  tail.then(() => { if (subRequestLocks.get(key) === tail) subRequestLocks.delete(key); });
+  return run;
+}
+
+// True while a request is still worth emailing candidates about. The send
+// loops check this before each email and stop once the spot is filled or an
+// admin resolved it, so nobody gets asked about a slot that's already taken.
+function subRequestStillOpen(subRequestId) {
+  const r = db.prepare('SELECT status FROM sub_requests WHERE id = ?').get(subRequestId);
+  return !!r && (r.status === 'open' || r.status === 'escalated');
+}
+
 async function fanOutSubRequest(subRequestId, requestingPlayerName) {
   const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(subRequest.week_assignment_id);
@@ -304,7 +332,10 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
     });
   })();
 
+  const emailed = [];
   for (const { candidate, rawToken } of offers) {
+    if (!subRequestStillOpen(subRequestId)) break;
+    emailed.push(candidate);
     await email.sendSubRequestFanout({
       recipient: candidate,
       week,
@@ -319,7 +350,9 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
   // so createSubRequest() below can tell the requesting player exactly who
   // was just emailed, instead of the old generic "the other players have
   // been emailed" with no names.
-  return { count: offers.length, candidates };
+  // Only the candidates actually emailed (the loop stops early if the spot
+  // gets filled mid-send) — Kyle, 2026-09-29.
+  return { count: emailed.length, candidates: emailed };
 }
 
 /**
@@ -387,16 +420,26 @@ async function createSubRequest(weekAssignmentId) {
   })();
 
   adoptPendingSubThread(weekAssignmentId, subRequestId);
-  const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, fullName(player));
-
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
-  // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
-  // Sub" page): the affected player gets their own confirmation the moment
-  // this fires, so a mistake surfaces immediately instead of after the fact.
-  // Also tells them exactly who was just emailed and what happens next —
-  // see sendSubRequestOwnConfirmation()'s own doc comment (Kyle, 2026-08-27).
-  const sessionSubs = sessionSubList(session.id);
-  await email.sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, threadKey: subThreadKey(subRequestId) });
+
+  // All of this request's emails in one ordered run (Kyle, 2026-09-29):
+  // roster fan-out, then escalation to the sub list if the match is already
+  // inside the escalation window, then the requester's confirmation last.
+  const { offerCount } = await withSubRequestLock(subRequestId, async () => {
+    const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, fullName(player));
+    const esc = await escalateOneRequest(subRequestId, { onlyIfDue: true });
+    // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
+    // Sub" page): the affected player gets their own confirmation, so a
+    // mistake surfaces immediately. Also tells them exactly who was emailed
+    // and what happens next — see sendSubRequestOwnConfirmation().
+    const sessionSubs = sessionSubList(session.id);
+    await email.sendSubRequestOwnConfirmation({
+      player, week, session, candidates, sessionSubs,
+      escalatedTo: esc.result === 'escalated' ? esc.emailed : null,
+      threadKey: subThreadKey(subRequestId),
+    });
+    return { offerCount };
+  });
 
   // Activity log — player self-service "Need a sub" (Kyle, 2026-09-09: wants
   // a searchable breadcrumb of player actions — confirms, sub requests, and
@@ -498,7 +541,12 @@ async function fanOutPendingAdminFlagsForWeek(weekId) {
     .all(weekId);
 
   for (const row of pending) {
-    await fanOutSubRequest(row.subRequestId, fullName(row));
+    // Same ordered run as createSubRequest(): roster first, then the sub
+    // list if already due (Kyle, 2026-09-29).
+    await withSubRequestLock(row.subRequestId, async () => {
+      await fanOutSubRequest(row.subRequestId, fullName(row));
+      await escalateOneRequest(row.subRequestId, { onlyIfDue: true });
+    });
   }
 
   return pending.length;
@@ -634,6 +682,10 @@ async function claimSub(rawToken) {
     )
     .all(originalAssignment.week_id);
 
+  // "Sub found" emails wait for any of this request's emails still being
+  // sent (a fan-out or escalation loop stops early now that the request is
+  // filled), so they always come after the request emails (Kyle, 2026-09-29).
+  await withSubRequestLock(subRequest.id, async () => {
   for (const recipient of groupRows) {
     await email.sendSubFilledNotice({
       recipient,
@@ -656,6 +708,7 @@ async function claimSub(rawToken) {
   if (originalPlayer) {
     await email.sendSubFilledOriginalNotice({ recipient: originalPlayer, week, session, subName: fullName(subPlayer), threadKey: subThreadKey(subRequest.id) });
   }
+  });
 
   return { ok: true, week, subPlayer };
 }
@@ -819,39 +872,39 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
   })();
 
   adoptPendingSubThread(weekAssignmentId, subRequestId);
-  await email.sendSelfArrangedSubInvite({
-    recipient: candidate,
-    week,
-    session,
-    claimToken: rawToken,
-    requestingPlayerName: fullName(player),
-    threadKey: subThreadKey(subRequestId),
-  });
-
-  await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName, threadKey: subThreadKey(subRequestId) });
 
   // Activity log — "I found a sub" itself (Kyle, 2026-09-09), separate from
   // the isNewPerson-only entry below: this fires every time regardless of
   // whether the named sub was already on file. The named person's own
-  // confirm click is logged separately, in claimSub() above, once they
-  // actually accept via the invite link this just sent.
+  // confirm click is logged separately, in claimSub() above.
   logPlayerActivity({
     playerName: fullName(player),
     action: 'sub.self_arranged',
     description: `${fullName(player)} arranged for ${candidate.fullName} to sub for them on ${week.match_date} (awaiting their confirmation)`,
     sessionId: session.id,
   });
-
   if (isNewPerson) {
     // Activity log — admin-facing, full names (Kyle, 2026-09-07).
-    const description = `${fullName(player)} added ${candidate.fullName} (${candidate.email}) to the sub list after arranging them as a sub for ${week.match_date}`;
     logPlayerActivity({
       playerName: fullName(player),
       action: 'sub.self_arranged_new_person',
-      description,
+      description: `${fullName(player)} added ${candidate.fullName} (${candidate.email}) to the sub list after arranging them as a sub for ${week.match_date}`,
       sessionId: session.id,
     });
-    if (session.admin_report_emails) {
+  }
+
+  // Ordered (Kyle, 2026-09-29): the invite to the named sub and the admin
+  // alert go out first, the requester's own confirmation last.
+  await withSubRequestLock(subRequestId, async () => {
+    await email.sendSelfArrangedSubInvite({
+      recipient: candidate,
+      week,
+      session,
+      claimToken: rawToken,
+      requestingPlayerName: fullName(player),
+      threadKey: subThreadKey(subRequestId),
+    });
+    if (isNewPerson && session.admin_report_emails) {
       await email.sendNewSubListEntryAlert({
         session,
         week,
@@ -861,7 +914,8 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
         threadKey: subThreadKey(subRequestId),
       });
     }
-  }
+    await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName, threadKey: subThreadKey(subRequestId) });
+  });
 
   return { ok: true, week, session, candidate, isNewPerson, subRequestId };
 }
@@ -956,16 +1010,13 @@ function recordAdminReassignAsSub(weekAssignmentId, requestingPlayerId) {
  * (tz.js) rather than raw SQLite datetime math, since match_time is stored
  * as local wall time, not UTC. */
 async function escalateOverdueRequests() {
-  const tz = getTimezone();
-  const now = new Date();
-
   // Joins through to sessions so an archived session's stray open request
   // (e.g. archived mid-season, before it was actually resolved) doesn't
   // still escalate and email the broader sub list — archiving is meant to
   // go fully quiet, not just hide from the dashboard.
   const openRequests = db
     .prepare(
-      `SELECT sr.*, wa.id as assignment_id, w.id as week_id
+      `SELECT sr.id
        FROM sub_requests sr
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
@@ -975,75 +1026,109 @@ async function escalateOverdueRequests() {
     .all();
 
   let escalatedCount = 0;
+  for (const { id } of openRequests) {
+    // Queued behind any of this request's emails still going out (Kyle,
+    // 2026-09-29), and re-checked inside escalateOneRequest() since the
+    // request may have been escalated or filled while it waited.
+    const { result } = await withSubRequestLock(id, () => escalateOneRequest(id, { onlyIfDue: true }));
+    if (result === 'escalated' || result === 'unfilled') escalatedCount++;
+  }
+  return escalatedCount;
+}
 
-  for (const req of openRequests) {
-    const week = getWeekWithSession(req.week_id);
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
-    const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
-    const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
-    if (now < escalateAt) continue;
+/**
+ * Escalate one open sub request to its session's sub list, if it's due
+ * (matchAt - escalation_lead_hours has passed). Returns { result, emailed }:
+ * result is 'escalated' | 'unfilled' | 'not_due' | 'not_open' | 'suspended',
+ * emailed is the list of sub-list candidates actually emailed. Callers run it
+ * inside withSubRequestLock(). Split out of escalateOverdueRequests()
+ * (Kyle, 2026-09-29) so createSubRequest() can escalate a request made
+ * inside the escalation window right after its roster fan-out, before the
+ * requester's confirmation — instead of the cron doing it separately and the
+ * emails interleaving. Uses the same timezone-aware wall-clock conversion as
+ * the reminder emails (tz.js).
+ */
+async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
+  const req = db
+    .prepare(
+      `SELECT sr.*, w.id as week_id, s.archived_at
+       FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN sessions s ON s.id = w.session_id
+       WHERE sr.id = ?`
+    )
+    .get(subRequestId);
+  if (!req || req.status !== 'open' || req.archived_at) return { result: 'not_open', emailed: [] };
 
-    // Admin suspended this week's sub escalation from the Status page (Kyle,
-    // 2026-09-27) — leave the request 'open' and don't email the broader
-    // sub list; logged once as "Suspended — did not fire". Lazy require to
-    // avoid any load-order cycle.
-    if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) continue;
+  const tz = getTimezone();
+  const now = new Date();
+  const week = getWeekWithSession(req.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+  const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
+  if (onlyIfDue && now < escalateAt) return { result: 'not_due', emailed: [] };
 
-    escalatedCount++;
+  // Admin suspended this week's sub escalation from the Status page (Kyle,
+  // 2026-09-27) — leave the request 'open' and don't email the broader
+  // sub list; logged once as "Suspended — did not fire". Lazy require to
+  // avoid any load-order cycle.
+  if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) return { result: 'suspended', emailed: [] };
 
-    // Per-session sub pool (broader_sub_list + real players, see
-    // sessionSubList()'s doc comment), not the whole master list. Looked up
-    // per request (not hoisted above the loop) since different open
-    // requests can belong to different sessions with different sub lists.
-    let sessionSubs = sessionSubList(session.id);
+  // Per-session sub pool (broader_sub_list + real players, see
+  // sessionSubList()'s doc comment), not the whole master list. Looked up
+  // per request (not hoisted above the loop) since different open
+  // requests can belong to different sessions with different sub lists.
+  let sessionSubs = sessionSubList(session.id);
 
-    // Skip a player-type candidate who's told the app they can't play this
-    // exact date. Deliberately NOT the same session-scoped blackoutSet +
-    // carriedOverBlackoutsForSession() pattern fanOutSubRequest() uses for
-    // the initial roster fan-out — that carryover helper only looks at
-    // players currently enrolled on the TARGET session's own roster (see
-    // its doc comment in sessionHelper.js), which a sub *candidate*
-    // (assigned via session_sub_players, not session_players) never is by
-    // definition. A direct, session-agnostic lookup is both simpler and
-    // more correct here: per Kyle's own 2026-08-27 call on blackout dates
-    // ("a blackout date is a blackout date... it doesn't need any
-    // context"), a real player's blackout entry is meant to be universal
-    // regardless of which session's page it was entered from, so this
-    // checks every blackout_dates row for that exact calendar date, not
-    // just ones tied to this specific session. broader_sub_list candidates
-    // are unaffected — they have no blackout dates of their own to check
-    // (they're not a `players` row, and thus not enrolled anywhere, until
-    // they actually claim something).
-    const blackedOutPlayerIds = new Set(
-      db.prepare('SELECT DISTINCT player_id FROM blackout_dates WHERE date = ?').all(week.match_date).map((r) => r.player_id)
-    );
-    sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !blackedOutPlayerIds.has(s.id));
+  // Skip a player-type candidate who's told the app they can't play this
+  // exact date. Deliberately NOT the same session-scoped blackoutSet +
+  // carriedOverBlackoutsForSession() pattern fanOutSubRequest() uses for
+  // the initial roster fan-out — that carryover helper only looks at
+  // players currently enrolled on the TARGET session's own roster (see
+  // its doc comment in sessionHelper.js), which a sub *candidate*
+  // (assigned via session_sub_players, not session_players) never is by
+  // definition. A direct, session-agnostic lookup is both simpler and
+  // more correct here: per Kyle's own 2026-08-27 call on blackout dates
+  // ("a blackout date is a blackout date... it doesn't need any
+  // context"), a real player's blackout entry is meant to be universal
+  // regardless of which session's page it was entered from, so this
+  // checks every blackout_dates row for that exact calendar date, not
+  // just ones tied to this specific session. broader_sub_list candidates
+  // are unaffected — they have no blackout dates of their own to check
+  // (they're not a `players` row, and thus not enrolled anywhere, until
+  // they actually claim something).
+  const blackedOutPlayerIds = new Set(
+    db.prepare('SELECT DISTINCT player_id FROM blackout_dates WHERE date = ?').all(week.match_date).map((r) => r.player_id)
+  );
+  sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !blackedOutPlayerIds.has(s.id));
 
-    if (sessionSubs.length === 0) {
-      db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
-      continue;
-    }
-
-    db.prepare("UPDATE sub_requests SET status = 'escalated', escalated_at = datetime('now') WHERE id = ?").run(
-      req.id
-    );
-
-    for (const candidate of sessionSubs) {
-      const raw = generateRawToken();
-      if (candidate.candidateType === 'player') {
-        db.prepare(
-          "INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
-        ).run(req.id, candidate.id, hashToken(raw), 'pending');
-      } else {
-        db.prepare(
-          "INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
-        ).run(req.id, candidate.id, hashToken(raw), 'pending');
-      }
-      await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw, threadKey: subThreadKey(req.id) });
-    }
+  if (sessionSubs.length === 0) {
+    db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
+    return { result: 'unfilled', emailed: [] };
   }
 
-  return escalatedCount;
+  db.prepare("UPDATE sub_requests SET status = 'escalated', escalated_at = datetime('now') WHERE id = ?").run(
+    req.id
+  );
+
+  const emailed = [];
+  for (const candidate of sessionSubs) {
+    if (!subRequestStillOpen(req.id)) break;
+    const raw = generateRawToken();
+    if (candidate.candidateType === 'player') {
+      db.prepare(
+        "INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
+      ).run(req.id, candidate.id, hashToken(raw), 'pending');
+    } else {
+      db.prepare(
+        "INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
+      ).run(req.id, candidate.id, hashToken(raw), 'pending');
+    }
+    await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw, threadKey: subThreadKey(req.id) });
+    emailed.push(candidate);
+  }
+  return { result: 'escalated', emailed };
 }
 
 /** A second pass: once match time has actually arrived and an escalated

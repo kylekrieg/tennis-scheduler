@@ -392,6 +392,32 @@ CREATE TABLE IF NOT EXISTS admin_activity_log (
 CREATE INDEX IF NOT EXISTS idx_activity_log_session ON admin_activity_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON admin_activity_log(created_at);
 
+-- Detail log (Kyle, 2026-09-29): extra, lower-level events shown only on the
+-- admin Super Log, never on the Email Log or Activity Log (kept uncluttered on
+-- purpose). kind: 'open' (someone opened an emailed link's page), 'click'
+-- (pressed its button), 'admin' (an admin button that isn't in the Activity
+-- Log, e.g. Resend link), 'refused' (expired/used link, spot already filled,
+-- rate limit, bot trap, failed admin login). ip/user_agent/device record where
+-- a click came from. No foreign keys on purpose — a log row must never block
+-- deleting a session/player. Rows older than 365 days are pruned by
+-- detailLog.js. See services/detailLog.js.
+CREATE TABLE IF NOT EXISTS detail_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  kind         TEXT NOT NULL,
+  event        TEXT NOT NULL,
+  actor        TEXT,
+  player_id    INTEGER,
+  session_id   INTEGER,
+  week_id      INTEGER,
+  description  TEXT NOT NULL,
+  ip           TEXT,
+  user_agent   TEXT,
+  device       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_detail_log_created ON detail_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_detail_log_session ON detail_log(session_id);
+
 -- Ad-hoc pickup-game sign-ups (session_type = 'adhoc' — see CLAUDE.md). One
 -- row per (week, roster player), created up front when the T-56h invite goes
 -- out so the invite list and the sign-up state live in the same place.

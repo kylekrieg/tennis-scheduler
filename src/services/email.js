@@ -612,7 +612,7 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
  * already were) — this copy always matches whatever that session is actually
  * configured to do, not a hardcoded number.
  */
-async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, threadKey = null, test = false }) {
+async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, escalatedTo = null, threadKey = null, test = false }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   // Full names throughout (Kyle, 2026-09-07). `candidates` are raw players
   // rows (fanOutSubRequest()'s allCandidates); `sessionSubs` mixes
@@ -627,7 +627,12 @@ async function sendSubRequestOwnConfirmation({ player, week, session, candidates
     <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Here's exactly what happens from here:</p>
     <ul>
       <li><strong>Right now:</strong> ${candidateNames ? `an email just went out to ${candidateNames} — first to confirm takes the spot.` : `no one else on the roster was free to ask for this date — see the next step below.`}</li>
-      <li><strong>If no one responds within ${escalationHoursPhrase(session)} of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>
+      ${escalatedTo && escalatedTo.length
+        // escalatedTo (Kyle, 2026-09-29): the request came in inside the
+        // escalation window, so the sub list was emailed right after the
+        // roster, before this confirmation went out.
+        ? `<li><strong>Also right now:</strong> since the match is within ${escalationHoursPhrase(session)}, it also went out to this session's sub list: ${escalatedTo.map((s) => fullName(s)).join(', ')}.</li>`
+        : `<li><strong>If no one responds within ${escalationHoursPhrase(session)} of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>`}
       <li><strong>If no one has confirmed by match time:</strong> please contact your admin for help finding a replacement.</li>
     </ul>
     <p>You'll get a separate email the moment someone actually confirms — no need to keep checking.</p>

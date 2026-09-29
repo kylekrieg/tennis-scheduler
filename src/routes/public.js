@@ -18,6 +18,7 @@ const adhocFlow = require('../services/adhocFlow');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { rateLimiter } = require('../middleware/rateLimiter');
 const honeypot = require('../services/honeypot');
+const detailLog = require('../services/detailLog');
 const { logPlayerActivity, logGroupScoreActivity } = require('../services/activityLog');
 const { fullName } = require('../services/playerName');
 const gameScores = require('../services/gameScores');
@@ -1238,7 +1239,7 @@ router.post('/swap/start', swapStartLimiter, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/swap/verify/:token', (req, res) => {
+router.get('/swap/verify/:token', detailLog.linkPage('swap_verify'), (req, res) => {
   const pending = swapFlow.findProposalVerificationByToken(req.params.token);
   if (!pending) {
     return res.render('message', { title: 'Swap a Week', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
@@ -1251,7 +1252,7 @@ router.get('/swap/verify/:token', (req, res) => {
   res.render('swap_verify', { title: 'Swap a Week', token: req.params.token, initiatorCtx, targetCtx });
 });
 
-router.post('/swap/verify/:token', asyncHandler(async (req, res) => {
+router.post('/swap/verify/:token', detailLog.linkPage('swap_verify'), asyncHandler(async (req, res) => {
   const pending = swapFlow.findProposalVerificationByToken(req.params.token);
   if (!pending) {
     return res.render('message', { title: 'Swap a Week', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
@@ -1281,7 +1282,7 @@ router.post('/swap/verify/:token', asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/swap/respond/:token', (req, res) => {
+router.get('/swap/respond/:token', detailLog.linkPage('swap_respond'), (req, res) => {
   const swapRequest = swapFlow.findSwapRequestByToken(req.params.token);
   if (!swapRequest) {
     return res.render('message', { title: 'Swap a Week', heading: 'Link not found', body: 'This swap link is invalid or has expired.', tone: 'error' });
@@ -1301,7 +1302,7 @@ router.get('/swap/respond/:token', (req, res) => {
   });
 });
 
-router.post('/swap/respond/:token', asyncHandler(async (req, res) => {
+router.post('/swap/respond/:token', detailLog.linkPage('swap_respond'), asyncHandler(async (req, res) => {
   const accept = req.body.action === 'accept';
   const result = await swapFlow.respondToSwap(req.params.token, accept);
   if (!result.ok) {
@@ -1342,14 +1343,14 @@ router.post('/swap/respond/:token', asyncHandler(async (req, res) => {
 
 // --- Token-driven action routes -------------------------------------------
 
-router.get('/confirm/:token', (req, res) => {
+router.get('/confirm/:token', detailLog.linkPage('confirm'), (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Confirm', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
   const week = subFlow.getWeekWithSession(assignment.week_id);
   res.render('confirm', { title: 'Confirm', assignment, week, token: req.params.token });
 });
 
-router.post('/confirm/:token', (req, res) => {
+router.post('/confirm/:token', detailLog.linkPage('confirm'), (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Confirm', heading: 'Link not found', body: 'This confirmation link is invalid or has expired.', tone: 'error' });
 
@@ -1394,14 +1395,14 @@ router.post('/confirm/:token', (req, res) => {
   res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
 });
 
-router.get('/need-sub/:token', (req, res) => {
+router.get('/need-sub/:token', detailLog.linkPage('need_sub'), (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Need a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
   const week = subFlow.getWeekWithSession(assignment.week_id);
   res.render('need_sub', { title: 'Need a sub', assignment, week, token: req.params.token });
 });
 
-router.post('/need-sub/:token', asyncHandler(async (req, res) => {
+router.post('/need-sub/:token', detailLog.linkPage('need_sub'), asyncHandler(async (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'Need a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
 
@@ -1462,7 +1463,7 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
  * unlike the reminder email's link, nothing there already proves the
  * browser belongs to the named player.
  */
-router.get('/found-sub/:token', (req, res) => {
+router.get('/found-sub/:token', detailLog.linkPage('found_sub'), (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'I found a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
   const week = subFlow.getWeekWithSession(assignment.week_id);
@@ -1479,7 +1480,7 @@ router.get('/found-sub/:token', (req, res) => {
   res.render('found_sub', { title: 'I found a sub', assignment, week, token: req.params.token, candidates });
 });
 
-router.post('/found-sub/:token', asyncHandler(async (req, res) => {
+router.post('/found-sub/:token', detailLog.linkPage('found_sub'), asyncHandler(async (req, res) => {
   const assignment = tokenStore.findAssignmentByToken(req.params.token);
   if (!assignment) return res.render('message', { title: 'I found a sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
 
@@ -1987,7 +1988,7 @@ router.post('/me/:idOrSlug/other-dates/:eventId/delete', otherDatesEditLimiter, 
   res.redirect(otherDatesUrl(player, token, 'pe=deleted'));
 });
 
-router.get('/claim-sub/:token', (req, res) => {
+router.get('/claim-sub/:token', detailLog.linkPage('claim_sub'), (req, res) => {
   const hashed = hashToken(req.params.token);
   const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ?').get(hashed);
   if (!offer) return res.render('message', { title: 'Claim sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
@@ -1997,7 +1998,7 @@ router.get('/claim-sub/:token', (req, res) => {
   res.render('claim_sub', { title: 'Claim sub', offer, week, token: req.params.token, alreadyClosed: offer.status !== 'pending' });
 });
 
-router.post('/claim-sub/:token', asyncHandler(async (req, res) => {
+router.post('/claim-sub/:token', detailLog.linkPage('claim_sub'), asyncHandler(async (req, res) => {
   const result = await subFlow.claimSub(req.params.token);
   if (!result.ok) {
     const messages = {
@@ -2015,7 +2016,7 @@ router.post('/claim-sub/:token', asyncHandler(async (req, res) => {
 // there's no status to change here beyond the one-time timestamp, so unlike
 // /confirm there's nothing to "undo" from this page — a player who's already
 // signed up just sees that back to them.
-router.get('/adhoc-signup/:token', (req, res) => {
+router.get('/adhoc-signup/:token', detailLog.linkPage('adhoc_signup'), (req, res) => {
   const signup = adhocFlow.findSignupByToken(req.params.token);
   if (!signup) return res.render('message', { title: 'Sign up', heading: 'Link not found', body: 'This sign-up link is invalid or has expired.', tone: 'error' });
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(signup.session_id);
@@ -2023,7 +2024,7 @@ router.get('/adhoc-signup/:token', (req, res) => {
   res.render('adhoc_signup', { title: 'Sign up', signup, session, token: req.params.token, totalSignedUp: groups.totalSignedUp });
 });
 
-router.post('/adhoc-signup/:token', (req, res) => {
+router.post('/adhoc-signup/:token', detailLog.linkPage('adhoc_signup'), (req, res) => {
   const signup = adhocFlow.findSignupByToken(req.params.token);
   if (!signup) return res.render('message', { title: 'Sign up', heading: 'Link not found', body: 'This sign-up link is invalid or has expired.', tone: 'error' });
 

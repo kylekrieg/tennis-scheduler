@@ -27,6 +27,7 @@ const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBooki
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
 const { SLUG_RE, slugTaken, generateUniqueSlug, broaderSubSlugTaken, generateUniqueBroaderSubSlug } = require('../services/playerSlug');
+const detailLog = require('../services/detailLog');
 const { fullName, deriveShortName } = require('../services/playerName');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const jointSolver = require('../services/jointSolver');
@@ -127,10 +128,17 @@ router.post('/login', adminLoginLimiter, (req, res) => {
       res.redirect('/admin');
     });
   }
+  detailLog.record(req, {
+    kind: 'refused', event: 'admin.login_failed', actor: (req.body && req.body.username) || null,
+    description: `Failed admin login for username "${String((req.body && req.body.username) || '').slice(0, 60)}" (wrong username or password)`,
+  });
   res.render('admin/login', { title: 'Admin Login', error: 'Incorrect username or password.' });
 });
 
 router.post('/logout', (req, res) => {
+  if (req.session.isAdmin) {
+    detailLog.record(req, { kind: 'admin', event: 'admin.logout', actor: req.session.adminName, description: `${req.session.adminName || 'An admin'} logged out` });
+  }
   req.session.isAdmin = false;
   res.redirect('/admin/login');
 });
@@ -2973,6 +2981,11 @@ router.post('/sessions/:id/weeks/:weekId/resend/:assignmentId', asyncHandler(asy
     manuallyPlaced: !!assignment.manually_placed,
   });
 
+  detailLog.record(req, {
+    kind: 'admin', event: 'admin.resend_link', actor: req.session.adminName,
+    playerId: assignment.player_id, sessionId: session.id, weekId: week.id,
+    description: `${req.session.adminName || 'An admin'} clicked Resend link for ${fullName(assignment)} (${week.match_date}) — a new Confirm / Need a sub email went to ${assignment.email}`,
+  });
   flash(req, `Confirmation link resent to ${fullName(assignment)}.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 }));
@@ -3029,6 +3042,12 @@ router.post('/sessions/:id/weeks/:weekId/send-admin-report', asyncHandler(async 
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
     const count = await adminReport.sendReportForWeek(req.params.weekId, { force: true });
+    const wk = db.prepare('SELECT match_date FROM weeks WHERE id = ?').get(req.params.weekId);
+    detailLog.record(req, {
+      kind: 'admin', event: 'admin.send_status_report', actor: req.session.adminName,
+      sessionId: Number(req.params.id), weekId: Number(req.params.weekId),
+      description: `${req.session.adminName || 'An admin'} clicked Send status report now for ${wk ? wk.match_date : 'a week'} — sent to ${count} address(es)`,
+    });
     flash(req, `Sent a fresh status report to ${count} address(es) just now.`);
   } catch (err) {
     flash(req, `Error: ${err.message}`, 'error');
@@ -3451,6 +3470,10 @@ router.post('/sessions/:id/notify-blackouts', asyncHandler(async (req, res) => {
     await email.sendBlackoutNotice({ recipient: player, session });
   }
 
+  detailLog.record(req, {
+    kind: 'admin', event: 'admin.notify_blackouts', actor: req.session.adminName, sessionId: session.id,
+    description: `${req.session.adminName || 'An admin'} clicked Notify roster — blackout-date email sent to ${roster.length} player(s) for ${email.sessionFullTitle(session)}`,
+  });
   flash(req, `Notified ${roster.length} player(s) to enter their blackout dates.`);
   res.redirect(`/admin/sessions/${session.id}/blackouts`);
 }));
@@ -4545,6 +4568,33 @@ router.post('/email', asyncHandler(async (req, res) => {
 
 // --- Email log / reporting -------------------------------------------------
 
+// Recipient address -> display name, for the Email Log's Player column and
+// the Super Log (Kyle, 2026-09-29). email_log only stores the address, so
+// this resolves it at read time: players first (full name, admin-side
+// convention), then the broader sub list, then admin accounts (admin-report
+// emails). Case-insensitive. Unknown addresses map to nothing.
+function emailNameMap() {
+  const map = new Map();
+  const add = (addr, name) => {
+    const k = String(addr || '').trim().toLowerCase();
+    if (k && name && !map.has(k)) map.set(k, name);
+  };
+  db.prepare('SELECT name, full_name, email FROM players').all().forEach((p) => add(p.email, fullName(p)));
+  db.prepare('SELECT name, email FROM broader_sub_list').all().forEach((b) => add(b.email, b.name));
+  db.prepare('SELECT name, email FROM admins WHERE email IS NOT NULL').all().forEach((a) => add(a.email, `${a.name} (admin)`));
+  return map;
+}
+
+// to_email can be one address or several comma-joined (the "This week's
+// players" and "Send email to players" sends put everyone in one To: field).
+function namesForAddresses(toEmail, map) {
+  const names = String(toEmail || '')
+    .split(',')
+    .map((a) => map.get(a.trim().toLowerCase()))
+    .filter(Boolean);
+  return names.length ? names.join(', ') : '';
+}
+
 router.get('/email-log', (req, res) => {
   const { category, status, q } = req.query;
   // view: 'grouped' (default) shows each sub request's emails as one
@@ -4617,7 +4667,9 @@ router.get('/email-log', (req, res) => {
   // no 'Z'/'T' (a bare 'YYYY-MM-DD HH:MM:SS' would otherwise be read as local
   // server time by JS's Date constructor).
   const emailLogTz = getTimezone();
+  const nameMap = emailNameMap();
   rows.forEach((r) => {
+    r.playerNames = namesForAddresses(r.to_email, nameMap);
     r.sessionForTitle = r.session_id && r.session_name
       ? {
           name: r.session_name,
@@ -4632,9 +4684,11 @@ router.get('/email-log', (req, res) => {
     r.sentTimeDisplay = email.fmtTime(parts.time);
   });
 
-  const items = view === 'grouped' || thread
+  const items = thread
     ? emailThreads.groupRows(rows)
-    : rows.map((r) => ({ type: 'row', row: r }));
+    : view === 'grouped'
+      ? emailThreads.collapseBatches(emailThreads.groupRows(rows))
+      : rows.map((r) => ({ type: 'row', row: r }));
 
   const categories = db.prepare('SELECT DISTINCT category FROM email_log ORDER BY category').all().map((r) => r.category);
   const counts = db
@@ -4762,6 +4816,127 @@ router.get('/activity-log', (req, res) => {
     sessions,
     playerBehavior,
     filters: { session: sessionId || '', action: action || '', admin: admin || '', q: q || '' },
+  });
+});
+
+// --- Combined log (Kyle, 2026-09-29) ---------------------------------------
+// Activity Log + Email Log interleaved on one timeline, so an automated or
+// admin action can be matched to the emails it caused. Both separate pages
+// stay as they are. Read-only; nothing is stored — just the two tables
+// merged at read time. Consecutive emails of the same category for the same
+// week/thread sent within a few minutes of each other (a reminder batch, a
+// sub fan-out) are collapsed into one expandable row so one action reads as
+// one line instead of eight.
+// Renamed Combined Log -> Super Log (Kyle, 2026-09-29) and given a third
+// feed, detail_log (see detailLog.js): link opens, button clicks with
+// device/IP, admin buttons the Activity Log doesn't cover, and refused
+// attempts. Those rows appear ONLY here. The old URL redirects.
+router.get('/combined-log', (req, res) => {
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  res.redirect(301, `/admin/super-log${qs}`);
+});
+
+router.get('/super-log', (req, res) => {
+  const { session: sessionId, q } = req.query;
+  const type = ['activity', 'email', 'detail'].includes(req.query.type) ? req.query.type : '';
+  const LIMIT = 300;
+  const tz = getTimezone();
+  const toDisplay = (utc) => {
+    const parts = utcToZonedParts(new Date(`${utc.replace(' ', 'T')}Z`), tz);
+    return `${email.fmtDate(parts.date)}, ${email.fmtTime(parts.time)}`;
+  };
+  const sessionCols = `s.id as session_id, s.name as session_name, s.match_day_of_week as session_match_day_of_week,
+    s.match_time as session_match_time, s.court_info as session_court_info, s.club_name as session_club_name`;
+  const sessionForTitle = (r) => (r.session_id && r.session_name
+    ? { name: r.session_name, match_day_of_week: r.session_match_day_of_week, match_time: r.session_match_time, court_info: r.session_court_info, club_name: r.session_club_name }
+    : null);
+
+  let activity = [];
+  if (type === '' || type === 'activity') {
+    const c = [];
+    const p = [];
+    if (sessionId) { c.push('al.session_id = ?'); p.push(sessionId); }
+    if (q) { c.push('(al.description LIKE ? OR al.action LIKE ? OR al.admin_name LIKE ?)'); p.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    activity = db.prepare(
+      `SELECT al.id, al.admin_name, al.action, al.description, al.created_at as at, ${sessionCols}
+       FROM admin_activity_log al LEFT JOIN sessions s ON s.id = al.session_id
+       ${c.length ? 'WHERE ' + c.join(' AND ') : ''}
+       ORDER BY al.created_at DESC, al.id DESC LIMIT ${LIMIT}`
+    ).all(...p).map((r) => ({ kind: 'activity', ...r }));
+  }
+
+  let details = [];
+  if (type === '' || type === 'detail') {
+    const c = [];
+    const p = [];
+    if (sessionId) { c.push('dl.session_id = ?'); p.push(sessionId); }
+    if (q) { c.push('(dl.description LIKE ? OR dl.actor LIKE ? OR dl.device LIKE ? OR dl.ip LIKE ? OR dl.event LIKE ?)'); p.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+    details = db.prepare(
+      `SELECT dl.id, dl.kind as detail_kind, dl.event, dl.actor, dl.description, dl.ip, dl.user_agent, dl.device, dl.created_at as at,
+              w.match_date, ${sessionCols}
+       FROM detail_log dl LEFT JOIN weeks w ON w.id = dl.week_id LEFT JOIN sessions s ON s.id = dl.session_id
+       ${c.length ? 'WHERE ' + c.join(' AND ') : ''}
+       ORDER BY dl.created_at DESC, dl.id DESC LIMIT ${LIMIT}`
+    ).all(...p).map((r) => ({ kind: 'detail', ...r }));
+  }
+
+  let emails = [];
+  if (type === '' || type === 'email') {
+    const c = [];
+    const p = [];
+    if (sessionId) { c.push('w.session_id = ?'); p.push(sessionId); }
+    if (q) { c.push('(el.subject LIKE ? OR el.to_email LIKE ? OR el.category LIKE ?)'); p.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    emails = db.prepare(
+      `SELECT el.id, el.to_email, el.subject, el.category, el.status, el.sent_at as at, el.related_week_id, el.thread_key,
+              (el.body_html IS NOT NULL) as has_body, w.match_date, ${sessionCols}
+       FROM email_log el LEFT JOIN weeks w ON w.id = el.related_week_id LEFT JOIN sessions s ON s.id = w.session_id
+       ${c.length ? 'WHERE ' + c.join(' AND ') : ''}
+       ORDER BY el.sent_at DESC, el.id DESC LIMIT ${LIMIT}`
+    ).all(...p).map((r) => ({ kind: 'email', ...r }));
+  }
+
+  // Newest first. On a tie, activity sorts above the emails it caused
+  // (the action is logged in the same second the emails go out, usually after).
+  const rank = { detail: 0, activity: 1, email: 2 };
+  const merged = activity.concat(details, emails)
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : (a.kind === b.kind ? b.id - a.id : rank[a.kind] - rank[b.kind])))
+    .slice(0, LIMIT);
+
+  const nameMap = emailNameMap();
+  const BATCH_GAP_MS = 5 * 60 * 1000;
+  const items = [];
+  merged.forEach((r) => {
+    r.display = toDisplay(r.at);
+    r.sessionForTitle = sessionForTitle(r);
+    if (r.kind === 'activity' || r.kind === 'detail') { items.push({ kind: r.kind, row: r }); return; }
+    r.playerNames = namesForAddresses(r.to_email, nameMap);
+    const last = items[items.length - 1];
+    const ms = Date.parse(`${r.at.replace(' ', 'T')}Z`);
+    if (last && last.kind === 'emails' && last.category === r.category
+        && last.weekId === r.related_week_id && last.threadKey === r.thread_key
+        && last.oldestMs - ms <= BATCH_GAP_MS) {
+      last.rows.push(r);
+      last.oldestMs = ms;
+      return;
+    }
+    items.push({ kind: 'emails', category: r.category, weekId: r.related_week_id, threadKey: r.thread_key, oldestMs: ms, rows: [r] });
+  });
+  items.forEach((it) => {
+    if (it.kind !== 'emails') return;
+    it.first = it.rows[0];
+    it.failed = it.rows.filter((x) => x.status === 'failed').length;
+    it.names = it.rows.map((x) => x.playerNames || x.to_email).join(', ');
+  });
+
+  const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
+  res.render('admin/super_log', {
+    title: 'Super Log',
+    wideMain: true,
+    items,
+    sessions,
+    tz,
+    limit: LIMIT,
+    filters: { session: sessionId || '', q: q || '', type },
   });
 });
 

@@ -66,6 +66,13 @@ function rateLimiter({ name, windowMs, max }) {
     if (hits.length >= max) {
       const retryMinutes = Math.max(1, Math.ceil((windowMs - (now - hits[0])) / 60000));
       res.status(429);
+      // Super Log only (Kyle, 2026-09-29). Lazy require avoids a load cycle.
+      const detailLog = require('../services/detailLog');
+      detailLog.record(req, {
+        kind: 'refused',
+        event: 'rate_limited',
+        description: `Rate limit hit (${name}, max ${max} per ${Math.round(windowMs / 60000)} min) on ${req.method} ${detailLog.safePath(req)}`,
+      });
       return res.render('message', {
         title: 'Slow down',
         heading: 'Too many requests',

@@ -212,3 +212,28 @@ Verified end-to-end in a live sandbox: a full invite → signup → stragglers-o
 
 See CLAUDE.md's 2026-09-27 entry for implementation detail.
 
+
+## 25. Email Log player names, Combined Log, public nav order, sub email ordering: resolved 2026-09-29
+
+**Player names in the Email Log.** The Email Log only showed recipient addresses. It now has a Player column between Sent and To. The name is looked up from the player list, the broader sub list, or admin accounts.
+
+**Combined Log.** The requirement was to keep the separate Activity Log and Email Log, but also have one view where an automated or admin action can be matched to the emails it caused. A new Admin → Combined Log page puts both on one timeline, newest first. A batch of the same kind of email for the same week sent within a few minutes shows as one line that can be opened, and the page can be filtered by text, session, or actions vs. emails.
+
+**Public nav order.** The player-facing top bar was reordered to: My Page, Full Schedule, Next 4 Weeks, Request a Sub, Swap a Week, Calendar, Print Schedule, News, Sign Up, Blackout Dates, Enter Scores, Score History, Leaderboard, Stats, How It Works, Preferences, Admin. The links themselves are unchanged.
+
+**Sub email ordering (real production report).** A requester's "sub requested" confirmation was showing up in the middle of the request emails. Requirement: confirmations go out only after every request email for that request. Each request's emails now go out in a fixed order, one request at a time:
+- Normal request: roster first, then the sub list if the match is already inside the escalation window, then the requester's confirmation, which names everyone asked.
+- "Sub found": those emails wait for any request emails still going out, and request emails stop as soon as the spot is filled.
+- "I found a sub": the invite first, then any admin alert, then the requester's confirmation.
+
+See CLAUDE.md's two 2026-09-29 entries for implementation detail.
+
+## 26. Super Log: extra detail logging without cluttering the other logs: resolved 2026-09-29
+
+Kyle couldn't tell from the logs whether a sub's confirmation came from the sub's own click or from something he did in the admin panel. He wanted more logging, but without cluttering the Email Log or Activity Log, both of which he likes as they are. The Combined Log was renamed **Super Log**, and a new record that appears only there captures four kinds of events:
+- **Link opens:** someone opened an emailed link's page (Confirm, Need a sub, I'll play, swap, I found a sub, pickup invite), even if they never pressed the button.
+- **Button clicks:** someone pressed that page's button, recorded with the device, browser and IP it came from. Known link scanners and preview bots are labeled as such.
+- **Admin buttons with no other record:** Resend link, Send status report now, Notify roster (blackout dates), and log out.
+- **Refused attempts:** expired or already-used links, a spot already filled, rate limits, the bot trap, and failed admin logins.
+
+Entries older than a year are removed automatically. The old Combined Log address redirects to the Super Log. See CLAUDE.md's 2026-09-29 "Super Log" entry for implementation detail.

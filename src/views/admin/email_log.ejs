@@ -1,5 +1,6 @@
 <%- include('../partials/admin_header', {title}) %>
 <h1>Email Log</h1>
+<p class="muted">See this alongside admin and automated actions, link clicks and more on the <a href="/admin/super-log">Super Log</a>.</p>
 <p class="muted">Every email the app has sent or attempted, most recent first (last 300). Click a subject to see the email exactly as it was sent (emails sent before this feature was added have no stored copy). "Sent" times are shown in this app's configured timezone (<%= emailLogTz %>), not UTC.<% if (counts.logged_dev_mode) { %> Rows marked "logged only" happened while no Gmail credentials were configured — nothing actually left the server for those.<% } %></p>
 
 <div class="actions" style="margin-bottom:8px;">
@@ -50,10 +51,10 @@
 <% } else { %>
   <div class="actions" style="margin-bottom:8px;">
     <span class="muted">View:</span>
-    <% if (view === 'grouped') { %><strong>Grouped by sub request</strong><% } else { %><a href="/admin/email-log<%= qs({ view: 'grouped' }) %>">Grouped by sub request</a><% } %>
+    <% if (view === 'grouped') { %><strong>Grouped</strong><% } else { %><a href="/admin/email-log<%= qs({ view: 'grouped' }) %>">Grouped</a><% } %>
     <span class="muted">·</span>
     <% if (view === 'list') { %><strong>Individual emails</strong><% } else { %><a href="/admin/email-log<%= qs({ view: 'list' }) %>">Individual emails</a><% } %>
-    <% if (view === 'grouped') { %><span class="muted">— each sub request's emails (request, roster, sub list, confirmed) are collapsed into one line; click it to open the trail. Emails sent before 2026-09-27 aren't grouped.</span><% } %>
+    <% if (view === 'grouped') { %><span class="muted">— each sub request's emails (request, roster, sub list, confirmed) are collapsed into one trail, and any other batch of the same kind of email for the same week sent within a few minutes (reminders, "sub found" notices, older sub requests) is collapsed into one line. Click a line to open it.</span><% } %>
   </div>
 <% } %>
 
@@ -62,6 +63,7 @@
         <td class="muted" style="white-space:nowrap;<% if (opts.parent) { %>padding-left:28px;<% } %>">
           <%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>
         </td>
+        <td><% if (r.playerNames) { %><%= r.playerNames %><% } else { %><span class="muted">—</span><% } %></td>
         <td><%= r.to_email %></td>
         <td>
           <% if (r.has_body) { %><a href="/admin/email-log/<%= r.id %>/body" class="email-preview-link" data-subject="<%= r.subject %>" data-to="<%= r.to_email %>" data-sent="<%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>"><%= r.subject %></a>
@@ -83,14 +85,26 @@
 <% } %>
 
 <table class="wide">
-  <thead><tr><th style="white-space:nowrap;min-width:170px;">Sent</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
+  <thead><tr><th style="white-space:nowrap;min-width:170px;">Sent</th><th>Player</th><th>To</th><th>Subject</th><th>Category</th><th>Status</th><th>Session / week</th></tr></thead>
   <tbody>
     <% items.forEach(function(item) { %>
       <% if (item.type === 'row') { emailRow(item.row); return; } %>
+      <% if (item.type === 'batch') { var b = item, br = b.rows[0]; %>
+      <tr class="thread-head" data-thread="<%= b.domId %>" style="background:var(--bg-soft);">
+        <td class="muted" style="white-space:nowrap;"><%= br.sentDateDisplay %>, <%= br.sentTimeDisplay %></td>
+        <td colspan="6">
+          <button type="button" class="btn small neutral thread-toggle" data-thread="<%= b.domId %>" aria-expanded="false" style="margin-right:6px;">▸</button>
+          <span class="badge scheduled"><%= b.category %></span> <strong><%= b.rows.length %> emails</strong>
+          <% if (br.session_id && br.sessionForTitle) { %><span class="muted">· <%= sessionFullTitle(br.sessionForTitle) %><% if (br.match_date) { %> — <%= br.match_date %><% } %></span><% } %>
+          <% if (b.failed) { %><span class="badge needs_sub"><%= b.failed %> failed</span><% } %>
+          <div class="muted" style="margin-top:4px;font-size:0.9em;"><%= b.rows.map(function (r) { return r.playerNames || r.to_email; }).join(', ') %></div>
+        </td>
+      </tr>
+      <% b.rows.forEach(function (r) { emailRow(r, { parent: b.domId }); }); return; } %>
       <% var g = item, info = g.info; %>
       <tr class="thread-head" data-thread="<%= g.domId %>" style="background:var(--bg-soft);">
         <td class="muted" style="white-space:nowrap;"><%= g.latest.sentDateDisplay %>, <%= g.latest.sentTimeDisplay %></td>
-        <td colspan="5">
+        <td colspan="6">
           <button type="button" class="btn small neutral thread-toggle" data-thread="<%= g.domId %>" aria-expanded="<%= thread ? 'true' : 'false' %>" style="margin-right:6px;"><%= thread ? '▾' : '▸' %></button>
           <% if (info) { %>
             <strong><%= info.selfArranged ? 'Found own sub' : 'Sub request' %> — <%= info.requester %>, <%= fmtDate(info.matchDate) %></strong>
@@ -107,12 +121,12 @@
       </tr>
       <% g.stages.forEach(function (st) { %>
         <tr class="thread-child" data-parent="<%= g.domId %>">
-          <td colspan="6" style="padding-left:28px;font-weight:600;font-size:0.9em;"><%= st.label %> <span class="muted" style="font-weight:normal;">(<%= st.rows.length %>)</span></td>
+          <td colspan="7" style="padding-left:28px;font-weight:600;font-size:0.9em;"><%= st.label %> <span class="muted" style="font-weight:normal;">(<%= st.rows.length %>)</span></td>
         </tr>
         <% st.rows.forEach(function (r) { emailRow(r, { parent: g.domId }); }); %>
       <% }) %>
     <% }) %>
-    <% if (items.length === 0) { %><tr><td colspan="6" class="muted">No emails match this filter.</td></tr><% } %>
+    <% if (items.length === 0) { %><tr><td colspan="7" class="muted">No emails match this filter.</td></tr><% } %>
   </tbody>
 </table>
 <script>
@@ -131,36 +145,5 @@
 })();
 </script>
 
-<dialog id="email-preview" style="width:min(720px,95vw);max-height:90vh;padding:0;border:1px solid var(--border);border-radius:8px;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg-soft);">
-    <div style="min-width:0;">
-      <div id="email-preview-subject" style="font-weight:600;overflow-wrap:anywhere;"></div>
-      <div class="muted" style="font-size:0.9em;">To <span id="email-preview-to"></span> · <span id="email-preview-sent"></span></div>
-      <div class="muted" style="font-size:0.85em;">Links are disabled in this preview.</div>
-    </div>
-    <button type="button" class="btn neutral" id="email-preview-close">Close</button>
-  </div>
-  <iframe id="email-preview-frame" title="Email preview" sandbox style="display:block;width:100%;height:70vh;border:0;background:#fff;"></iframe>
-</dialog>
-<script>
-(function () {
-  var dlg = document.getElementById('email-preview');
-  var frame = document.getElementById('email-preview-frame');
-  if (!dlg || typeof dlg.showModal !== 'function') return; // very old browser: link just opens the body in a new page
-  document.querySelectorAll('.email-preview-link').forEach(function (a) {
-    a.addEventListener('click', function (e) {
-      e.preventDefault();
-      document.getElementById('email-preview-subject').textContent = a.dataset.subject;
-      document.getElementById('email-preview-to').textContent = a.dataset.to;
-      document.getElementById('email-preview-sent').textContent = a.dataset.sent;
-      frame.src = a.getAttribute('href');
-      dlg.showModal();
-    });
-  });
-  function close() { dlg.close(); }
-  document.getElementById('email-preview-close').addEventListener('click', close);
-  dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); }); // click outside to close
-  dlg.addEventListener('close', function () { frame.src = 'about:blank'; });
-})();
-</script>
+<%- include('../partials/email_preview_dialog') %>
 <%- include('../partials/footer') %>

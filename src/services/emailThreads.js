@@ -149,4 +149,41 @@ function groupRows(rows) {
   return items;
 }
 
-module.exports = { groupRows, buildGroup, describeSubThread, SUB_STAGES };
+// Batch grouping (Kyle, 2026-09-29): consecutive plain rows (not part of a
+// sub-request trail) with the same category and week, sent within 5 minutes
+// of each other — a reminder batch, a "sub found" group notice, or a sub
+// request from before trails were tagged — collapse into one 'batch' item.
+// Same rule the Super Log uses. A lone email stays a plain row.
+const BATCH_GAP_MS = 5 * 60 * 1000;
+function collapseBatches(items) {
+  const out = [];
+  const ms = (r) => Date.parse(`${String(r.sent_at).replace(' ', 'T')}Z`);
+  items.forEach((it) => {
+    const last = out[out.length - 1];
+    if (it.type === 'row' && last && (last.type === 'row' || last.type === 'batch')) {
+      const lastRows = last.type === 'batch' ? last.rows : [last.row];
+      const prev = lastRows[lastRows.length - 1];
+      const r = it.row;
+      if (prev.category === r.category && (prev.related_week_id || null) === (r.related_week_id || null)
+          && Math.abs(ms(prev) - ms(r)) <= BATCH_GAP_MS) {
+        if (last.type === 'row') {
+          out[out.length - 1] = { type: 'batch', rows: [prev, r] };
+        } else {
+          last.rows.push(r);
+        }
+        return;
+      }
+    }
+    out.push(it);
+  });
+  out.forEach((it, i) => {
+    if (it.type !== 'batch') return;
+    it.domId = `batch-${i}-${it.rows[0].id}`;
+    it.latest = it.rows[0];
+    it.category = it.rows[0].category;
+    it.failed = it.rows.filter((r) => r.status === 'failed').length;
+  });
+  return out;
+}
+
+module.exports = { groupRows, collapseBatches, buildGroup, describeSubThread, SUB_STAGES };

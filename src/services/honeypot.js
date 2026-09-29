@@ -21,7 +21,17 @@ const FIELD_NAME = 'website';
  * almost certainly a bot, not a real player. */
 function isBot(req) {
   const value = req.body && req.body[FIELD_NAME];
-  return typeof value === 'string' && value.trim().length > 0;
+  const bot = typeof value === 'string' && value.trim().length > 0;
+  if (bot) {
+    // Super Log only (Kyle, 2026-09-29). Lazy require avoids a load cycle.
+    const detailLog = require('./detailLog');
+    detailLog.record(req, {
+      kind: 'refused',
+      event: 'bot_trap',
+      description: `Bot trap tripped on ${req.method} ${detailLog.safePath(req)} (hidden form field was filled in) — ignored, nothing saved or sent`,
+    });
+  }
+  return bot;
 }
 
 module.exports = { FIELD_NAME, isBot };
