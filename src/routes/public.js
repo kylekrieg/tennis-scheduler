@@ -23,7 +23,7 @@ const { fullName } = require('../services/playerName');
 const gameScores = require('../services/gameScores');
 const statsBoards = require('../services/statsBoards');
 const { getTimezone } = require('../services/settings');
-const { utcToZonedParts } = require('../services/tz');
+const { utcToZonedParts, zonedTimeToUtc } = require('../services/tz');
 
 // Separate buckets (10/hour/IP each, generous for real use — a household
 // sharing an IP could submit several times without ever tripping this) so
@@ -590,7 +590,36 @@ router.get('/schedule', (req, res) => {
   const { session, sessions } = resolveSession(req);
   if (!session) return res.render('no_session', { title: 'Season Schedule' });
   const rows = weekRowsForSession(session.id);
-  res.render('schedule', { title: 'Season Schedule', session, sessions, rows, multiCourt: session.players_per_week > 4 });
+  // Inline per-court Scores column (Kyle, 2026-09-28) — replaces the old
+  // "Enter your scores"/"Leaderboard" buttons above the table. See
+  // gameScores.scheduleScoreCell() for the pending/enter/scored/needed rules.
+  if (session.games_won_enabled) {
+    const tz = getTimezone();
+    const now = new Date();
+    for (const r of rows) {
+      const gpByCourt = gameScores.gamesPlayedRowsForWeek(r.week.id);
+      const matchAt = r.week.locked ? zonedTimeToUtc(r.week.match_date, session.match_time, tz) : null;
+      r.scoreCells = {};
+      const courts = new Set(r.assignments.map((a) => a.court));
+      if (courts.size === 0) courts.add(1);
+      for (const court of courts) {
+        const gp = gpByCourt.get(court);
+        r.scoreCells[court] = gameScores.scheduleScoreCell({ weekLocked: !!r.week.locked, matchAt, gamesPlayed: gp ? gp.games_played : null, now });
+      }
+    }
+  }
+  // One-time banner after a confirm / need-a-sub click redirects here (Kyle,
+  // 2026-09-28). Whitelisted codes only, so a crafted URL can't inject text.
+  let notice = null;
+  if (req.query.notice === 'confirmed') {
+    notice = "You're confirmed — see you on the court!";
+  } else if (req.query.notice === 'sub_sent') {
+    const n = Math.max(0, parseInt(req.query.n, 10) || 0);
+    notice = n > 0
+      ? `Sub request sent to ${n} player${n === 1 ? '' : 's'} — you'll get an email when someone takes your spot.`
+      : "Sub request recorded. Nobody else on the roster was free that week, so it'll go to the sub list closer to the match — you'll get an email when someone takes your spot.";
+  }
+  res.render('schedule', { title: 'Season Schedule', session, sessions, rows, multiCourt: session.players_per_week > 4, notice });
 });
 
 router.get('/lookahead', (req, res) => {
@@ -1358,6 +1387,10 @@ router.post('/confirm/:token', (req, res) => {
     sessionId,
   });
 
+  // Kyle, 2026-09-28: land straight on this session's full schedule with a
+  // green banner instead of a separate "You're confirmed!" page. Falls back
+  // to the old page only if the week somehow has no session.
+  if (sessionId) return res.redirect(`/schedule?session=${sessionId}&notice=confirmed`);
   res.render('message', { title: 'Confirm', heading: "You're confirmed!", body: 'Thanks — see you on the court.', tone: 'ok', myPageId: assignment.slug || assignment.player_id, sessionId });
 });
 
@@ -1403,6 +1436,9 @@ router.post('/need-sub/:token', asyncHandler(async (req, res) => {
       sessionId,
     });
   }
+  // Kyle, 2026-09-28: same as confirm — back to the full schedule with a
+  // banner (their row already shows "needs sub" there).
+  if (sessionId) return res.redirect(`/schedule?session=${sessionId}&notice=sub_sent&n=${Number(result.offerCount) || 0}`);
   res.render('message', {
     title: 'Need a sub',
     heading: 'Sub request sent',

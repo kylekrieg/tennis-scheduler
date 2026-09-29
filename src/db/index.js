@@ -517,6 +517,7 @@ ensureColumn('sessions', 'games_won_enabled', 'INTEGER NOT NULL DEFAULT 1');
 // actually captures.
 ensureColumn('sub_requests', 'self_arranged', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sub_offers', 'was_new_person', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('sub_offers', 'source', 'TEXT');
 
 // Ball duty games-won reminder (Kyle, 2026-09-15) — see schema.sql's comment
 // on this column and cron.js's processScoreReminders(). Defaults to 24,

@@ -265,6 +265,7 @@ textarea { min-height: 100px; }
   font-size: calc(14px * var(--text-scale, 1));
 }
 .flag.error { border-color: var(--flag-error-border); background: var(--flag-error-bg); }
+.flag.success { border-color: var(--green); background: var(--badge-confirmed-bg); color: var(--green); font-weight: 600; margin-bottom: 12px; }
 .session-card {
   border: var(--border-width, 1px) solid var(--border);
   border-radius: 8px;

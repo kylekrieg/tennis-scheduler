@@ -20,6 +20,25 @@
 
   function setStatus(msg) { statusEl.textContent = msg || ''; }
 
+  // Admin logins live in server memory, so a pm2 restart (e.g. deploying an
+  // update) logs you out while this page is still open. Saving the form in
+  // that state would redirect to the login page and lose the post, so say so
+  // plainly and point at a safe way back in.
+  function showLoginExpired() {
+    var box = document.getElementById('news-login-expired');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'news-login-expired';
+      box.className = 'flag error';
+      box.style.margin = '8px 0';
+      box.innerHTML = '<strong>Your admin login expired</strong> (the app was probably restarted). Nothing you typed is lost. ' +
+        '<a href="/admin/login" target="_blank" rel="noopener">Log in again in a new tab</a>, then come back here and try again. ' +
+        'Don\'t click Save until you\'ve logged back in.';
+      form.insertBefore(box, form.firstChild);
+    }
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   function insertAtCursor(text) {
     var start = ta.selectionStart, end = ta.selectionEnd, v = ta.value;
     var before = v.slice(0, start), after = v.slice(end);
@@ -53,30 +72,39 @@
     return resize(file).then(function (blob) {
       return fetch('/admin/news/images', {
         method: 'POST',
-        headers: { 'Content-Type': blob.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'pasted-image') },
+        headers: { 'Content-Type': blob.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'pasted-image'), Accept: 'application/json' },
         body: blob,
         credentials: 'same-origin',
       });
     }).then(function (r) {
-      return r.json().catch(function () { return { error: r.status === 413 ? 'Image is too large (10 MB max).' : 'Upload failed (' + r.status + ').' }; });
+      if (r.status === 401 || (r.redirected && /\/admin\/login/.test(r.url))) return { error: 'login expired', loginExpired: true };
+      return r.json().catch(function () {
+        return { error: r.status === 413 ? 'Image is too large (10 MB max).' : 'the server sent back an unexpected response (HTTP ' + r.status + ')' };
+      });
     });
   }
 
   function uploadAll(files) {
     files = Array.prototype.filter.call(files, function (f) { return /^image\//.test(f.type); });
     if (!files.length) return;
-    var done = 0, failed = [];
+    var done = 0, failed = [], loginExpired = false;
     setStatus('Uploading ' + files.length + ' image(s)…');
     // Sequential so images land in the post in the order they were picked.
     return files.reduce(function (p, f) {
       return p.then(function () {
         return upload(f).then(function (res) {
           if (res && res.url) insertAtCursor('![](' + res.url + ')');
+          else if (res && res.loginExpired) loginExpired = true;
           else failed.push((f.name || 'image') + ': ' + ((res && res.error) || 'failed'));
         }).catch(function () { failed.push((f.name || 'image') + ': network error'); })
           .then(function () { done++; setStatus('Uploading… ' + done + '/' + files.length); });
       });
     }, Promise.resolve()).then(function () {
+      if (loginExpired) {
+        setStatus('');
+        showLoginExpired();
+        return;
+      }
       setStatus(failed.length ? 'Some uploads failed — ' + failed.join('; ') : 'Added ' + files.length + ' image(s). Type a caption between the [ ] if you like.');
     });
   }
@@ -103,10 +131,14 @@
     if (!previewEl.hidden) { previewEl.hidden = true; ta.hidden = false; previewBtn.textContent = 'Preview'; return; }
     fetch('/admin/news/preview', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
       body: 'body=' + encodeURIComponent(ta.value),
       credentials: 'same-origin',
-    }).then(function (r) { return r.text(); }).then(function (html) {
+    }).then(function (r) {
+      if (r.status === 401 || (r.redirected && /\/admin\/login/.test(r.url))) { showLoginExpired(); return null; }
+      return r.text();
+    }).then(function (html) {
+      if (html === null) return;
       var title = document.getElementById('title').value;
       previewEl.innerHTML = (title ? '<h1 class="news-preview-title"></h1>' : '') + (html || '<p class="muted">Nothing to preview yet.</p>');
       if (title) previewEl.querySelector('.news-preview-title').textContent = title;

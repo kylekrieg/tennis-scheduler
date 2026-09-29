@@ -250,9 +250,15 @@
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
-    <div class="flow-title">That person gets a confirm email</div>
-    <div class="flow-detail">It's the same email as any other sub request. If they don't answer, it goes to the sub list the same way a regular Request a Sub does (24 hours before the match by default, set per session).</div>
+    <div class="flow-title">That person gets an invite email</div>
+    <div class="flow-detail">It says the player asked them to cover their spot, with a button that opens the same "claim this spot" page every sub uses. One click there accepts. If they don't answer, it goes to the sub list the same way a regular Request a Sub does (24 hours before the match by default, set per session).</div>
   </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step success">
+    <div class="flow-title">They accept</div>
+    <div class="flow-detail">They go into the slot as <strong>confirmed</strong> (no separate confirm step), the original player shows <span class="badge subbed_out">subbed out</span>, and the week's group plus the original player get the "X will be subbing for Y" email.</div>
+  </div>
+  <p class="flow-note">Activity Log: naming the sub is <code>sub.self_arranged</code>; the sub accepting is <code>sub.self_arranged_confirm</code>. A regular fan-out claim is <code>sub.claim</code>, and a claim after escalation to the sub list is <code>sub.claim_escalated</code>.</p>
   <p class="flow-note">The original player's confirmation email explains what happens if the person doesn't answer. Their spot shows <span class="badge needs_sub">needs sub</span> the whole time, like any other open sub request.</p>
 </div>
 

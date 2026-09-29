@@ -2119,3 +2119,77 @@ Activity Log gets `news.create`, `news.update` (with published/unpublished/banne
 - Paste and drag-drop upload weren't exercised in a real browser.
 
 Touched files: `db/schema.sql`, `services/news.js` (new), `app.js`, `routes/public.js`, `routes/admin.js`, `views/news.ejs`, `views/news_post.ejs`, `views/admin/news.ejs`, `views/admin/news_form.ejs` (all new), `partials/header.ejs`, `partials/admin_header.ejs`, `public/js/newsEditor.js` (new), `public/css/style.css`. There's no email-out of a post yet; a natural follow-up is a "Send this post to all players" button that reuses the Custom email all-players mode.
+
+### Full Schedule: inline per-match Scores column, Leaderboard button removed (Kyle, 2026-09-28)
+
+Kyle: "For Enter your scores, that button should be removed from below the session box and be in-line for the weekly match just right of the ball duty column. The button appears right after the week is locked (match has started) and 24 hours after a match, the button (if scores are entered) turns to the # of games scored for that match. If nobody enters in scores within 48 hours, 'scores needed' is populated in that field. ... Let's remove the leaderboard button. They can get to the leaderboard link through the upper ribbon bar."
+
+**What "# of games" means:** each player enters their own games won, so a match has four numbers. I asked Kyle which to show. He picked the court's shared **total games played** (`week_court_games.games_played`). So "scores are entered" means that court's games-played value is set.
+
+**What changed on `schedule.ejs`:**
+- The two buttons above the table are gone.
+- When `session.games_won_enabled` is on, there's a new **Scores** column after Ball duty. It has one cell per court row, not a rowspan like Ball duty, because games played is per court.
+
+**Cell rules:** `gameScores.scheduleScoreCell()` works out each cell's state, timed from match start. Match start is `zonedTimeToUtc(match_date, session.match_time, tz)`, the same instant `cron.js` locks the week.
+
+| State | When | Cell shows |
+|---|---|---|
+| `pending` | week not locked yet | empty |
+| `enter` | locked, and either under 24h since start or (no games-played and under 48h) | "Enter scores" button linking to `/scores?session=S&week=W` |
+| `scored` | 24h or more since start and games-played entered | "N games" |
+| `needed` | 48h or more since start and still no games-played | amber "Scores needed" badge, still a link to the same entry page, since late entry stays allowed |
+
+- Between 24h and 48h with nothing entered, the button just stays up.
+- Games-played entered in the first 24h still shows the button until 24h, as Kyle specified.
+
+**Scope:**
+- Full Schedule only, as asked. `lookahead.ejs` and `me.ejs` still have their own "Enter your scores"/"Leaderboard" buttons. `leaderboard.ejs` links back to entry.
+- `help.ejs`'s Scores section was updated to describe the new column.
+- `session_form.ejs`'s games-won help text still says turning it off removes the links from "this session's schedule". Still true in effect, since the column disappears.
+
+**Verified:**
+- `scheduleScoreCell` checked directly for all four states.
+- Rendered `/schedule` against a copy of the local DB, with week 3's games-played cleared (→ Scores needed) and week 4 moved to "started 2h ago" and locked (→ Enter scores).
+- Screenshotted desktop light and mobile dark. On a phone the column is reached by the existing `.table-scroll` horizontal scroll.
+
+Touched files: `services/gameScores.js`, `routes/public.js`, `views/schedule.ejs`, `views/help.ejs`.
+
+### News editor: "Upload failed (200)" → clear "login expired" message (Kyle, 2026-09-28)
+
+Kyle, uploading a PNG on production: "some uploads failed -- tennis_leaderboard.png; Upload Failed (200)."
+
+**What I checked:**
+- Uploads worked in a real browser against the same code, both a small PNG and a 2400px PNG that goes through the canvas resize.
+- Production did have the feature deployed (`/news` rendered).
+
+**Most likely cause:** admin sessions use express-session's default MemoryStore, so every `pm2 restart` logs admins out. Kyle had just deployed the Full Schedule change, which meant a restart, while the News editor was likely still open.
+- The upload `fetch()` then hit `requireAdmin`, which answered with a 302 to `/admin/login`.
+- `fetch` followed the redirect silently and got the login page's HTML with status 200.
+- The editor couldn't parse that as JSON and reported it as "Upload failed (200)".
+
+**Fix:**
+- `requireAdmin` now answers requests whose `Accept` asks for JSON (and not HTML) with a `401 {loginExpired: true}` instead of a redirect. Normal page navigation still redirects exactly as before.
+- `newsEditor.js` sends `Accept: application/json` on its upload and preview calls.
+- On a 401, or on a response that was redirected to `/admin/login`, the editor shows an inline "Your admin login expired… log in again in a new tab… don't click Save until you've logged back in" box. Clicking Save in that state would redirect and lose the post body.
+- Other unexpected responses now show the real HTTP status in plain words.
+
+**Verified in Chromium:** a normal upload still works. After clearing cookies, an upload and a Preview both show the box, and the typed text is kept.
+
+**Possible follow-up (not built):** a persistent session store (SQLite-backed), so deploys stop logging admins out at all.
+
+### Confirm / need-a-sub land on the full schedule; sub claims split by route; Mark confirmed names the admin (Kyle, 2026-09-28)
+
+**1) Confirm and Need a sub redirect to the full schedule.** Kyle: after clicking to confirm, the player "just stays on that confirmation screen." `public.js`'s `POST /confirm/:token` now redirects to `/schedule?session=<id>&notice=confirmed` instead of rendering the "You're confirmed!" page. `POST /need-sub/:token` does the same with `notice=sub_sent&n=<offerCount>`. `GET /schedule` maps those two codes (whitelisted, so a crafted URL can't show arbitrary text) to a green `.flag.success` banner above the session picker: "You're confirmed — see you on the court!" / "Sub request sent to N players — you'll get an email when someone takes your spot." (n = 0 gets its own wording: goes to the sub list closer to the match). Error/edge pages (bad link, already subbed out, already requested, blocked) still render `message.ejs` as before, and so does the success case if the week somehow has no session.
+
+**2) Sub claims split into three Activity Log actions.** Previously every sub accepting a spot logged `sub.claim`, so a self-arranged sub accepting looked the same as someone grabbing a fan-out spot. New nullable `sub_offers.source` (`'roster'` | `'self_arranged'` | `'escalation'`; bare `ensureColumn`, in `schema.sql` too) is set at all three offer-insert sites in `subFlow.js` (`fanOutSubRequest`, `arrangeSelfSub`, `escalateOverdueRequests`). `claimSub()` picks the action via new `offerSource()`:
+- `sub.claim` — roster fan-out (unchanged)
+- `sub.self_arranged_confirm` — the named sub accepted ("Bret Stanwich confirmed the sub Kyle Krieg arranged for 2026-10-07")
+- `sub.claim_escalated` — claimed after escalation to the sub list
+
+Offers from before this change have `source = NULL`; `offerSource()` infers them (self-arranged request: first offer = the invite, later = escalation; otherwise a broader-list offer = escalation, else roster). Old log rows keep their old action names.
+
+**3) Mark confirmed names the admin.** `week.mark_confirmed` now reads "Admin <name> marked <player> confirmed for <date>", plus " (closed their open sub request)" when it closed one.
+
+**Docs.** `/help`'s I Found a Sub section and the admin guide's I Found a Sub flowchart now spell out the accept step (invite email → claim page → one click, goes straight to confirmed, group + original player notified); the guide also lists the four sub action names. The guide's old "it's the same email as any other sub request" line was wrong (it's its own invite email) and was fixed.
+
+**Verified** on a scratch copy of the real DB under `$HOME/sc` (never the connected `data/tennis.db`), real HTTP against `app.js`: confirm → 302 to `/schedule?session=1&notice=confirmed` and the banner renders; need-sub → 302 with `n=3` and the "Sub request sent to 3 players" banner; a crafted `notice=` value renders no banner; a roster claim logged `sub.claim` (offer `source=roster`); an `arrangeSelfSub()` + claim logged `sub.self_arranged` then `sub.self_arranged_confirm` (offer `source=self_arranged`); admin-flag + Mark confirmed logged "Admin Admin User marked Bart Lautenbach confirmed for Wednesday, Oct 7 (closed their open sub request)". The escalation claim path wasn't exercised end to end (same one-line insert change). Touched: `db/schema.sql`, `db/index.js`, `services/subFlow.js`, `routes/public.js`, `routes/admin.js`, `views/schedule.ejs`, `public/css/style.css`, `views/help.ejs`, `views/admin/guide.ejs`.

@@ -729,7 +729,38 @@ function overallWinPercentLeaderboard(minMatches = MIN_MATCHES_FOR_WIN_PCT) {
   }));
 }
 
+/**
+ * Per-court "Scores" cell on the public Full Schedule (Kyle, 2026-09-28):
+ * "For Enter your scores, that button should be removed from below the
+ * session box and be in-line for the weekly match just right of the ball
+ * duty column. The button appears right after the week is locked (match has
+ * started) and 24 hours after a match, the button (if scores are entered)
+ * turns to the # of games scored for that match. If nobody enters in scores
+ * within 48 hours, 'scores needed' is populated in that field." Kyle picked
+ * the shared games-played total (week_court_games) as "the # of games" — so
+ * "scores are entered" here means that court's games_played is set.
+ *
+ * States, timed from the match's start (match_date + session.match_time in
+ * the site timezone, same instant cron.js locks the week at):
+ *   'pending' — week not locked yet (match hasn't started): empty cell
+ *   'enter'   — locked, and either < 24h since start, or no games-played yet
+ *               and < 48h since start: "Enter scores" button
+ *   'scored'  — >= 24h since start and games-played entered: "N games"
+ *   'needed'  — >= 48h since start and still no games-played: "Scores
+ *               needed" (still a link, since late entry stays allowed)
+ */
+const SCORE_CELL_SHOW_AFTER_MS = 24 * 60 * 60 * 1000;
+const SCORE_CELL_NEEDED_AFTER_MS = 48 * 60 * 60 * 1000;
+function scheduleScoreCell({ weekLocked, matchAt, gamesPlayed, now = new Date() }) {
+  if (!weekLocked) return { state: 'pending' };
+  const since = matchAt ? now.getTime() - matchAt.getTime() : Infinity;
+  if (gamesPlayed != null && since >= SCORE_CELL_SHOW_AFTER_MS) return { state: 'scored', gamesPlayed };
+  if (gamesPlayed == null && since >= SCORE_CELL_NEEDED_AFTER_MS) return { state: 'needed' };
+  return { state: 'enter' };
+}
+
 module.exports = {
+  scheduleScoreCell,
   MAX_GAMES,
   MIN_MATCHES_FOR_WIN_PCT,
   ScoreError,

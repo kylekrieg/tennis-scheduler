@@ -1,16 +1,10 @@
 <%- include('partials/header', {title, wideMain: true}) %>
+<% if (typeof notice !== 'undefined' && notice) { %><div class="flag success" role="status"><%= notice %></div><% } %>
 <%- include('partials/session_picker', {sessions, session}) %>
-<% if (session.games_won_enabled) { %>
-<p class="actions" style="margin-top:-8px;margin-bottom:16px;">
-  <a class="btn small neutral" href="/scores?session=<%= session.id %>">Enter your scores</a>
-  <a class="btn small neutral" href="/leaderboard?session=<%= session.id %>">Leaderboard</a>
-</p>
-<% } %>
-
 <div class="table-scroll">
 <table>
   <thead>
-    <tr><th style="white-space:nowrap;">Date</th><% if (multiCourt) { %><th>Court</th><% } %><th>Team A</th><th>Team B</th><th>Ball duty</th></tr>
+    <tr><th style="white-space:nowrap;">Date</th><% if (multiCourt) { %><th>Court</th><% } %><th>Team A</th><th>Team B</th><th>Ball duty</th><% if (session.games_won_enabled) { %><th>Scores</th><% } %></tr>
   </thead>
   <tbody>
     <% rows.forEach(function(r) { %>
@@ -44,6 +38,15 @@
             </td>
           <% }) %>
           <% if (ci === 0) { %><td rowspan="<%= courtNums.length %>"><%= r.ballDutyName || '—' %></td><% } %>
+          <% if (session.games_won_enabled) { %>
+            <% var sc = (r.scoreCells && r.scoreCells[court]) || { state: 'pending' }; var scoreHref = '/scores?session=' + session.id + '&week=' + r.week.id; %>
+            <td style="white-space:nowrap;">
+              <% if (sc.state === 'enter') { %><a class="btn small neutral" href="<%= scoreHref %>">Enter scores</a>
+              <% } else if (sc.state === 'scored') { %><%= sc.gamesPlayed %> game<%= sc.gamesPlayed === 1 ? '' : 's' %>
+              <% } else if (sc.state === 'needed') { %><a class="badge reminded" href="<%= scoreHref %>" style="text-decoration:none;">Scores needed</a>
+              <% } %>
+            </td>
+          <% } %>
         </tr>
       <% }) %>
     <% }) %>

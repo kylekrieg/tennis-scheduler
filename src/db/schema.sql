@@ -315,6 +315,7 @@ CREATE TABLE IF NOT EXISTS sub_offers (
   token                 TEXT UNIQUE NOT NULL, -- SHA-256 hash of the raw token
   status                TEXT NOT NULL DEFAULT 'pending', -- pending | claimed | closed
   responded_at          TEXT,
+  source                TEXT, -- 'roster' (initial fan-out) | 'self_arranged' (arrangeSelfSub's one invite) | 'escalation' (sent to the sub list). NULL on offers from before 2026-09-28; claimSub() infers those. Drives the sub.claim / sub.self_arranged_confirm / sub.claim_escalated activity-log split.
   was_new_person        INTEGER NOT NULL DEFAULT 0 -- set only on the one offer arrangeSelfSub() creates for a genuinely-new person (selection.newPerson, matched against neither `players` nor `broader_sub_list` by email — see that function's "isNewPerson" branch and the resulting sub.self_arranged_new_person activity-log entry). Every other offer (the normal roster fan-out, an escalation to the broader list, or a self-arranged pick of someone already known) leaves this 0. Lets the Player Behavior stats (Kyle, 2026-09-15) bucket a filled sub_request's winning offer as "roster" / "broader sub list" / "unknown player" without guessing from timestamps.
 );
 

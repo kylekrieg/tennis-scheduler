@@ -3144,11 +3144,14 @@ router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, re
   // Covers the "player asked for a sub, then told the admin directly they
   // can make it after all" case — same reasoning as the reassign route above.
   const subWasResolved = subFlow.closeActiveSubRequestForAssignment(req.params.assignmentId);
+  // Kyle, 2026-09-28: name the acting admin in the text itself, and say when
+  // this also closed an open sub request.
+  const actor = req.session.adminName || 'An admin';
   logActivity(req, {
     action: 'week.mark_confirmed',
-    description: assignment
-      ? `Manually confirmed ${fullName(assignment)} for ${email.fmtDate(assignment.match_date)}`
-      : `Manually confirmed assignment #${req.params.assignmentId}`,
+    description: (assignment
+      ? `Admin ${actor} marked ${fullName(assignment)} confirmed for ${email.fmtDate(assignment.match_date)}`
+      : `Admin ${actor} marked assignment #${req.params.assignmentId} confirmed`) + (subWasResolved ? ' (closed their open sub request)' : ''),
     sessionId: Number(req.params.id),
   });
   flash(req, subWasResolved ? 'Marked confirmed. Its open sub request was closed out too — those invite links are now dead.' : 'Marked confirmed.');

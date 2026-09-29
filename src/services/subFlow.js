@@ -298,7 +298,7 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
     return candidates.map((c) => {
       const raw = generateRawToken();
       db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
+        "INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, source) VALUES (?, ?, ?, ?, 'roster')"
       ).run(subRequestId, c.id, hashToken(raw), 'pending');
       return { candidate: c, rawToken: raw };
     });
@@ -505,6 +505,22 @@ async function fanOutPendingAdminFlagsForWeek(weekId) {
 }
 
 /** First explicit "Confirm" click on a sub offer wins; closes all others. */
+/**
+ * Which route a sub_offers row came through: 'roster' | 'self_arranged' |
+ * 'escalation'. Uses sub_offers.source when set (every offer since
+ * 2026-09-28). For older offers: on a self-arranged request, the first offer
+ * is the named sub's invite and any later ones are escalation; on a normal
+ * request, a broader-list offer or any offer after escalation started is
+ * treated as escalation.
+ */
+function offerSource(offer, subRequest) {
+  if (offer.source) return offer.source;
+  const firstId = db.prepare('SELECT MIN(id) AS id FROM sub_offers WHERE sub_request_id = ?').get(offer.sub_request_id).id;
+  if (subRequest && subRequest.self_arranged) return offer.id === firstId ? 'self_arranged' : 'escalation';
+  if (offer.broader_list_id) return 'escalation';
+  return 'roster';
+}
+
 async function claimSub(rawToken) {
   const hashed = hashToken(rawToken);
   const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ?').get(hashed);
@@ -597,12 +613,18 @@ async function claimSub(rawToken) {
   // (Kyle, 2026-09-09: wants "when a player confirms they are subbing for
   // another player" in the searchable breadcrumb). Admin-facing, full names.
   const originalPlayerForLog = db.prepare('SELECT * FROM players WHERE id = ?').get(originalAssignment.player_id);
-  logPlayerActivity({
-    playerName: fullName(subPlayer),
-    action: 'sub.claim',
-    description: `${fullName(subPlayer)} confirmed they're subbing for ${fullName(originalPlayerForLog)} on ${week.match_date}`,
-    sessionId: session.id,
-  });
+  // Kyle, 2026-09-28: one action per route the claim came through, so a
+  // self-arranged sub accepting isn't logged the same as someone grabbing a
+  // fan-out spot. See offerSource() for how older offers are classified.
+  const source = offerSource(offer, subRequest);
+  const subName = fullName(subPlayer);
+  const origName = fullName(originalPlayerForLog);
+  const claimLog = {
+    self_arranged: { action: 'sub.self_arranged_confirm', description: `${subName} confirmed the sub ${origName} arranged for ${week.match_date}` },
+    escalation: { action: 'sub.claim_escalated', description: `${subName} (from the sub list) confirmed they're subbing for ${origName} on ${week.match_date}` },
+    roster: { action: 'sub.claim', description: `${subName} confirmed they're subbing for ${origName} on ${week.match_date}` },
+  }[source];
+  logPlayerActivity({ playerName: subName, action: claimLog.action, description: claimLog.description, sessionId: session.id });
 
   // Notify that week's full group of 4 (other 3 originals + the new sub)
   const groupRows = db
@@ -785,11 +807,11 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
     const raw = generateRawToken();
     if (candidate.candidateType === 'player') {
       db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, was_new_person) VALUES (?, ?, ?, ?, ?)'
+        "INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, was_new_person, source) VALUES (?, ?, ?, ?, ?, 'self_arranged')"
       ).run(subRequestId, candidate.id, hashToken(raw), 'pending', isNewPerson ? 1 : 0);
     } else {
       db.prepare(
-        'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, was_new_person) VALUES (?, ?, ?, ?, ?)'
+        "INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, was_new_person, source) VALUES (?, ?, ?, ?, ?, 'self_arranged')"
       ).run(subRequestId, candidate.id, hashToken(raw), 'pending', isNewPerson ? 1 : 0);
     }
 
@@ -1010,11 +1032,11 @@ async function escalateOverdueRequests() {
       const raw = generateRawToken();
       if (candidate.candidateType === 'player') {
         db.prepare(
-          'INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status) VALUES (?, ?, ?, ?)'
+          "INSERT INTO sub_offers (sub_request_id, candidate_player_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
         ).run(req.id, candidate.id, hashToken(raw), 'pending');
       } else {
         db.prepare(
-          'INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status) VALUES (?, ?, ?, ?)'
+          "INSERT INTO sub_offers (sub_request_id, broader_list_id, token, status, source) VALUES (?, ?, ?, ?, 'escalation')"
         ).run(req.id, candidate.id, hashToken(raw), 'pending');
       }
       await email.sendEscalationEmail({ recipient: candidate, week, session, claimToken: raw, threadKey: subThreadKey(req.id) });
