@@ -57,18 +57,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   court_info          TEXT NOT NULL DEFAULT '',   -- per-session: e.g. "Court 3" or "North courts 1-2"
   color               TEXT,    -- optional hex color (e.g. '#0969da') the admin can set to visually tell same-club/same-time sessions apart; NULL falls back to a deterministic palette pick keyed by session id (see email.js's sessionColor())
   schedule_conflicts  TEXT,    -- JSON array of conflict objects from the last "Schedule these players" run, if infeasible
-  archived_at         TEXT,    -- NULL = active/visible; set = hidden from the dashboard and public session picker, but not deleted (see "Archiving" in CLAUDE.md)
-  session_type        TEXT NOT NULL DEFAULT 'regular', -- 'regular' | 'adhoc' — see "Ad-hoc sessions" in CLAUDE.md. Fixed for the life of a session; everything downstream (session detail page, dashboard section, cron behavior, which emails fire) branches on this.
+  archived_at         TEXT,    -- NULL = active/visible; set = hidden from the dashboard and public session picker, but not deleted (see "Archiving" in docs/HISTORY.md)
+  session_type        TEXT NOT NULL DEFAULT 'regular', -- 'regular' | 'adhoc' — see "Ad-hoc sessions" in docs/HISTORY.md. Fixed for the life of a session; everything downstream (session detail page, dashboard section, cron behavior, which emails fire) branches on this.
   adhoc_invite_lead_hours   INTEGER NOT NULL DEFAULT 56, -- adhoc only: hours before match_time the first sign-up invite goes out to the whole roster
   adhoc_reminder_lead_hours INTEGER NOT NULL DEFAULT 30, -- adhoc only: hours before match_time a reminder goes to whoever on the roster hasn't signed up yet, but only if there's currently an incomplete trailing group (not a multiple of 4)
   adhoc_final_lead_hours    INTEGER NOT NULL DEFAULT 24, -- adhoc only: hours before match_time full courts get a "here's your court" email and any leftover incomplete group gets a "not enough signed up" email
-  schedule_locked_at  TEXT,    -- NULL = not yet finalized; set manually via "Lock this schedule" once the admin is confident the schedule is done shifting — distinct from `status` leaving 'draft', which happens automatically on the first "Schedule these players" click. Doesn't restrict further edits; a marker/gate for behavior that should wait for a stable schedule. See "Lock this schedule" in CLAUDE.md.
-  admin_report_emails      TEXT,    -- regular sessions only: comma-separated admin address(es) that get a pre-match status report for each week (who's confirmed/unconfirmed/needs a sub/subbed out/swapped). NULL/blank = feature off for this session. See "Admin pre-match status report" in CLAUDE.md.
+  schedule_locked_at  TEXT,    -- NULL = not yet finalized; set manually via "Lock this schedule" once the admin is confident the schedule is done shifting — distinct from `status` leaving 'draft', which happens automatically on the first "Schedule these players" click. Doesn't restrict further edits; a marker/gate for behavior that should wait for a stable schedule. See "Lock this schedule" in docs/HISTORY.md.
+  admin_report_emails      TEXT,    -- regular sessions only: comma-separated admin address(es) that get a pre-match status report for each week (who's confirmed/unconfirmed/needs a sub/subbed out/swapped). NULL/blank = feature off for this session. See "Admin pre-match status report" in docs/HISTORY.md.
   admin_report_lead_hours  INTEGER NOT NULL DEFAULT 8, -- hours before match_time the status report above goes out
   escalation_lead_hours    INTEGER NOT NULL DEFAULT 24, -- hours before match_time an unfilled sub request escalates from the original 5-player roster fan-out to this session's broader sub list (session_sub_list) — see subFlow.js's escalateOverdueRequests(). Was hardcoded at 24 for every session until Kyle asked (2026-09-08) whether it was per-session configurable.
   self_arranged_reminder_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours after a player names their own sub before both of them get a "please confirm" reminder, if the named sub still hasn't confirmed. See subFlow.js's processSelfArrangedSubs().
   self_arranged_deadline_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours before match_time an unconfirmed self-arranged sub gets opened to the roster + sub list. The requester gets a warning 1 hour before this. Self-arranged requests never use escalation_lead_hours.
-  weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in CLAUDE.md and src/services/weather.js.
+  weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in docs/HISTORY.md and src/services/weather.js.
   weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
   weather_lon         REAL,
   games_won_enabled  INTEGER NOT NULL DEFAULT 1, -- per-session opt-out (Kyle, 2026-09-10) for the games-won leaderboard feature — defaults ON since it's a fun extra some groups won't want. Gates only the PLAYER-facing surfaces (schedule/lookahead/My Page links, the group entry grid, the per-player Scores page, the public leaderboard); the admin session-detail "Games won" field and both admin Stats leaderboard tables are never gated by this, same "admin isn't restricted by a player-facing toggle" pattern as reminders_enabled/weather_enabled. See db/index.js's ensureColumn() doc comment for why the default must be 1, not 0.
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS player_constraints (
 -- an admin of a session. Typically they are full time = 75%, half time =
 -- 50% and quarter time = 25% of the weeks." Self-service, percentage-based
 -- alternative to the admin hand-typing every player's target_games on
--- session_form.ejs — see "Season sign-ups" in CLAUDE.md for the full design
+-- session_form.ejs — see "Season sign-ups" in docs/HISTORY.md for the full design
 -- and src/services/signup.js for the percentage-to-weeks math.
 --
 -- Deliberately kept separate from session_players (the real roster) rather
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS broader_sub_list (
   slug                TEXT,  -- admin-editable "My Page" slug reserved ahead of time (Kyle, 2026-09-01) — used directly by claimSub() the moment this person claims a sub and becomes a real players row. See playerSlug.js's broaderSubSlugTaken()/generateUniqueBroaderSubSlug().
   public_name         TEXT,  -- admin-editable short public name (Kyle, 2026-09-07): pre-filled from deriveShortName(name) at creation/backfill, but always the real stored value used the moment this person actually fills a spot — never re-derived on the fly after that, so an admin edit here always sticks. See playerName.js's deriveShortName().
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-  added_by_player_id  INTEGER REFERENCES players(id)  -- NULL when an admin added this row directly (Admin -> Sub List); set when a player added them via "I found a sub" (see subFlow.js's arrangeSelfSub()) — lets the admin Sub List page flag a self-arranged entry worth reviewing (name/slug cleanup, see CLAUDE.md's "Found your own sub" section).
+  added_by_player_id  INTEGER REFERENCES players(id)  -- NULL when an admin added this row directly (Admin -> Sub List); set when a player added them via "I found a sub" (see subFlow.js's arrangeSelfSub()) — lets the admin Sub List page flag a self-arranged entry worth reviewing (name/slug cleanup, see docs/HISTORY.md's "Found your own sub" section).
 );
 
 -- Which master-list subs apply to which session (Kyle, 2026-08-13): the
@@ -204,7 +204,7 @@ CREATE TABLE IF NOT EXISTS broader_sub_list (
 -- this join table is each session's own subset of that pool — only these
 -- people get escalation emails when one of *this* session's sub requests
 -- goes unanswered, not the entire master list. See subFlow.js's
--- escalateOverdueRequests() and "Per-session sub list" in CLAUDE.md.
+-- escalateOverdueRequests() and "Per-session sub list" in docs/HISTORY.md.
 CREATE TABLE IF NOT EXISTS session_sub_list (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id        INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -381,7 +381,7 @@ CREATE TABLE IF NOT EXISTS email_log (
 
 -- Audit trail of admin-triggered changes, added 2026-08-10 for accountability
 -- now that multiple admins share full, untiered access (see "Admin accounts"
--- in CLAUDE.md — any admin can do anything, so knowing *who* made a given
+-- in docs/HISTORY.md — any admin can do anything, so knowing *who* made a given
 -- change is otherwise unrecoverable). Deliberately a plain, human-readable
 -- log (one row per action with a prose `description`), matching this app's
 -- existing email_log pattern (simple, queryable, no structured diff system)
@@ -424,7 +424,7 @@ CREATE TABLE IF NOT EXISTS detail_log (
 CREATE INDEX IF NOT EXISTS idx_detail_log_created ON detail_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_detail_log_session ON detail_log(session_id);
 
--- Ad-hoc pickup-game sign-ups (session_type = 'adhoc' — see CLAUDE.md). One
+-- Ad-hoc pickup-game sign-ups (session_type = 'adhoc' — see docs/HISTORY.md). One
 -- row per (week, roster player), created up front when the T-56h invite goes
 -- out so the invite list and the sign-up state live in the same place.
 -- `signed_up_at` is NULL until the player clicks their "I'm in" link — the

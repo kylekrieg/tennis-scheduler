@@ -10,9 +10,11 @@ This README covers what the app does and how to get it running. For detail on an
 
 **For players:** There's no login. Each player gets a **My Page** they can bookmark that shows their schedule across every session they're in. From there they can enter **blackout dates**, **request a sub**, or **swap a week** with someone. There's also a full season schedule, a 4-week look-ahead, a printable PDF, a calendar feed you can subscribe to, and optional weather forecasts and a leaderboard. Anything a player needs to do can be done from a link in an email. The screenshots below show a few of the pages, and `/help` walks through all of them, including what each email looks like.
 
-**For admins:** Everything players get, plus the tools for running a season. You set up a roster and the scheduler gives everyone their target number of games, or tells you why it can't. There's a two-level sub list, a Status page that shows anything needing your attention across all sessions, a log of every admin action and every email sent, database backups, and support for running several sessions or clubs at once with double-booking detection. The admin side is hard to describe in a paragraph, so look at the screenshots below and **Admin → Guide**.
+**For admins:** Everything players get, plus the tools for running a season. You set up a roster and the scheduler gives everyone their target number of games, or tells you why it can't. There's a two-level sub list, a Status page that shows anything needing your attention across all sessions, a Super Log with every admin action, email and link click, a way to cancel any emailed link, seasons with their own leaderboards plus a resettable master leaderboard, a news page with an optional site banner, database backups, and support for running several sessions or clubs at once with double-booking detection. The admin side is hard to describe in a paragraph, so look at the screenshots below and **Admin → Guide**.
 
 ## Screenshots
+
+All screenshots use a made-up demo roster.
 
 ### Admin side
 
@@ -63,6 +65,53 @@ This is where you'll spend your time running a season, so it's the part to look 
 </tr>
 </table>
 
+Newer admin screens:
+
+<table>
+<tr>
+<td width="50%">
+
+**Super Log.** Actions, emails, and link opens and clicks on one timeline, with the device and IP for each click. Refused attempts, like expired links or failed logins, show up too.
+<img src="src/public/img/admin-guide/super-log.png" alt="Super Log timeline" width="100%">
+
+</td>
+<td width="50%">
+
+**Status.** Everything that needs a human across every session, plus a preview of what the automatic emails are about to do, with a Suspend checkbox per line.
+<img src="src/public/img/admin-guide/status.png" alt="Status page" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Seasons.** Group sessions into a season. Each season gets its own leaderboard and graphs.
+<img src="src/public/img/admin-guide/seasons.png" alt="Seasons page" width="100%">
+
+</td>
+<td width="50%">
+
+**Master Leaderboard.** Every session and player combined. Reset it at the end of a season without deleting any scores.
+<img src="src/public/img/admin-guide/master-leaderboard.png" alt="Master Leaderboard admin page" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**News and site banner.** A small blog for announcements. Paste screenshots in, and optionally show a banner across every player page.
+<img src="src/public/img/admin-guide/news-editor.png" alt="News post editor" width="100%">
+
+</td>
+<td width="50%">
+
+**Active Links.** Every emailed link that would still do something if clicked. Cancel any of them.
+<img src="src/public/img/admin-guide/active-links.png" alt="Active Links page" width="100%">
+
+</td>
+</tr>
+</table>
+
 ### Player side
 
 The in-app `/help` page covers all of this, with a mockup of every email. A few examples:
@@ -85,6 +134,26 @@ The in-app `/help` page covers all of this, with a mockup of every email. A few 
 
 **Full Season Schedule** (with weather)
 <img src="src/public/img/help/full-schedule-weather.png" alt="Full Season Schedule page with weather forecast" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="33%">
+
+**Leaderboard graphs**
+<img src="src/public/img/help/leaderboard-graphs.png" alt="Win percentage over the season, one line per player" width="100%">
+
+</td>
+<td width="33%">
+
+**News post and banner**
+<img src="src/public/img/help/news-banner.png" alt="News post with the site banner across the top" width="100%">
+
+</td>
+<td width="33%">
+
+**Next 4 Weeks**
+<img src="src/public/img/help/next-four-weeks.png" alt="Next 4 Weeks page" width="100%">
 
 </td>
 </tr>

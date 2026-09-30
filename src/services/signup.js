@@ -1,5 +1,5 @@
 'use strict';
-// Season sign-ups (Kyle, 2026-09-23) — see "Season sign-ups" in CLAUDE.md and
+// Season sign-ups (Kyle, 2026-09-23) — see "Season sign-ups" in docs/HISTORY.md and
 // schema.sql's comments on session_signup_candidates/session_signups for the
 // full design. Short version: before an admin hand-types every player's
 // target_games on session_form.ejs, players can declare a percentage-of-
@@ -34,7 +34,7 @@ function isValidTier(tier) {
 }
 
 // Rounds to the nearest whole week (Kyle's own call — see the "Rounding
-// rule" discussion in CLAUDE.md's dated entry for this feature): 75% of 17
+// rule" discussion in docs/HISTORY.md's dated entry for this feature): 75% of 17
 // weeks is 12.75, which rounds up to 13 rather than always flooring or
 // always ceiling. Clamped to [0, totalWeeks] defensively — a percentage
 // somehow set above 100 or below 0 (validated against on save, but this is

@@ -14,7 +14,7 @@ const { fullName } = require('./playerName');
  * gated in cron.js's processAdminReports() on a non-blank recipient list and
  * `session_type = 'regular'` only (ad-hoc sessions have no confirm/sub/swap
  * state machine for this to summarize — see "Ad-hoc sessions" in
- * CLAUDE.md). Regular sessions only ever have one confirm/sub/swap flow per
+ * docs/HISTORY.md). Regular sessions only ever have one confirm/sub/swap flow per
  * week, so this module's whole job is turning that week's current
  * week_assignments rows into the four buckets Kyle asked for.
  */
@@ -28,7 +28,7 @@ const { fullName } = require('./playerName');
  * sessionHelper.js's orderAssignmentsWithSubGroups() and public.js's My Page
  * query already use for a pair with no real link (an admin placing a sub
  * directly via Reassign outside the request-a-sub flow, a legacy row, etc.
- * — see CLAUDE.md's 2026-09-09 "My Page: sub 'who's subbing for whom'
+ * — see docs/HISTORY.md's 2026-09-09 "My Page: sub 'who's subbing for whom'
  * callout missing" entry for the original version of this bug).
  *
  * This used to go through sub_requests/sub_offers instead (looking for a

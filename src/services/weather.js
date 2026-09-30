@@ -58,7 +58,7 @@ function getCachedWeather(weekId) {
 /** SQLite's `datetime('now')`-style strings (and this module's own
  * fetched_at, written the same way) have no timezone marker, but are always
  * UTC — same "explicit UTC parse" pattern already established for
- * email_log.sent_at (see "Email log has a real status" in CLAUDE.md). */
+ * email_log.sent_at (see "Email log has a real status" in docs/HISTORY.md). */
 function parseUtc(sqliteDatetime) {
   return new Date(sqliteDatetime.replace(' ', 'T') + 'Z');
 }

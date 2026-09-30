@@ -350,7 +350,7 @@ function applyResolutions(sessionAId, sessionBId) {
       // stale for the admin to notice and fix by hand, see its own doc
       // comment) — this function always knows exactly who's leaving a week
       // and who's arriving to take their slot, with zero ambiguity. Kyle,
-      // 2026-09-01, after a real bug this exact gap caused (see CLAUDE.md's
+      // 2026-09-01, after a real bug this exact gap caused (see docs/HISTORY.md's
       // "Ball duty left stale after a joint-resolver swap"): auto-hand ball
       // duty to whoever moved in, rather than leaving it silently pointing
       // at someone who no longer plays that week at all.

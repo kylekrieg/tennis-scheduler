@@ -136,7 +136,7 @@ raw.exec('UPDATE session_players SET original_target = target_games WHERE origin
 // default to NULL (not locked), which is the correct, safe default. Locking
 // does not restrict any further edits — it's a marker and, eventually, a gate
 // for behavior that should wait for a stable schedule (see the deferred
-// sub-needed notification under discussion in CLAUDE.md), not a hard block.
+// sub-needed notification under discussion in docs/HISTORY.md), not a hard block.
 ensureColumn('sessions', 'schedule_locked_at', 'TEXT');
 
 // Admin-flagged sub requests (Kyle, 2026-08-13): an admin can now flag a
@@ -219,7 +219,7 @@ ensureColumn('sessions', 'follow_up_lead_hours', 'INTEGER NOT NULL DEFAULT 27');
 // digest emailed to the admin's own address(es) a configurable number of
 // hours before each week's match, summarizing who's confirmed/unconfirmed/
 // needs a sub/subbed out/swapped that week — see adminReport.js and
-// "Admin pre-match status report" in CLAUDE.md. Every existing row predates
+// "Admin pre-match status report" in docs/HISTORY.md. Every existing row predates
 // this, so NULL (feature off) is the correct default; admin_report_lead_hours
 // defaults to 8 (Kyle's own example) even though the feature is off until an
 // address is actually entered, so it's already sensible the moment someone
@@ -234,7 +234,7 @@ ensureColumn('sessions', 'admin_report_lead_hours', 'INTEGER NOT NULL DEFAULT 8'
 // Kyle described (56h initial invite, 30h stragglers-only reminder, 24h
 // final roster/"not enough" email) so a freshly-created ad-hoc session works
 // out of the box without the admin having to know to configure them. See
-// "Ad-hoc sessions" in CLAUDE.md and adhocFlow.js.
+// "Ad-hoc sessions" in docs/HISTORY.md and adhocFlow.js.
 ensureColumn('sessions', 'session_type', "TEXT NOT NULL DEFAULT 'regular'");
 ensureColumn('sessions', 'adhoc_invite_lead_hours', 'INTEGER NOT NULL DEFAULT 56');
 ensureColumn('sessions', 'adhoc_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 30');
@@ -242,7 +242,7 @@ ensureColumn('sessions', 'adhoc_final_lead_hours', 'INTEGER NOT NULL DEFAULT 24'
 
 // One-time seed: before session_sub_list existed, EVERY sub request in the
 // app escalated to the ENTIRE broader_sub_list, regardless of session — see
-// "Per-session sub list" in CLAUDE.md. Upgrading an install that already
+// "Per-session sub list" in docs/HISTORY.md. Upgrading an install that already
 // has real sessions and a real master list, with session_sub_list still
 // empty (never touched), assigns every existing master-list person to
 // every existing session once, so escalation keeps working exactly as it

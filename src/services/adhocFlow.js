@@ -6,7 +6,7 @@ const { fullName } = require('./playerName');
 
 /**
  * Service layer for ad-hoc pickup-game sessions (sessions.session_type =
- * 'adhoc' — see "Ad-hoc sessions" in CLAUDE.md). Deliberately separate from
+ * 'adhoc' — see "Ad-hoc sessions" in docs/HISTORY.md). Deliberately separate from
  * scheduleRun.js/engine.js: there is no fairness math, no blackout dates, no
  * confirm/need-a-sub flow here — courts fill first-come-first-served purely
  * from when a player clicks their "I'm in" link.

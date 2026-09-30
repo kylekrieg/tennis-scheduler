@@ -30,7 +30,7 @@ const { utcToZonedParts, zonedTimeToUtc } = require('../services/tz');
 // sharing an IP could submit several times without ever tripping this) so
 // a script can't enumerate assignment_id values and mass-trigger
 // verification emails across the whole roster in one sitting. See
-// rateLimiter.js's doc comment and "Rate limiting" in CLAUDE.md.
+// rateLimiter.js's doc comment and "Rate limiting" in docs/HISTORY.md.
 const requestSubStartLimiter = rateLimiter({ name: 'request-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
 const swapStartLimiter = rateLimiter({ name: 'swap-start', windowMs: 60 * 60 * 1000, max: 10 });
 const foundSubStartLimiter = rateLimiter({ name: 'found-sub-start', windowMs: 60 * 60 * 1000, max: 10 });
@@ -39,7 +39,7 @@ const foundSubStartLimiter = rateLimiter({ name: 'found-sub-start', windowMs: 60
 // it isn't gated by an unguessable token, just a session_id/player_id pair
 // (small, sequential, guessable integers) taken straight from the request
 // body. That's a deliberate, documented tradeoff (the email-confirmation
-// step here was removed for UX reasons — see "Blackout dates" in CLAUDE.md)
+// step here was removed for UX reasons — see "Blackout dates" in docs/HISTORY.md)
 // but going live to real players raises the stakes of leaving it completely
 // undefended, so it gets the same honeypot + rate limiter already proven out
 // on the two routes above rather than reopening the confirmation-email
@@ -704,7 +704,7 @@ router.get('/blackout', (req, res) => {
   // date that isn't one of *this* session's weeks at all, so it'd never show
   // up there. A blackout date is one universal fact per player+date
   // regardless of which session it was entered under (see "Blackout date
-  // carryover across sessions" in CLAUDE.md), so this is a plain, no-join
+  // carryover across sessions" in docs/HISTORY.md), so this is a plain, no-join
   // query — every date on record for this player, full stop — gated behind
   // an opt-in checkbox rather than always shown, since most players only
   // care about the current session's dates.
@@ -775,7 +775,7 @@ router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
   if (!player) return res.redirect('/blackout');
 
   // Saves directly — no email-confirmation step (removed per product
-  // decision; see "Blackout dates" in CLAUDE.md for the anti-abuse tradeoff
+  // decision; see "Blackout dates" in docs/HISTORY.md for the anti-abuse tradeoff
   // this gives up: a fabricated player_id in the form now takes effect
   // immediately instead of requiring that player to click a link first).
   // Only touches this player's own `source = 'self'` rows, so it can never
@@ -814,7 +814,7 @@ router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
 // --- Season sign-ups (Kyle, 2026-09-23) ------------------------------------
 //
 // Self-service, percentage-based alternative to the admin hand-typing every
-// player's target_games — see "Season sign-ups" in CLAUDE.md and
+// player's target_games — see "Season sign-ups" in docs/HISTORY.md and
 // src/services/signup.js for the full design. Mirrors the /blackout route
 // pair above almost exactly: includeDraft so a never-yet-scheduled session
 // still renders, ensureWeeksExist so the "how many weeks is that" math has
@@ -1528,7 +1528,7 @@ router.post('/found-sub/:token', detailLog.linkPage('found_sub'), asyncHandler(a
       // subFlow.js's arrangeSelfSub() doc comment.
       not_locked: "The schedule for this season isn't finalized yet, so sub requests aren't open — reach out to the admin directly and they'll sort it out.",
       concurrent: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
-      invalid_new_person: 'Enter a valid name and email address for the new person.',
+      invalid_new_person: 'Enter a valid name (no < or > characters) and email address for the new person.',
       invalid_candidate: 'That pick is no longer available — they may have been scheduled elsewhere since this page loaded. Please go back and try again.',
       self: "You can't name yourself as your own sub.",
       no_selection: "Choose a name from the list, or enter a new person's name and email.",
@@ -1613,7 +1613,7 @@ router.get('/me/:idOrSlug', (req, res) => {
   // Every real blackout_dates row on record for this player, regardless of
   // which session's page it was originally entered from — blackout dates are
   // a universal fact per (player, date), not owned by one session (see
-  // "Blackout date carryover across sessions" in CLAUDE.md). Matched against
+  // "Blackout date carryover across sessions" in docs/HISTORY.md). Matched against
   // each session's own weeks.match_date below, so a date only ever shows
   // above a session whose schedule actually includes that calendar date —
   // this is what makes "a Monday blackout shows above a Monday session"
@@ -1834,7 +1834,7 @@ router.get('/me/:idOrSlug', (req, res) => {
     // (not null) once nobody in the session has scored anything yet, which
     // findIndex handles the same as "not present" — gamesWonStats is only
     // computed at all when the session's own toggle is on (see
-    // sessions.games_won_enabled / CLAUDE.md's per-session games-won
+    // sessions.games_won_enabled / docs/HISTORY.md's per-session games-won
     // toggle), matching the gate the "Enter your scores"/"Leaderboard"
     // buttons below already use.
     let gamesWonStats = null;
@@ -2046,7 +2046,7 @@ router.post('/adhoc-signup/:token', detailLog.linkPage('adhoc_signup'), (req, re
 });
 
 // --- News / announcements (Kyle, 2026-09-28) ----------------------------
-// Public blog of admin-written posts; see news.js and CLAUDE.md's "News
+// Public blog of admin-written posts; see news.js and docs/HISTORY.md's "News
 // posts and the announcement banner". Drafts (published = 0) 404 here —
 // admins preview them from the editor instead.
 const news = require('../services/news');

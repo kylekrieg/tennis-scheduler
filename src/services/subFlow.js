@@ -16,7 +16,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * This session's sub candidate pool — used both by escalateOverdueRequests()
  * to decide who actually gets emailed, and by admin.js's session-subs page
  * to render the current checklist state. See "Per-session sub list" in
- * CLAUDE.md.
+ * docs/HISTORY.md.
  *
  * Two sources, merged into one list (Kyle, 2026-09-02): the master
  * broader_sub_list, scoped down via session_sub_list same as always, PLUS
@@ -230,7 +230,7 @@ function eligibleSelfArrangedCandidates(weekId) {
  * silently required two separate "Clear sub request" clicks to fully clear —
  * which is exactly what happened in production on 2026-08-18 on one slot,
  * leaving three now-oddly-attributed rows behind (see the Stats page fix in
- * CLAUDE.md). Simplified to check the whole week with no exclusion at all —
+ * docs/HISTORY.md). Simplified to check the whole week with no exclusion at all —
  * "only one open/escalated request per week" now genuinely means one, full
  * stop, whichever assignment it's tied to.
  */
@@ -380,7 +380,7 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
  * things like a double-booking — that's schedule construction, not a real
  * substitution, and it shouldn't be able to produce a sub_requests row that
  * shows up in the Stats page's Sub History table looking like one. See
- * CLAUDE.md's "Lock this schedule" note, which flagged this exact gate as a
+ * docs/HISTORY.md's "Lock this schedule" note, which flagged this exact gate as a
  * planned use of the lock before it existed. Once the admin locks the
  * schedule, this and the other two sub-creating entry points below
  * (adminFlagNeedsSub, arrangeSelfSub) work exactly as before.
@@ -412,7 +412,7 @@ async function createSubRequest(weekAssignmentId) {
     // a later reassignment/swap of this same slot (Reassign, the joint
     // conflict resolver, etc.) would silently relabel this historical row
     // under the *new* occupant's name wherever it's displayed (see the Stats
-    // page's Sub History table) — see CLAUDE.md for the real case this fixed.
+    // page's Sub History table) — see docs/HISTORY.md for the real case this fixed.
     const reqInfo = db
       .prepare(
         "INSERT INTO sub_requests (week_assignment_id, status, initiated_by, requesting_player_id) VALUES (?, 'open', 'player', ?)"
@@ -796,7 +796,7 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
   if (selection.newPerson) {
     const name = String(selection.newPerson.name || '').trim();
     const rawEmail = String(selection.newPerson.email || '').trim();
-    if (!name || !EMAIL_RE.test(rawEmail)) {
+    if (!name || /[<>]/.test(name) || !EMAIL_RE.test(rawEmail)) {
       return { ok: false, reason: 'invalid_new_person' };
     }
     const emailLower = rawEmail;
@@ -983,7 +983,7 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
  * 'resolved_manually'. The Stats page's Sub History query filters that status
  * out entirely rather than showing it as a sub. Left as a plain optional
  * param (not a new function) so every other call site keeps working
- * unchanged. See CLAUDE.md's "Sub History vs. double-booking reworks" note
+ * unchanged. See docs/HISTORY.md's "Sub History vs. double-booking reworks" note
  * for the real incident this fixed (Jim Newell/Kyle Krieg, week of 10/7/26).
  */
 function closeActiveSubRequestForAssignment(weekAssignmentId, opts = {}) {
@@ -1410,7 +1410,7 @@ function flagStillUnfilled() {
  *      it when the request was opened, that current occupant filled it.
  *   3. Legacy heuristic fallback: pre-dates both mechanisms above (e.g. the
  *      real Ed Bourneuf/Jon Deuchler case from 2026-09-07 that motivated
- *      logging admin placements to Sub History at all — see CLAUDE.md's "Sub
+ *      logging admin placements to Sub History at all — see docs/HISTORY.md's "Sub
  *      History gap" entry) — same week/team/court, an is_sub row with no
  *      replaces_assignment_id of its own, and exactly one such
  *      still-unclaimed candidate. Each candidate can only fill one original

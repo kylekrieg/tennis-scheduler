@@ -309,7 +309,7 @@ async function respondToSwap(rawToken, accept) {
     // Swap which player each existing assignment row belongs to — the week,
     // court, and team stay put (ball duty stays attached to the week too,
     // untouched here, same as every other roster-changing action in this
-    // app — see "Add a player" in CLAUDE.md). Neither becomes is_sub: both
+    // app — see "Add a player" in docs/HISTORY.md). Neither becomes is_sub: both
     // are still playing their own configured number of games, just on a
     // different date, not covering for someone else's target.
     db.prepare(
@@ -419,7 +419,7 @@ async function nudgeOverdueSwaps() {
 
   // archived_at IS NULL: an archived session should go fully quiet, same
   // reasoning as processReminders()/escalateOverdueRequests() — see
-  // "Archiving" in CLAUDE.md. Not gated by reminders_enabled: like sub
+  // "Archiving" in docs/HISTORY.md. Not gated by reminders_enabled: like sub
   // request escalation, this is closer to "is this negotiation stuck" than
   // a routine reminder, so the pause toggle shouldn't silence it.
   const pending = db

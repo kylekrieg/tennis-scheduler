@@ -88,7 +88,7 @@ function getAttentionItems() {
   const placeholders = sessionIds.map(() => '?').join(',');
 
   // Weeks flagged needs_attention — most commonly an understaffed week the
-  // scheduler auto-handled (see "Understaffed weeks" in CLAUDE.md), but also
+  // scheduler auto-handled (see "Understaffed weeks" in docs/HISTORY.md), but also
   // covers e.g. a week whose ball duty needs reassignment after its holder
   // requested a sub. Locked (already-played) weeks are excluded — nothing
   // left to do about the past.
@@ -171,7 +171,7 @@ function getAttentionItems() {
   // Real bug found by Kyle 2026-09-01: a same-session swap accepted from the
   // joint conflict resolver ("Accept all suggested changes") moved a player
   // off a week they had ball duty on, leaving the column stale — see "Ball
-  // duty left stale after a joint-resolver swap" in CLAUDE.md. That resolver
+  // duty left stale after a joint-resolver swap" in docs/HISTORY.md. That resolver
   // path now auto-hands ball duty to whoever moved in, but this stays as a
   // safety net for any other way this could happen.
   const staleBallDuty = attachSession(
@@ -345,7 +345,7 @@ function getUpcomingActions(days = 21) {
         }
       }
 
-      // Escalation — NOT gated by reminders_enabled (see CLAUDE.md: sub
+      // Escalation — NOT gated by reminders_enabled (see docs/HISTORY.md: sub
       // request escalation runs independently of the reminders toggle).
       // "As of now" preview: only a request that's currently open would
       // escalate; if it gets filled before the deadline, it never will.

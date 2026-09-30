@@ -154,7 +154,7 @@ function neverConfirmedStats(sessionId) {
  * week_assignments.player_id on the SAME row rather than inserting a new
  * one, and some pre-2026-09-10 admin placements were never linked in the
  * first place (the real case that prompted logging admin placements to Sub
- * History at all — see CLAUDE.md's "Sub History gap" entry). So this uses
+ * History at all — see docs/HISTORY.md's "Sub History gap" entry). So this uses
  * subFlow.js's `resolveSubRequestFiller()` — the exact same three-tier
  * fallback the Stats page's own Sub History "Filled by" column relies on —
  * rather than a second, possibly-drifting heuristic. Once a filler is found,

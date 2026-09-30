@@ -87,7 +87,7 @@ function streamSeasonPDF(sessionId, res) {
   // Kyle, 2026-08-31: "let's make sure the time and day of week is
   // included in the header" and "the session, day of week and court is
   // included in the file name" — with several generically-named sessions
-  // active at once (see "Dashboard session titles" in CLAUDE.md), the bare
+  // active at once (see "Dashboard session titles" in docs/HISTORY.md), the bare
   // session name alone wasn't enough to tell one printed PDF apart from
   // another. sessionFullTitle() already composes name/day/time/court/club
   // in one string, so the header switches to that instead of

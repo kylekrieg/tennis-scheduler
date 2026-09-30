@@ -3,7 +3,7 @@
 // Bot-deterrent for public, unauthenticated forms that trigger email
 // (Request a Sub, Propose a Swap) — separate from, and much cheaper than,
 // the email-verification-first gate those two routes also have (see
-// "Propose a Swap: email-gated..." in CLAUDE.md). That gate stops a
+// "Propose a Swap: email-gated..." in docs/HISTORY.md). That gate stops a
 // targeted attempt from ever reaching a third party's inbox; this catches
 // generic, unsophisticated bots (the ones that blindly fill every field in
 // a scraped HTML form) even earlier, before a verification email goes out

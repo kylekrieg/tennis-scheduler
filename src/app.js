@@ -1,6 +1,7 @@
 'use strict';
 require('dotenv').config();
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
 
@@ -73,6 +74,19 @@ app.locals.fullName = fullName;
 // layer has anything stale to serve.
 app.locals.assetVersion = Date.now();
 
+// Security headers (security review, 2026-09-30). SAMEORIGIN rather than
+// DENY because the Email Log preview frames /admin/email-log/:id/body.
+// Referrer-Policy keeps emailed token URLs from leaking to other sites via
+// the Referer header when a player clicks an outbound link.
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.set('X-Frame-Options', 'SAMEORIGIN');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'same-origin');
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -104,9 +118,19 @@ app.use((req, res, next) => {
 // machinery for that).
 app.set('trust proxy', 1);
 
+// A missing or short SESSION_SECRET used to fall back to a fixed, public
+// string, which would let anyone forge an admin login cookie. Now a random
+// per-process secret is used instead, so it's safe, but admins get logged
+// out on every restart until a real one is set (security review, 2026-09-30).
+let sessionSecret = process.env.SESSION_SECRET || '';
+if (sessionSecret.length < 16) {
+  console.warn('[security] SESSION_SECRET is missing or shorter than 16 characters. Using a random secret for this run; admin logins will not survive a restart. Set a long random SESSION_SECRET in .env.');
+  sessionSecret = crypto.randomBytes(32).toString('hex');
+}
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -137,7 +161,13 @@ app.use((req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).render('message', { title: 'Error', heading: 'Something went wrong', body: err.message, tone: 'error' });
+  // Details stay in the server log; visitors get a generic message.
+  res.status(err.status && err.status < 500 ? err.status : 500).render('message', {
+    title: 'Error',
+    heading: 'Something went wrong',
+    body: 'Sorry, something went wrong on our end. Please try again, and let the admin know if it keeps happening.',
+    tone: 'error',
+  });
 });
 
 module.exports = app;

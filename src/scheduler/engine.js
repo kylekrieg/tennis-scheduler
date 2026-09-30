@@ -38,7 +38,7 @@
  * simply ends up under their season target; `playerShortfalls` in the result
  * lists exactly who and by how much, and it's on the admin to make it up
  * manually (bump a target on a later re-schedule, pull in a sub, etc.) if
- * they want to. See "Understaffed weeks" in CLAUDE.md.
+ * they want to. See "Understaffed weeks" in docs/HISTORY.md.
  */
 
 // ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ function computeWeekCapacity(players, weeks, isBlackedOut, playersPerWeek) {
  *
  * This is a narrower, more targeted version of the "auto-rebalance" option
  * Kyle explicitly rejected for understaffed weeks (see "Understaffed weeks"
- * doc comment above and CLAUDE.md) — that option would have nudged *every*
+ * doc comment above and docs/HISTORY.md) — that option would have nudged *every*
  * player's target down slightly, opaquely, to keep the season's math
  * balanced. This instead touches only the specific player(s) who structurally
  * can't hit their own number, hands the *exact* deficit (usually 1-2 games)

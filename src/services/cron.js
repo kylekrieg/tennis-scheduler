@@ -81,8 +81,8 @@ async function sendReminderEmailsForWeek(week, session, { force = false } = {}) 
 async function processReminders() {
   const tz = getTimezone();
   // archived_at IS NULL: an archived session is meant to go fully quiet, not
-  // just disappear from the dashboard — see "Archiving" in CLAUDE.md.
-  // reminders_enabled = 1: the per-session pause toggle (see CLAUDE.md
+  // just disappear from the dashboard — see "Archiving" in docs/HISTORY.md.
+  // reminders_enabled = 1: the per-session pause toggle (see docs/HISTORY.md
   // "Pausing automatic reminders") — off means skip the automatic pass
   // entirely; manual Resend link / Send reminders now are separate code
   // paths and don't check this flag.
@@ -229,7 +229,7 @@ async function processFollowUps() {
 // Three independent timing passes, each tied to a week's own match time via
 // one of the three per-session lead-hour fields (adhoc_invite_lead_hours/
 // adhoc_reminder_lead_hours/adhoc_final_lead_hours — see "Ad-hoc sessions"
-// in CLAUDE.md and adhocFlow.js for the full model). Deliberately NOT gated
+// in docs/HISTORY.md and adhocFlow.js for the full model). Deliberately NOT gated
 // on reminders_enabled — that toggle is specific to the regular session
 // confirm/follow-up flow; ad-hoc sign-ups are a different mechanism
 // entirely and have no equivalent "pause" switch. Gated on archived_at IS

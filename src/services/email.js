@@ -245,7 +245,7 @@ const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
  * mismatch given how `follow_up_lead_hours` is designed: its default (27h)
  * is deliberately set to land the afternoon *before* a typical evening
  * match (see "Follow-up timing became a per-session configurable lead time"
- * in CLAUDE.md), so in the common case this email fires the day before and
+ * in docs/HISTORY.md), so in the common case this email fires the day before and
  * "today's" was simply wrong. An admin can still configure a short lead
  * time that fires same-day, or an unusually long one that fires more than a
  * day out, so this checks the actual gap rather than assuming either.
@@ -365,7 +365,7 @@ function sessionColor(session) {
  * showing the session's color (see sessionColor()), full disambiguated name,
  * and the specific date/time/court in bold. Court/time already appeared in
  * the subject line via timeAndPlace() (see "Match-day email subjects include
- * time + court" in CLAUDE.md), but a subject line is easy to skim past once
+ * time + court" in docs/HISTORY.md), but a subject line is easy to skim past once
  * an email is open; Kyle asked (2026-08-12) for the body itself to make it
  * unmissable which of two same-club, same-time sessions (e.g. Court 2 vs.
  * Court 4) a given email is actually about, on top of the color-coding used
@@ -393,7 +393,7 @@ function matchBanner(session, week) {
  * follow-up emails specifically (Kyle: players clicking Confirm every week
  * from the reminder email never see the My Page button that only exists on
  * the confirm *result* page) — see "My Page link in reminder/follow-up
- * email footers" in CLAUDE.md for the full story and why this was left out
+ * email footers" in docs/HISTORY.md for the full story and why this was left out
  * of the original My Page build.
  */
 function footer(session, player) {
@@ -758,6 +758,14 @@ async function sendSignupNotice({ recipient, session, test = false }) {
   return sendMail({ to: recipient.email, subject, html, category: 'signup_notice', session, test });
 }
 
+// Kyle, 2026-09-30: emails go out from Kyle's personal Gmail, so players were
+// hitting Reply to say "can't make it" on sub requests sent to a whole group.
+// Nobody needs to answer these unless they want the spot, and the button is
+// the only thing the scheduler acts on, so say that plainly.
+function noReplyNeededHtml() {
+  return `<p style="background:#f6f8fa;border-left:4px solid #8c959f;padding:8px 12px;"><strong>Can't play? No need to reply</strong> — just ignore this email. Replies aren't read by the scheduler, so the button above is the only way to take the spot.</p>`;
+}
+
 async function sendSubRequestFanout({ recipient, week, session, claimToken, requestingPlayerName, threadKey = null, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `Sub needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
@@ -766,6 +774,7 @@ async function sendSubRequestFanout({ recipient, week, session, claimToken, requ
     <p>Hi ${fullName(recipient)},</p>
     <p>${requestingPlayerName} needs a sub for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. First to confirm gets the spot.</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'll play</a></p>
+    ${noReplyNeededHtml()}
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
@@ -780,6 +789,7 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, threa
     <p>Hi ${fullName(recipient)},</p>
     <p>A doubles slot for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} still needs a sub — the regular group hasn't filled it yet.</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'll play</a></p>
+    ${noReplyNeededHtml()}
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
@@ -799,6 +809,7 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
     ${matchBanner(session, week)}
     <p>Hi ${fullName(recipient)},</p>
     <p>${subLine}</p>
+    <p style="color:#57606a;">Just a heads-up — no reply needed.</p>
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
@@ -976,8 +987,8 @@ async function sendNewSubListEntryAlert({ session, week, newPersonName, newPerso
   const html = `
     <p>${addedByPlayerName} used "I found a sub" for <strong>${fmtDate(week.match_date)}</strong> in ${sessionFullTitle(session)} and named someone the system didn't already know:</p>
     <ul>
-      <li><strong>Name:</strong> ${newPersonName}</li>
-      <li><strong>Email:</strong> ${newPersonEmail}</li>
+      <li><strong>Name:</strong> ${escapeHtml(newPersonName)}</li>
+      <li><strong>Email:</strong> ${escapeHtml(newPersonEmail)}</li>
     </ul>
     <p>They've been added to the Broader Sub List and this session's sub pool automatically, with an auto-generated name/URL slug. Worth a quick look to clean up the slug or merge them with an existing entry if this is actually someone already on file under a different email:</p>
     <p><a href="${subListUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Review the Sub List</a></p>
@@ -1219,6 +1230,7 @@ async function sendAdhocReminder({ recipient, week, session, signupToken, stillN
     <p>Hi ${fullName(recipient)},</p>
     <p>We're ${stillNeeded} player${stillNeeded === 1 ? '' : 's'} short of a full court for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Still want in?</p>
     <p><a href="${signupUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">I'm in</a></p>
+    <p>If you're not free this time, no need to reply — just ignore this email.</p>
     ${footer(session)}
   `;
   return sendMail({ to: recipient.email, subject, html, category: 'adhoc_reminder', relatedWeekId: week.id, session, test });

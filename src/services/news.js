@@ -2,7 +2,7 @@
 // News / announcements (Kyle, 2026-09-28) — a small multipurpose blog
 // ("new feature" write-ups with screenshots, an end-of-season happy hour,
 // rain-out notices, anything) plus an optional site-wide banner on every
-// player-facing page pointing at one post. See CLAUDE.md's "News posts and
+// player-facing page pointing at one post. See docs/HISTORY.md's "News posts and
 // the announcement banner" section for the design reasoning.
 //
 // Post bodies are written in a deliberately tiny Markdown-ish syntax and
@@ -36,7 +36,7 @@ function esc(s) {
 // data:, or protocol-relative //host URLs.
 function safeUrl(u) {
   u = String(u || '').trim();
-  if (/^\/\//.test(u)) return null;
+  if (/^\/[\/\\]/.test(u)) return null; // //host and /\host are both off-site
   if (/^(https?:\/\/|mailto:|\/)/i.test(u)) return u;
   return null;
 }

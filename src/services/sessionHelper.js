@@ -16,7 +16,7 @@ const { fullName } = require('./playerName');
 // "Can we sort them by day of week, then match time, then court/location?")
 // — with every real session now given a deliberately generic internal
 // `name` (see "Dashboard session titles are composed from fields" in
-// CLAUDE.md), two same-day-same-time sessions sorting by name was
+// docs/HISTORY.md), two same-day-same-time sessions sorting by name was
 // effectively arbitrary; court/location is the more meaningful tiebreaker
 // now. A session with no court_info set sorts first (SQLite orders NULL/''
 // before any real value ascending), which is an acceptable, rare edge case
@@ -24,7 +24,7 @@ const { fullName } = require('./playerName');
 const SESSION_DISPLAY_ORDER = 'ORDER BY match_day_of_week, match_time, court_info';
 
 /** Sessions with a generated schedule worth showing on public pages.
- * Archived sessions (archived_at set — see "Archiving" in CLAUDE.md) are
+ * Archived sessions (archived_at set — see "Archiving" in docs/HISTORY.md) are
  * excluded even if their status would otherwise qualify: archiving is meant
  * to fully hide a session from players, not just from the admin dashboard. */
 function getViewableSessions() {
@@ -42,7 +42,7 @@ function getViewableSessions() {
 function getBlackoutViewableSessions() {
   // session_type = 'regular' only — ad-hoc sessions have no blackout-dates
   // concept at all (no draft phase, no target-games math to protect); see
-  // "Ad-hoc sessions" in CLAUDE.md.
+  // "Ad-hoc sessions" in docs/HISTORY.md.
   return db
     .prepare(`SELECT * FROM sessions WHERE status IN ('draft', 'scheduled', 'active') AND archived_at IS NULL AND session_type = 'regular' ${SESSION_DISPLAY_ORDER}`)
     .all();
@@ -55,7 +55,7 @@ function getBlackoutViewableSessions() {
  * Pass includeDraft: true for the blackout-dates page. Pass regularOnly:
  * true for Request a Sub / Swap a Week — ad-hoc sessions have no sub/swap
  * concept at all (no fixed roster to sub out of — see "Ad-hoc sessions" in
- * CLAUDE.md), so they're excluded from the pool entirely rather than just
+ * docs/HISTORY.md), so they're excluded from the pool entirely rather than just
  * hidden after the fact, which could otherwise leave `session` resolved to
  * an ad-hoc one with no regular fallback available. Pass gamesWonOnly: true
  * for the public Leaderboard and group score-entry pages (Kyle, 2026-09-10)
@@ -335,7 +335,7 @@ function carriedOverBlackoutsForSession(sessionId) {
  *   session, regardless of current status (scheduled, confirmed, needs_sub,
  *   or subbed_out). This is what makes it permanent once a week locks: a
  *   locked week's week_assignments row is never touched or regenerated
- *   (see "Cron is an in-process interval loop" in CLAUDE.md), so once a
+ *   (see "Cron is an in-process interval loop" in docs/HISTORY.md), so once a
  *   week plays, that row's contribution to `scheduled` can never change
  *   again — only an still-open week's own resubmission of "Schedule these
  *   players" can add or remove rows counted here.
@@ -466,7 +466,7 @@ function sessionRosterStats(sessionId) {
  * exactly the definition already used by the admin Send Email page's "This
  * week's players" mode (status IN scheduled/confirmed — see admin.js's
  * POST /email). Ad-hoc sessions (Kyle, 2026-09-05) have no such status to
- * read (see "Ad-hoc sessions" in CLAUDE.md): once a week's courts have
+ * read (see "Ad-hoc sessions" in docs/HISTORY.md): once a week's courts have
  * finalized, real week_assignments rows exist and are used the same way a
  * regular session's would be; before that, "playing" means whoever's
  * currently signed up (adhoc_signups.signed_up_at IS NOT NULL) — there's no
@@ -513,7 +513,7 @@ function weekEmailRecipients(week, session) {
  * player from a *different* session's own roster subbing in via
  * session_sub_players both only ever get a week_assignments row, never a
  * session_players one (see "Session sub list" and "One-time sub" in
- * CLAUDE.md). Without this, a confirmed sub's own upcoming match was
+ * docs/HISTORY.md). Without this, a confirmed sub's own upcoming match was
  * completely invisible on both their My Page and their calendar feed — Derek
  * Bourneuf's real, confirmed slot for 2026-09-09 (Kyle, 2026-09-07: "When I
  * click on Derek's my page it shows a blank page except for his calendar

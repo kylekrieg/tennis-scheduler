@@ -14,7 +14,8 @@
     <li><a href="#monitoring">7. Keeping an eye on things</a></li>
     <li><a href="#multi-session">8. Running more than one session at once</a></li>
     <li><a href="#weather-setup">9. Weather forecast</a></li>
-    <li><a href="#wrapping-up">10. Wrapping up a session</a></li>
+    <li><a href="#stats-news">10. Seasons, leaderboards &amp; news</a></li>
+    <li><a href="#wrapping-up">11. Wrapping up a session</a></li>
   </ul>
 </div>
 
@@ -409,7 +410,7 @@
       </div>
     </div>
   </div>
-  <p class="flow-note">You can sign someone up or take them off from the week's card any time before the courts are set. That's the only way to fix a mistake, because players can't undo "I'm in" themselves. There's no Reassign for a court that's already been set. If a pickup week ever needs to be shuffled after that point, see the backlog note in CLAUDE.md.</p>
+  <p class="flow-note">You can sign someone up or take them off from the week's card any time before the courts are set. That's the only way to fix a mistake, because players can't undo "I'm in" themselves. There's no Reassign for a court that's already been set. If a pickup week ever needs to be shuffled after that point, see the backlog note in docs/HISTORY.md.</p>
 </div>
 
 <h3>Admin status report</h3>
@@ -430,14 +431,20 @@
 
 <h2 id="monitoring">7. Keeping an eye on things</h2>
 <p>The <a href="/admin/status">Status page</a> is the best place to check. It lists everything that needs your attention across all sessions (unfilled sub requests, short-staffed weeks, unconfirmed players, swaps nobody answered, double-bookings). It also shows what the reminder system is about to send over the next several days, so you can see it's running without waiting for match day. Each reminder, follow-up, or sub-escalation line there has a <strong>Suspend</strong> checkbox: check it to stop that one action from firing on its own (uncheck to resume any time before it's due). If its time passes while suspended, the Activity Log records it as "Suspended — did not fire" and it's done for good, so you'd handle it by hand (for example, "Send reminders now" on the session page, which always re-sends to everyone scheduled that week, even players who were already reminded). The <a href="/admin">Dashboard</a> shows the same flags for each session. The <a href="/admin/activity-log">Activity Log</a> and <a href="/admin/email-log">Email Log</a> have a full history of who changed what and every email the app has sent, for when a player says "I never got that." The <a href="/admin/super-log">Super Log</a> puts both on one timeline, so you can see which emails an action (yours, a player's, or an automatic one) sent. It also shows detail the other two logs leave out: when someone opens an emailed link or presses its button (with the device and IP), admin buttons like Resend link, and refused attempts such as used links or a spot that was already filled. (A one-time sub added through Reassign shows up there as "skipped — no email," which isn't an error; see §5. A weather forecast that stopped updating shows up there too; see §9.)</p>
+<img class="screenshot" src="/img/admin-guide/status.png?v=<%= assetVersion %>" alt="Status page listing flagged weeks, unfilled sub requests and players who have not confirmed, each linked to its session.">
+<p class="screenshot-caption">The Status page: everything that needs a human, across every session.</p>
+<img class="screenshot" src="/img/admin-guide/super-log.png?v=<%= assetVersion %>" alt="Super Log showing actions, emails, link clicks with device and IP, and a refused admin login on one timeline.">
+<p class="screenshot-caption">The Super Log shows who opened or clicked an emailed link, from what device, alongside actions and emails.</p>
 <img class="screenshot" src="/img/admin-guide/session-dashboard-alerts.png?v=<%= assetVersion %>" alt="One session's card on the dashboard listing five flags: weeks needing attention, unconfirmed assignments, an unfilled sub request, overlapping enrollment, and an actual double-booking.">
 <p class="screenshot-caption">Every kind of flag a session can show, all on one card. Normally you'll see none of these ("All clear") or just one or two.</p>
 <p><a href="/admin/stats">Stats Summary</a> is for checking how each active session is going overall: roster size, weeks played, confirmed and unconfirmed counts, open subs, and ball duty problems, with each player's target, games played, and ball duty listed underneath. Each session's own Stats page (linked from its detail page) has the same breakdown plus a partner-pairing grid and sub history, for when you want all the detail on one session.</p>
 <p><a href="/admin/backup">Backup</a> is where you can make a backup or push one off-site whenever you want. Both also run automatically every night. It isn't part of running a session, but it's good to know where it is.</p>
-<img class="screenshot" src="/img/admin-guide/dashboard.png?v=<%= assetVersion %>" alt="Admin dashboard showing three session cards, two of them with red-bordered flags for players enrolled in or actually double-booked into another overlapping session.">
-<p class="screenshot-caption">Each session card on the dashboard shows its own problems. Here, two sessions share players on overlapping dates. Click into a session to fix it.</p>
+<img class="screenshot" src="/img/admin-guide/dashboard.png?v=<%= assetVersion %>" alt="Admin dashboard with session cards showing flags for unconfirmed players, a week needing attention and an unfilled sub request.">
+<p class="screenshot-caption">Each session card on the dashboard shows its own problems. Here, one session has an unfilled sub request, a week that needs attention, and a player who hasn&#39;t confirmed. Click into a session to fix it.</p>
 
 <p><strong>Active Links</strong> (admin menu) lists every emailed link that still works: sub links, confirm / need-a-sub links, pending swaps, pickup sign-ups and "My Other Dates" edit links. Cancel any of them and that link shows "Link not found" from then on. A cancelled sub link also keeps that person from being emailed about the same spot again if it later goes to the sub list. Every cancel is in the Activity Log as <code>link.cancel</code>.</p>
+<img class="screenshot" src="/img/admin-guide/active-links.png?v=<%= assetVersion %>" alt="Active Links page listing four open sub-request links for one spot, each with a Cancel button.">
+<p class="screenshot-caption">Cancel any emailed link that should stop working, one at a time or all links for a spot.</p>
 
 <h2 id="multi-session">8. Running more than one session at once</h2>
 <p>You can run several sessions at the same time: different clubs, different courts, or a season split into two halves. If the same player is in two sessions that play on the same day of the week with overlapping dates, you'll get a warning when you save the roster. It's only a warning. The scheduler doesn't prevent it, so check whether the two schedules actually collide once both are made. If a player does end up double-booked, it's flagged everywhere: the session detail page, the dashboard, the Status page, and also on the player's own schedule, PDF, and calendar. That way they can fix it themselves with a sub request or a swap without waiting for you to notice.</p>
@@ -449,7 +456,18 @@
 <p>It updates about once an hour, starting when that week's first email goes out and stopping an hour after the match. To update it right away, or to check that it's working, click <strong>Update weather now</strong> on the week's card (next to Send email to players). That skips both the timing window and the hourly limit. You'll see either the new forecast or an error message, usually a bad API key or OpenWeatherMap being down. Either way, the result is also written to the Activity Log so there's a record of it.</p>
 <p>The automatic hourly updates log failures too, but no more than once an hour per session. Otherwise a session with a bad key or bad coordinates would log the same failure every minute and bury everything else in the Activity Log. These entries show up as <code>weather.refresh_failed</code> from "System (automatic)," since no admin triggered them. If you see one, fix the key or coordinates and click <strong>Update weather now</strong> to make sure the fix worked.</p>
 
-<h2 id="wrapping-up">10. Wrapping up a session</h2>
+<h2 id="stats-news">10. Seasons, leaderboards &amp; news</h2>
+<p><a href="/admin/seasons">Seasons</a> group sessions that belong together, like a first-half and second-half session on the same court. Each season gets its own leaderboard and graphs built from all of its sessions. From here you can rename a season, hide its stats from players, set the minimum matches for its win % board, leave players out of its board, and archive the whole season at once.</p>
+<img class="screenshot" src="/img/admin-guide/seasons.png?v=<%= assetVersion %>" alt="Seasons page with a form to create a season and a list of open seasons, each with Settings, View board and Archive buttons.">
+<p class="screenshot-caption">Every session belongs to a season. Archiving a season archives all of its sessions too.</p>
+<p>The <a href="/admin/master-stats">Master Leaderboard</a> combines every session and every player. It keeps counting until you reset it, for example after the indoor season ends. A reset doesn't delete any scores. The master board just starts counting again from that day, and the old standings stay viewable as a past period. You can undo the last reset.</p>
+<img class="screenshot" src="/img/admin-guide/master-leaderboard.png?v=<%= assetVersion %>" alt="Master Leaderboard admin page showing the current period, the top three players, settings, and the reset box.">
+<p class="screenshot-caption">Type RESET to start a new master period, or UNDO to take the last reset back.</p>
+<p><a href="/admin/news">News</a> is a small blog for announcing new features, a happy hour, a court change, anything. Paste or drag screenshots straight into a post. Tick <strong>Show a banner</strong> and a colored strip linking to the post appears across the top of every player page until the end date you set. Players can close it, and it comes back if you edit the post.</p>
+<img class="screenshot" src="/img/admin-guide/news-editor.png?v=<%= assetVersion %>" alt="News post editor with the post text, Published and Pin checkboxes, and site banner settings.">
+<p class="screenshot-caption">The banner text, color and end date are set on the post itself.</p>
+
+<h2 id="wrapping-up">11. Wrapping up a session</h2>
 <p>When a session is over, <strong>Archive</strong> it from the session detail page. That hides it from the dashboard and all player pages and stops any more reminder emails, but it doesn't delete anything. You can unarchive it later if you need to look something up. If a session was only test data, <strong>Delete</strong> it from the Edit page instead. That's permanent, and it asks you to confirm first. Deleting a session never deletes the players, since they're shared with other sessions.</p>
 
 <%- include('../partials/footer') %>

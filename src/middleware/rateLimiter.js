@@ -4,7 +4,7 @@
  * Simple in-memory, per-client-IP rate limiter for public POST routes that
  * can trigger outbound email off a small, sequential, guessable id
  * (week_assignments.id) rather than an unguessable random token — see
- * "Rate limiting on Request a Sub and Propose a Swap" in CLAUDE.md. The
+ * "Rate limiting on Request a Sub and Propose a Swap" in docs/HISTORY.md. The
  * email-verification gate on both those routes already stops a bot from
  * ever reaching a *third party's* inbox, and the honeypot field already
  * catches bots that don't inspect the form — this closes the remaining

@@ -46,7 +46,7 @@ const signup = require('../services/signup');
 // highest-value target on the whole site since it's reachable straight off
 // the public Cloudflare Tunnel URL with no token gating anything else does.
 // Reuses the same hand-rolled limiter already proven out on /request-sub/start
-// and /swap/start (see rateLimiter.js, CLAUDE.md's "Rate limiting" section) —
+// and /swap/start (see rateLimiter.js, docs/HISTORY.md's "Rate limiting" section) —
 // tighter than those two (8/15min vs. 10/hour) since this route has no
 // legitimate reason to be hit anywhere near that often by a real admin
 // fat-fingering their password a few times.
@@ -152,7 +152,7 @@ router.get('/', (req, res) => {
   // Ad-hoc sessions have none of the flags below (no targets, no blackout,
   // no confirm/sub flow) — a simpler, separate section instead of trying to
   // force them through the same flags shape. See "Ad-hoc sessions" in
-  // CLAUDE.md.
+  // docs/HISTORY.md.
   const adhocSessions = db
     .prepare(`SELECT * FROM sessions WHERE archived_at IS NULL AND session_type = 'adhoc' ${SESSION_DISPLAY_ORDER}`)
     .all()
@@ -199,7 +199,7 @@ router.get('/', (req, res) => {
       )
       .get(s.id).n;
     // Weeks flagged needs_attention — most commonly an understaffed week the
-    // scheduler auto-handled (see "Understaffed weeks" in CLAUDE.md), but
+    // scheduler auto-handled (see "Understaffed weeks" in docs/HISTORY.md), but
     // also covers e.g. a week whose ball duty needs reassignment after its
     // holder requested a sub (subFlow.js). Distinct from `conflicts` below:
     // conflicts means the *entire* scheduling run failed and nothing was
@@ -226,7 +226,7 @@ router.get('/', (req, res) => {
     // accepted from the joint conflict resolver ("Accept all suggested
     // changes") moved a player off a week that had them down for ball duty,
     // leaving the column stale — see "Ball duty left stale after a
-    // joint-resolver swap" in CLAUDE.md. That resolver path now auto-hands
+    // joint-resolver swap" in docs/HISTORY.md. That resolver path now auto-hands
     // ball duty to whoever moved in, but this flag stays as a safety net for
     // any other way this could happen (a plain Reassign, a direct manual DB
     // edit, etc.) so it's never silently invisible again.
@@ -330,7 +330,7 @@ router.get('/status', (req, res) => {
   // wideMain (Kyle, 2026-09-09): "Can we make the status screen on the admin
   // panel a bit wider so we can see more on 1 line for the upcoming
   // automated actions?" — same fix already applied to Activity Log/Email
-  // Log (main.wide, 1400px vs. the narrow 900px default; see CLAUDE.md's
+  // Log (main.wide, 1400px vs. the narrow 900px default; see docs/HISTORY.md's
   // "Six pre-launch cleanup items" for the documented table.wide-is-dead-CSS
   // trap this avoids).
   res.render('admin/status', { title: 'Status', attention, upcoming, days, flashMsg: popFlash(req), wideMain: true });
@@ -376,7 +376,7 @@ router.post('/status/suspend', (req, res) => {
 // stop this from fitting on one page). Each row links into that session's
 // own Stats page for the per-player detail. Regular sessions only — ad-hoc
 // sessions have no target/confirm/sub/ball-duty concepts for any of these
-// columns to mean anything (see "Ad-hoc sessions" in CLAUDE.md), same reason
+// columns to mean anything (see "Ad-hoc sessions" in docs/HISTORY.md), same reason
 // the per-session Stats page is never linked from an ad-hoc session's detail
 // page. Scoped to scheduled/active (not draft, which has no schedule yet —
 // every column would just read zero).
@@ -413,7 +413,7 @@ router.get('/stats', (req, res) => {
 
     // Same definitions as the dashboard's unfilledBallDuty/staleBallDuty
     // flags (see "Ball duty left stale after a joint-resolver swap" in
-    // CLAUDE.md for staleBallDuty) — combined into one "needs attention"
+    // docs/HISTORY.md for staleBallDuty) — combined into one "needs attention"
     // count here since this is a summary row, not a to-do list; either kind
     // means the same actionable thing at this level of detail.
     const missingBallDuty = db
@@ -503,7 +503,7 @@ router.post('/sessions/:id/unarchive', (req, res) => {
 // re-scheduling, blackout dates all still work exactly the same after
 // locking) — it's a timestamp and, eventually, a gate for behavior that
 // should wait for a stable schedule (e.g. a deferred sub-needed
-// notification), not a hard block. See "Lock this schedule" in CLAUDE.md.
+// notification), not a hard block. See "Lock this schedule" in docs/HISTORY.md.
 router.post('/sessions/:id/lock-schedule', (req, res) => {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).send('Session not found');
@@ -902,8 +902,8 @@ router.get('/admins', (req, res) => {
 router.post('/admins', (req, res) => {
   const name = (req.body.name || '').trim();
   const password = req.body.password || '';
-  if (!name || password.length < 8) {
-    flash(req, 'Name is required and password must be at least 8 characters.', 'error');
+  if (!name || password.length < 8 || hasAngleBrackets(name)) {
+    flash(req, 'Name is required (no < or >) and password must be at least 8 characters.', 'error');
     return res.redirect('/admin/admins');
   }
   const usernameError = invalidUsernameField(req.body.admin_username, null);
@@ -945,8 +945,8 @@ router.post('/admins', (req, res) => {
 // false match without touching the real login autofill.
 router.post('/admins/:id/edit', (req, res) => {
   const name = (req.body.name || '').trim();
-  if (!name) {
-    flash(req, 'Name is required.', 'error');
+  if (!name || hasAngleBrackets(name)) {
+    flash(req, 'Name is required (no < or > characters).', 'error');
     return res.redirect('/admin/admins');
   }
   const before = db.prepare('SELECT name, email, username FROM admins WHERE id = ?').get(req.params.id);
@@ -1167,6 +1167,7 @@ function invalidTimeFields(b) {
 // the only place that actually stops it.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function invalidSessionDates(b) {
+  if (hasAngleBrackets(b.name, b.club_name, b.court_info)) return NO_ANGLE_MSG;
   if (!DATE_RE.test(b.start_date || '')) return 'Start date is required.';
   if (!DATE_RE.test(b.end_date || '')) return 'End date is required.';
   if (b.end_date < b.start_date) return 'End date must be on or after the start date.';
@@ -1181,7 +1182,16 @@ function invalidPlayerFields(b) {
   const email = (b.email || '').trim();
   if (!name) return 'Name is required.';
   if (!EMAIL_RE.test(email)) return 'A valid email address is required.';
+  if (hasAngleBrackets(name, b.full_name, b.public_name)) return NO_ANGLE_MSG;
   return null;
+}
+
+// Names and other short labels end up inside HTML emails. Refusing < and >
+// at input means they can never form a tag there (security review,
+// 2026-09-30). Escaping still happens in views; this is defense in depth.
+const NO_ANGLE_MSG = 'Names and labels can\'t contain < or > characters.';
+function hasAngleBrackets(...vals) {
+  return vals.some((v) => /[<>]/.test(String(v || '')));
 }
 
 // URL slug for "My Page" (/me/<slug>) — see playerSlug.js's doc comment.
@@ -1212,7 +1222,7 @@ function invalidBroaderSubSlugField(rawSlug, excludeListId) {
 
 // Ad-hoc sessions (session_type = 'adhoc') have no target-games math to
 // validate, but do have three lead-hour fields (see "Ad-hoc sessions" in
-// CLAUDE.md) that need to count down in the same order Kyle actually runs
+// docs/HISTORY.md) that need to count down in the same order Kyle actually runs
 // them — invite, then a reminder if sign-ups are still short, then the
 // final roster/"not enough" email — or the timing wouldn't make sense
 // (e.g. a "reminder" that fires after the "final" email already went out).
@@ -1722,7 +1732,7 @@ router.post('/sessions/:id', (req, res) => {
   const existingSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   if (!existingSession) return res.status(404).send('Session not found');
   // session_type is fixed for the life of a session (see "Ad-hoc sessions"
-  // in CLAUDE.md) — read from the DB, never from the submitted form, so
+  // in docs/HISTORY.md) — read from the DB, never from the submitted form, so
   // there's no path to flip a session's type after creation.
   const sessionType = existingSession.session_type;
 
@@ -1962,7 +1972,7 @@ router.get('/sessions/:id', (req, res) => {
   // blackout dates, no confirm/sub flow) — rather than threading isAdhoc
   // conditionals through the already-large regular session_detail.ejs,
   // this branches to its own dedicated view+route data. See
-  // "Ad-hoc sessions" in CLAUDE.md.
+  // "Ad-hoc sessions" in docs/HISTORY.md.
   if (session.session_type === 'adhoc') {
     ensureWeeksExist(session.id);
     const weeks = db.prepare('SELECT * FROM weeks WHERE session_id = ? ORDER BY match_date').all(session.id);
@@ -2016,7 +2026,7 @@ router.get('/sessions/:id', (req, res) => {
   // each player to reassign a player, that just includes the current
   // roster, not anybody in the broader sub list correct?" — correct, and a
   // real gap once a session actually has subs assigned to it (see "Per-session
-  // sub list" in CLAUDE.md). subFlow.sessionSubList() is the exact same pool
+  // sub list" in docs/HISTORY.md). subFlow.sessionSubList() is the exact same pool
   // escalation and "I found a sub" already draw from — a mix of broader_sub_
   // list entries and real players explicitly assigned as this session's own
   // subs, tagged candidateType so the reassign route below knows which table
@@ -2116,7 +2126,7 @@ router.get('/sessions/:id', (req, res) => {
     // `weeks.ball_duty_player_id` can end up pointing at someone no longer
     // actually playing this week (e.g. a manual Reassign, or — the real bug
     // this was built to catch, see "Ball duty left stale after a joint-
-    // resolver swap" in CLAUDE.md — a same-session swap accepted from the
+    // resolver swap" in docs/HISTORY.md — a same-session swap accepted from the
     // joint conflict resolver that moved the ball-duty player to a
     // different week entirely). Checked against `assignments` with an
     // active status only, same "actually playing" definition the rest of
@@ -2383,7 +2393,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
     const oneTimeName = (req.body.one_time_sub_name || '').trim();
-    if (!oneTimeName) {
+    if (!oneTimeName || hasAngleBrackets(oneTimeName)) {
       flash(req, 'Enter a name for the one-time sub.', 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
@@ -2450,7 +2460,7 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
   // correct?" — it did. This branch handles picking someone from this
   // session's own sessionSubList() (a mix of broader_sub_list entries and
   // real players explicitly assigned as subs — see "Per-session sub list"
-  // in CLAUDE.md), encoded by the dropdown as `player:<id>` or
+  // in docs/HISTORY.md), encoded by the dropdown as `player:<id>` or
   // `broader:<id>` (subFlow's own namespaced-key convention, reused here for
   // consistency — see eligibleSelfArrangedCandidates()'s doc comment).
   //
@@ -2725,7 +2735,7 @@ router.post('/sessions/:id/weeks/:weekId/correct-player', asyncHandler(async (re
 
   if (new_player_id === 'one_time_sub') {
     oneTimeName = (req.body.one_time_sub_name || '').trim();
-    if (!oneTimeName) {
+    if (!oneTimeName || hasAngleBrackets(oneTimeName)) {
       flash(req, "Enter the name of who actually played.", 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
@@ -3364,7 +3374,7 @@ router.post('/sessions/:id/weeks/:weekId/court/:court/games-played', (req, res) 
 // and 17 weeks, not everybody can sign up for a full time slot. That needs
 // to be flagged on the admin side to ask players to slide up or down in
 // percentage so the numbers work out to the # of slots." See "Season
-// sign-ups" in CLAUDE.md and src/services/signup.js for the full design.
+// sign-ups" in docs/HISTORY.md and src/services/signup.js for the full design.
 // Regular sessions only — ad-hoc has no target_games/roster concept for
 // this to feed (every route below 404s for an ad-hoc session id, same
 // defense-in-depth as "Lock this schedule").
@@ -3594,7 +3604,7 @@ router.post('/sessions/:id/notify-blackouts', asyncHandler(async (req, res) => {
 // and it's session-agnostic by construction rather than needing any
 // carriedOverBlackoutsForSession() reconciliation — blackout_dates rows are
 // already a universal per-player fact (see "Blackout date carryover" in
-// CLAUDE.md), so querying every row for a player directly already gives the
+// docs/HISTORY.md), so querying every row for a player directly already gives the
 // complete picture with no session_id filtering needed at all.
 router.get('/blackouts', (req, res) => {
   const sessions = getBlackoutViewableSessions();
@@ -3630,7 +3640,7 @@ router.get('/blackouts', (req, res) => {
   //
   // Deduped per player by date, via a Set rather than a plain array — same
   // safeguard the per-session blackouts.ejs page already has (see "Blackout
-  // date carryover across sessions" in CLAUDE.md). Kyle found a real bug
+  // date carryover across sessions" in docs/HISTORY.md). Kyle found a real bug
   // here (2026-08-28): for a player enrolled in two same-day sessions, this
   // page was listing the same date twice. Root cause is legacy data, not
   // live logic — before dates became universally editable (2026-08-27), each
@@ -3639,7 +3649,7 @@ router.get('/blackouts', (req, res) => {
   // date under both sessions back then ended up with two real
   // blackout_dates rows (one per session_id) for the exact same
   // player+date. Both the admin per-session save route and the self-service
-  // page now prevent that going forward (see the same CLAUDE.md section),
+  // page now prevent that going forward (see the same docs/HISTORY.md section),
   // but any row pairs created before that fix are still sitting in the
   // table, and this page's raw SELECT had no session_id filter to hide
   // behind. Rather than destructively deleting the leftover duplicate rows,
@@ -3929,7 +3939,7 @@ router.post('/sessions/:id/constraints/:constraintId/delete', (req, res) => {
 // self-service-plus-admin-override shape as everything else in this app)
 // and undoing that. Once a week is finalized (real week_assignments rows
 // exist), editing who's on a court goes through no dedicated UI yet —
-// noted as a gap in CLAUDE.md rather than built here, given how narrow the
+// noted as a gap in docs/HISTORY.md rather than built here, given how narrow the
 // need is (a finalized ad-hoc week is a firm pickup game, not something
 // that gets reshuffled the way a season-long roster does).
 
@@ -4141,7 +4151,7 @@ router.get('/players', (req, res) => {
   // one-time sub's placeholder row landed here too, just less often noticed.
   // Both groups render through the exact same editable table — a sub still
   // sometimes needs a name/email correction here (see the Derek Holloway
-  // cleanup entry in CLAUDE.md) — this is purely a display grouping, not a
+  // cleanup entry in docs/HISTORY.md) — this is purely a display grouping, not a
   // capability change.
   const rosterPlayerIds = new Set(
     db.prepare('SELECT DISTINCT player_id FROM session_players').all().map((r) => r.player_id)
@@ -4277,7 +4287,7 @@ router.get('/sub-list', (req, res) => {
   // the whole session row (not just id/name) so the view can call
   // sessionFullTitle() on it — Kyle, 2026-08-30: with every session now
   // deliberately given a generic name (see "Dashboard session titles" in
-  // CLAUDE.md — day/time/court/club come from the composed title, not the
+  // docs/HISTORY.md — day/time/court/club come from the composed title, not the
   // name field anymore), a bare session name alone isn't enough to tell two
   // sessions apart here.
   const rows = db
@@ -4390,7 +4400,7 @@ router.post('/sub-list/:id/remove', (req, res) => {
 // Which master-list people (broader_sub_list) actually get emailed when
 // *this* session's sub requests escalate — see subFlow.js's
 // sessionSubList()/escalateOverdueRequests() and "Per-session sub list" in
-// CLAUDE.md. The master list itself is still managed globally at
+// docs/HISTORY.md. The master list itself is still managed globally at
 // /admin/sub-list; this page just picks a subset of it per session, same
 // checkbox-list-tied-to-a-session UX as the ad-hoc roster picker.
 
@@ -4594,7 +4604,7 @@ router.post('/email', asyncHandler(async (req, res) => {
       return res.redirect('/admin/email');
     }
     // A one-time sub with no real email on file (see "One-time sub" in
-    // CLAUDE.md) shouldn't end up literally in the To: field — sendMail()
+    // docs/HISTORY.md) shouldn't end up literally in the To: field — sendMail()
     // already no-ops a single send to a @no-email.invalid address, but that
     // guard doesn't apply to one address buried inside a joined multi-address
     // string, so it's filtered out here before joining.
@@ -4864,7 +4874,7 @@ router.get('/activity-log', (req, res) => {
   // which would collide with al.id) so the view can call sessionFullTitle()
   // on each row's linked session — Kyle, 2026-08-31: with every session now
   // deliberately given a generic internal name (see "Dashboard session
-  // titles" in CLAUDE.md), the bare name alone wasn't enough to tell two
+  // titles" in docs/HISTORY.md), the bare name alone wasn't enough to tell two
   // sessions apart here, same fix already applied to the Sub List and All
   // Blackout Dates pages.
   const rawRows = db

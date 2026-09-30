@@ -254,7 +254,7 @@ function runScheduler(sessionId) {
     // detail page instead of letting them silently look like any other
     // normal week. Deliberately does NOT touch anyone's target_games to
     // compensate for the missed games — see engine.js's "Understaffed weeks"
-    // doc comment and CLAUDE.md.
+    // doc comment and docs/HISTORY.md.
     for (const uw of result.understaffedWeeks) {
       const note =
         uw.scheduledCount === 0
