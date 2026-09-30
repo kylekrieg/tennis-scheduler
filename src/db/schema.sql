@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   escalation_lead_hours    INTEGER NOT NULL DEFAULT 24, -- hours before match_time an unfilled sub request escalates from the original 5-player roster fan-out to this session's broader sub list (session_sub_list) — see subFlow.js's escalateOverdueRequests(). Was hardcoded at 24 for every session until Kyle asked (2026-09-08) whether it was per-session configurable.
   self_arranged_reminder_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours after a player names their own sub before both of them get a "please confirm" reminder, if the named sub still hasn't confirmed. See subFlow.js's processSelfArrangedSubs().
   self_arranged_deadline_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours before match_time an unconfirmed self-arranged sub gets opened to the roster + sub list. The requester gets a warning 1 hour before this. Self-arranged requests never use escalation_lead_hours.
+  still_open_alert_hours   INTEGER NOT NULL DEFAULT 4, -- (Kyle, 2026-09-30) hours before match_time a sub request nobody has taken triggers one "still open, contact your admin" email to the requesting player and admin_report_emails. See subFlow.js's processStillOpenSubs().
   weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in docs/HISTORY.md and src/services/weather.js.
   weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
   weather_lon         REAL,
@@ -309,6 +310,7 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   self_arranged_reminder_sent_at TEXT, -- "I found a sub" follow-up timestamps (Kyle, 2026-09-30) — see processSelfArrangedSubs(). Each is set once so the step never repeats.
   self_arranged_warning_sent_at  TEXT,
   self_arranged_late_alert_sent_at TEXT,
+  still_open_alert_sent_at TEXT, -- set once the "still open" alert has gone out (Kyle, 2026-09-30), at still_open_alert_hours before the match or right away when nobody is left to ask.
   self_arranged         INTEGER NOT NULL DEFAULT 0 -- set only by arrangeSelfSub() ("I found a sub" — one specific named candidate), never by createSubRequest()'s normal fan-out or adminFlagNeedsSub(). Lets the Activity Log's Player Behavior stats (Kyle, 2026-09-15) count "found their own sub" separately from "waited on the app's fan-out" without re-deriving it from sub_offers row counts, which stops being reliable once a self-arranged request later escalates (it can gain more offers, same as any other still-open request — see arrangeSelfSub()'s doc comment).
 );
 

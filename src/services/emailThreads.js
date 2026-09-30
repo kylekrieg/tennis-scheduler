@@ -20,6 +20,7 @@ const SUB_STAGES = [
   { key: 'followup', label: 'Reminders & warning', categories: ['self_arranged_sub_reminder', 'self_arranged_requester_reminder', 'self_arranged_warning'] },
   { key: 'sublist', label: 'Escalated to the sub list', categories: ['escalation', 'self_arranged_escalated'] },
   { key: 'admin', label: 'Admin alert', categories: ['new_sub_list_entry_alert', 'self_arranged_late_alert'] },
+  { key: 'stillopen', label: 'Still open', categories: ['sub_still_open', 'sub_still_open_admin'] },
   { key: 'confirmed', label: 'Sub confirmed', categories: ['sub_filled', 'sub_filled_original'] },
 ];
 const STAGE_BY_CATEGORY = new Map();

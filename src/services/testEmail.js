@@ -169,6 +169,8 @@ const NEEDS_SESSION_WEEK = new Set([
   'sendSelfArrangedSubNudge',
   'sendSelfArrangedRequesterUpdate',
   'sendSelfArrangedLateAlert',
+  'sendSubStillOpen',
+  'sendSubStillOpenAdmin',
   'sendNewSubListEntryAlert',
   // Ball-duty scores-still-needed reminder (Kyle, 2026-09-15) — new template,
   // needs a real week/session the same as the other per-week reminders above.
@@ -385,6 +387,23 @@ const TEMPLATES = {
       subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
       test: true,
     }),
+  },
+  // "Still open" alert (Kyle, 2026-09-30) — see subFlow.sendStillOpenAlert().
+  sub_still_open: {
+    label: 'Sub still open — to the player who asked',
+    fn: 'sendSubStillOpen',
+    build: (ctx) => ({ player: ctx.player, week: ctx.week, session: ctx.session, reason: 'deadline', test: true }),
+  },
+  sub_still_open_nobody_left: {
+    label: 'Sub still open — to the player, nobody left to ask',
+    fn: 'sendSubStillOpen',
+    build: (ctx) => ({ player: ctx.player, week: ctx.week, session: ctx.session, reason: 'nobody_left', test: true }),
+  },
+  sub_still_open_admin: {
+    // Sends to session.admin_report_emails, like new_sub_list_entry_alert.
+    label: 'Sub still open — admin alert',
+    fn: 'sendSubStillOpenAdmin',
+    build: (ctx) => ({ session: ctx.session, week: ctx.week, playerName: fullName(ctx.player), reason: 'deadline', asked: 9, pending: 9, test: true }),
   },
   new_sub_list_entry_alert: {
     // Real function sends to session.admin_report_emails, not to any

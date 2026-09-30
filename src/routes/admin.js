@@ -1277,6 +1277,7 @@ function invalidSelfArrangedHours(b) {
   for (const [field, label] of [
     ['self_arranged_reminder_hours', '"I found a sub" reminder'],
     ['self_arranged_deadline_hours', '"I found a sub" open-up deadline'],
+    ['still_open_alert_hours', 'Sub still open alert'],
   ]) {
     if (b[field] === undefined || b[field] === '') continue;
     const hours = Number(b[field]);
@@ -1286,9 +1287,10 @@ function invalidSelfArrangedHours(b) {
 }
 
 function saveSelfArrangedHours(sessionId, b) {
-  db.prepare('UPDATE sessions SET self_arranged_reminder_hours = ?, self_arranged_deadline_hours = ? WHERE id = ?').run(
+  db.prepare('UPDATE sessions SET self_arranged_reminder_hours = ?, self_arranged_deadline_hours = ?, still_open_alert_hours = ? WHERE id = ?').run(
     Number(b.self_arranged_reminder_hours || 4),
     Number(b.self_arranged_deadline_hours || 4),
+    Number(b.still_open_alert_hours || 4),
     sessionId
   );
 }
@@ -1693,6 +1695,7 @@ const SESSION_FIELD_LABELS = [
   ['escalation_lead_hours', 'escalation lead hours', (v) => v],
   ['self_arranged_reminder_hours', '"I found a sub" reminder hours', (v) => v],
   ['self_arranged_deadline_hours', '"I found a sub" open-up hours before match', (v) => v],
+  ['still_open_alert_hours', 'sub still open alert hours before match', (v) => v],
   ['weather_enabled', 'weather forecast', (v) => (Number(v) ? 'on' : 'off')],
   ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],

@@ -19,6 +19,7 @@ const EXAMPLE_WEEK = [
   { when: 'Wednesday, 9:30 AM', what: 'Admin status report (8h before)', to: 'The session\'s admin report addresses' },
   { when: 'Wednesday, 12:30 PM', what: '"I found a sub" warning (5h before)', to: 'The player who named a sub that hasn\'t confirmed; the sub gets a last call' },
   { when: 'Wednesday, 1:30 PM', what: '"I found a sub" opens up (4h before)', to: 'Roster + sub list, if the named sub still hasn\'t confirmed' },
+  { when: 'Wednesday, 1:30 PM', what: 'Sub still open alert (4h before)', to: 'The player who asked + admin report addresses, if a sub request still isn\'t taken' },
   { when: 'Wednesday, 5:30 PM', what: 'Match starts: week locks', to: 'No email. Every link for that week stops working; open swaps expire; still-open sub requests are flagged unfilled' },
   { when: 'Thursday, 5:30 PM', what: 'Scores reminder (24h after)', to: 'That week\'s ball-duty player, if any scores are missing' },
 ];
@@ -45,6 +46,8 @@ const FLOWS = [
       { name: 'Sub still needed (sub list)', category: 'escalation', when: 'escalation_lead_hours before the match (default 24), if nobody has taken it. Right away if the request comes in later than that.', to: 'This session\'s sub list (Manage subs)', setting: 'Escalate to broader sub list hours; Status page Suspend' },
       { name: 'Sub found', category: 'sub_filled', when: 'When someone takes the spot', to: 'Everyone playing that week, including the sub', setting: '—' },
       { name: 'Your sub is confirmed', category: 'sub_filled_original', when: 'Same time', to: 'The player who needed the sub', setting: '—' },
+      { name: 'Your spot still needs a sub', category: 'sub_still_open', when: 'still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request.', to: 'The player who needed the sub', setting: 'Sub still open alert hours' },
+      { name: 'Sub still needed (admin)', category: 'sub_still_open_admin', when: 'Same time', to: 'Admin report addresses', setting: 'Admin report emails' },
     ],
   },
   {
@@ -62,6 +65,7 @@ const FLOWS = [
       { name: 'Your spot is open to other players', category: 'self_arranged_escalated', when: 'Same time', to: 'The player', setting: '—' },
       { name: 'Late "I found a sub"', category: 'self_arranged_late_alert', when: 'Within a minute, if the sub was named less than (deadline + 1) hours before the match', to: 'Admin report addresses', setting: 'Admin report emails' },
       { name: 'Sub found / your sub is confirmed', category: 'sub_filled, sub_filled_original', when: 'When the named sub (or anyone) takes the spot', to: 'As in Request a Sub', setting: '—' },
+      { name: 'Still open alerts', category: 'sub_still_open, sub_still_open_admin', when: 'As in Request a Sub, but only after the spot has opened up. If it opens up at or after the alert time, only the admins get one (the player was just told).', to: 'The player and admin report addresses', setting: 'Sub still open alert hours' },
     ],
   },
   {

@@ -145,6 +145,7 @@
             <% if (e.type === 'reminder') { %>Reminder email
             <% } else if (e.type === 'followup') { %>Follow-up nudge <span class="muted">(as of now)</span>
             <% } else if (e.type === 'escalation') { %>Sub escalation <span class="muted">(as of now)</span>
+            <% } else if (e.type === 'still_open') { %>Sub still open alert <span class="muted">(as of now)</span>
             <% } else if (e.type === 'lock') { %>Week locks
             <% } %>
             <% if (e.suspension) { %><br><span class="badge needs_sub">suspended</span><% } %>

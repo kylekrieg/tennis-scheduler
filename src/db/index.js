@@ -526,6 +526,9 @@ ensureColumn('sub_requests', 'self_arranged_reminder_sent_at', 'TEXT');
 ensureColumn('sub_requests', 'self_arranged_warning_sent_at', 'TEXT');
 ensureColumn('sub_requests', 'self_arranged_late_alert_sent_at', 'TEXT');
 ensureColumn('sub_offers', 'nudge_token', 'TEXT');
+// "Still open" sub alert (Kyle, 2026-09-30) — see subFlow.js's processStillOpenSubs().
+ensureColumn('sessions', 'still_open_alert_hours', 'INTEGER NOT NULL DEFAULT 4');
+ensureColumn('sub_requests', 'still_open_alert_sent_at', 'TEXT');
 
 // Ball duty games-won reminder (Kyle, 2026-09-15) — see schema.sql's comment
 // on this column and cron.js's processScoreReminders(). Defaults to 24,

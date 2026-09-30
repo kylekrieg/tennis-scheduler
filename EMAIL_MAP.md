@@ -13,6 +13,7 @@ Every email the app sends: when it goes out, who gets it, and which setting cont
 | Wednesday, 9:30 AM | Admin status report (8h before) | The session's admin report addresses |
 | Wednesday, 12:30 PM | "I found a sub" warning (5h before) | The player who named a sub that hasn't confirmed; the sub gets a last call |
 | Wednesday, 1:30 PM | "I found a sub" opens up (4h before) | Roster + sub list, if the named sub still hasn't confirmed |
+| Wednesday, 1:30 PM | Sub still open alert (4h before) | The player who asked + admin report addresses, if a sub request still isn't taken |
 | Wednesday, 5:30 PM | Match starts: week locks | No email. Every link for that week stops working; open swaps expire; still-open sub requests are flagged unfilled |
 | Thursday, 5:30 PM | Scores reminder (24h after) | That week's ball-duty player, if any scores are missing |
 
@@ -38,6 +39,8 @@ Players who have that date blacked out are never asked. Anyone already in that w
 | Sub still needed (sub list) | escalation_lead_hours before the match (default 24), if nobody has taken it. Right away if the request comes in later than that. | This session's sub list (Manage subs) | Escalate to broader sub list hours; Status page Suspend | `escalation` |
 | Sub found | When someone takes the spot | Everyone playing that week, including the sub | — | `sub_filled` |
 | Your sub is confirmed | Same time | The player who needed the sub | — | `sub_filled_original` |
+| Your spot still needs a sub | still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request. | The player who needed the sub | Sub still open alert hours | `sub_still_open` |
+| Sub still needed (admin) | Same time | Admin report addresses | Admin report emails | `sub_still_open_admin` |
 
 ## I Found a Sub
 
@@ -55,6 +58,7 @@ Nobody else is asked while the named sub has time to answer; the normal escalati
 | Your spot is open to other players | Same time | The player | — | `self_arranged_escalated` |
 | Late "I found a sub" | Within a minute, if the sub was named less than (deadline + 1) hours before the match | Admin report addresses | Admin report emails | `self_arranged_late_alert` |
 | Sub found / your sub is confirmed | When the named sub (or anyone) takes the spot | As in Request a Sub | — | `sub_filled, sub_filled_original` |
+| Still open alerts | As in Request a Sub, but only after the spot has opened up. If it opens up at or after the alert time, only the admins get one (the player was just told). | The player and admin report addresses | Sub still open alert hours | `sub_still_open, sub_still_open_admin` |
 
 ## Swap a Week
 

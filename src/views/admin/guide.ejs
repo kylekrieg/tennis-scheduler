@@ -171,7 +171,7 @@
       <div class="flow-branch-label">From the Request a Sub page</div>
       <div class="flow-step">
         <div class="flow-title">Picks their week (no link yet)</div>
-        <div class="flow-detail">They get an email to confirm it's them first. Nobody else is emailed until they click the link. Since this page has no login, that protects against bots and mis-clicks. Once the request goes out, their confirmation email tells them who was asked, when it escalates and to whom (24 hours by default, set per session; see below), and to contact you if nobody has confirmed by match time. That way they know where things stand and don't start texting people who were already emailed.</div>
+        <div class="flow-detail">They get an email to confirm it's them first. Nobody else is emailed until they click the link. Since this page has no login, that protects against bots and mis-clicks. Once the request goes out, their confirmation email tells them who was asked, when it escalates and to whom (24 hours by default, set per session; see below), and that they (and you) will get an email if nobody has taken it 4 hours before the match. That way they know where things stand and don't start texting people who were already emailed.</div>
       </div>
     </div>
     <div class="flow-branch">
@@ -207,7 +207,7 @@
       <div class="flow-step">
         <div class="flow-when">24 hours before the match (set per session on the Edit page)</div>
         <div class="flow-title">Goes to this session's sub list</div>
-        <div class="flow-detail">Only the subs checked for this session on Manage subs get emailed. If nobody's checked, it goes straight to unfilled and no email is sent.</div>
+        <div class="flow-detail">Only the subs checked for this session on Manage subs get emailed. If nobody's checked (or everyone checked is blacked out) and no roster links are still out, it goes straight to unfilled, and the player and your admin report address get the "still open" email right away.</div>
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-branches">
@@ -220,6 +220,12 @@
         </div>
         <div class="flow-branch">
           <div class="flow-branch-label">Still nobody</div>
+          <div class="flow-arrow">&#8595;</div>
+          <div class="flow-step urgent">
+            <div class="flow-when">4 hours before the match (set per session: "Sub still open")</div>
+            <div class="flow-title">"Still open" email</div>
+            <div class="flow-detail">One email to the player who asked (contact an admin for help) and one to your admin report address. Nobody else in that week is emailed. Links already sent keep working.</div>
+          </div>
           <div class="flow-arrow">&#8595;</div>
           <div class="flow-step urgent">
             <div class="flow-when">Match time arrives</div>

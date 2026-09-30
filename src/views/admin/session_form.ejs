@@ -113,6 +113,10 @@
     <input type="number" name="self_arranged_deadline_hours" id="self_arranged_deadline_hours" value="<%= session ? session.self_arranged_deadline_hours : 4 %>" min="1">
     <p class="muted">When a player names their own sub, nothing goes to anyone else while that sub has time to confirm (the escalation time above doesn't apply). If the sub hasn't confirmed, both get a reminder after the first number of hours, the player gets a warning 1 hour before the deadline, and at the deadline the spot opens up to the roster and sub list. A sub named less than (deadline + 1) hours before the match gets no automatic follow-up; the admin status report address is emailed instead. Both default to 4.</p>
 
+    <label for="still_open_alert_hours">Sub still open — alert this many hours before match time</label>
+    <input type="number" name="still_open_alert_hours" id="still_open_alert_hours" value="<%= session ? session.still_open_alert_hours : 4 %>" min="1">
+    <p class="muted">If a sub request still hasn't been taken this many hours before the match, the player who asked and the admin status report address each get one email saying so. It also goes out right away if there's nobody left to ask (no sub list, or everyone on it is blacked out). Defaults to 4.</p>
+
     <label for="players_per_week">Players per week</label>
     <input type="number" name="players_per_week" id="players_per_week" value="<%= session ? session.players_per_week : 4 %>" min="4" step="4">
     <p class="muted">Must be a multiple of 4 — one doubles court is 4 players. 8 for 2 courts running at once, 12 for 3, and so on.</p>

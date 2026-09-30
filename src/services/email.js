@@ -663,7 +663,7 @@ async function sendSubRequestOwnConfirmation({ player, week, session, candidates
         // roster, before this confirmation went out.
         ? `<li><strong>Also right now:</strong> since the match is within ${escalationHoursPhrase(session)}, it also went out to this session's sub list: ${escalatedTo.map((s) => fullName(s)).join(', ')}.</li>`
         : `<li><strong>If no one responds within ${escalationHoursPhrase(session)} of the match:</strong> ${subListNames ? `it automatically goes out to this session's sub list: ${subListNames}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>`}
-      <li><strong>If no one has confirmed by match time:</strong> please contact your admin for help finding a replacement.</li>
+      <li><strong>If no one has taken it ${session.still_open_alert_hours || 4} hours before the match</strong> (or there's nobody left to ask): you'll get an email saying so, and your admin is told too. Contact your admin for help finding a replacement.</li>
     </ul>
     <p>You'll get a separate email the moment someone actually confirms — no need to keep checking.</p>
     <p><strong>Didn't request this yourself?</strong> Reach out right away so it can be sorted out before someone else claims the slot.</p>
@@ -963,6 +963,54 @@ async function sendSelfArrangedLateAlert({ session, week, requesterName, subName
     <p>If you hear from either of them, you can confirm ${subName} from the session page ("Confirm ${subName} is playing"), or use Reassign.</p>
   `;
   return sendMail({ to, subject, html, category: 'self_arranged_late_alert', relatedWeekId: week.id, session, threadKey, test });
+}
+
+/**
+ * "Still open" alert to the player who asked for a sub (Kyle, 2026-09-30).
+ * Sent once: at still_open_alert_hours before the match if nobody has taken
+ * the spot, or right away if there's nobody left to ask. See subFlow.js's
+ * sendStillOpenAlert(). Lists the admin report addresses as who to contact
+ * when the session has any.
+ */
+async function sendSubStillOpen({ player, week, session, reason = 'deadline', threadKey = null, test = false }) {
+  const admins = (session.admin_report_emails || '').split(',').map((a) => a.trim()).filter(Boolean);
+  const contact = admins.length
+    ? `Please contact your admin (${admins.map((a) => `<a href="mailto:${escapeHtml(a)}">${escapeHtml(a)}</a>`).join(', ')}) for help finding someone.`
+    : 'Please contact your admin for help finding someone.';
+  const why =
+    reason === 'nobody_left'
+      ? 'Everyone the app could ask has been asked, and nobody has taken your spot.'
+      : `Nobody has taken your spot yet, and the match is less than ${session.still_open_alert_hours} hour${session.still_open_alert_hours === 1 ? '' : 's'} away.`;
+  const subject = `Your spot still needs a sub — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${escapeHtml(fullName(player))},</p>
+    <p>${why} ${contact}</p>
+    <p>Any sub links already sent still work, so if someone takes the spot you'll get an email right away.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'sub_still_open', relatedWeekId: week.id, session, threadKey, test });
+}
+
+/** Admin copy of the "still open" alert, to admin_report_emails. Nothing
+ * configured = no email (the Activity Log entry is still written). */
+async function sendSubStillOpenAdmin({ session, week, playerName, reason = 'deadline', asked = 0, pending = 0, threadKey = null, test = false }) {
+  const to = (session.admin_report_emails || '').trim();
+  if (!to) return true;
+  const sessionUrl = `${siteUrl()}/admin/sessions/${session.id}`;
+  const why =
+    reason === 'nobody_left'
+      ? 'There is nobody left for the app to ask (the sub list is empty, or everyone on it is blacked out or already playing that week).'
+      : `The match is less than ${session.still_open_alert_hours} hour${session.still_open_alert_hours === 1 ? '' : 's'} away.`;
+  const subject = `Sub still needed: ${playerName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Nobody has taken <strong>${escapeHtml(playerName)}</strong>'s spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} in ${escapeHtml(sessionFullTitle(session))}. ${why}</p>
+    <p>${asked} ${asked === 1 ? 'person has' : 'people have'} been asked; ${pending} of those links ${pending === 1 ? 'is' : 'are'} still open. ${escapeHtml(playerName)} has been told to contact you.</p>
+    <p><a href="${sessionUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Open the session</a></p>
+    <p style="color:#888;">From the session page you can Reassign the spot to someone you find, or add a one-time sub.</p>
+  `;
+  return sendMail({ to, subject, html, category: 'sub_still_open_admin', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -1424,6 +1472,8 @@ module.exports = {
   sendSelfArrangedSubNudge,
   sendSelfArrangedRequesterUpdate,
   sendSelfArrangedLateAlert,
+  sendSubStillOpen,
+  sendSubStillOpenAdmin,
   sendNewSubListEntryAlert,
   sendFoundSubVerification,
   sendPersonalEventsLink,

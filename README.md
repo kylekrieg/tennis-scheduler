@@ -226,11 +226,13 @@ flowchart TD
     G -->|Not yet| I["24 hours before match:<br/>goes to the session's sub list"]
     I --> J{"Sub list claims it?"}
     J -->|Yes| H
-    J -->|Still no one| K["Match time arrives:<br/>marked unfilled, flagged for the admin"]
+    J -->|Still no one| S["4 hours before match (or right away if<br/>nobody is left to ask): 'still open' email<br/>to the player and the admin"]
+    S --> K["Match time arrives:<br/>marked unfilled, flagged for the admin"]
 
     style H fill:#dcfce7,stroke:#16a34a
     style K fill:#fee2e2,stroke:#dc2626
     style I fill:#fef3c7,stroke:#d97706
+    style S fill:#fef3c7,stroke:#d97706
 ```
 
 *An admin can step in at any point: reassign the spot, mark the original player confirmed after all, or cancel the request, which puts the player back to "scheduled."*

@@ -65,7 +65,7 @@ function getWeekWithSession(weekId) {
       // already has a week-with-session row on hand can check the season-lock
       // gate below without a second query — see createSubRequest()/
       // adminFlagNeedsSub()/arrangeSelfSub()'s "not_locked" checks.
-      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours, s.self_arranged_reminder_hours, s.self_arranged_deadline_hours, s.schedule_locked_at
+      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours, s.self_arranged_reminder_hours, s.self_arranged_deadline_hours, s.still_open_alert_hours, s.schedule_locked_at
        FROM weeks w JOIN sessions s ON s.id = w.session_id WHERE w.id = ?`
     )
     .get(weekId);
@@ -1156,6 +1156,16 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
 
   if (sessionSubs.length === 0) {
     db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
+    // Nobody left to ask (Kyle, 2026-09-30): no sub list, or everyone on it
+    // is blacked out / already in this week, and nobody from the roster is
+    // still holding a link. Tell the player and admins now instead of
+    // waiting for the 4-hour "still open" alert.
+    const pending = db.prepare("SELECT COUNT(*) AS n FROM sub_offers WHERE sub_request_id = ? AND status = 'pending'").get(req.id).n;
+    if (pending === 0) {
+      // A self-arranged request's player is told in the "your spot is open"
+      // email that goes right after this, so only the admins get this one.
+      await sendStillOpenAlert(req.id, { reason: 'nobody_left', adminsOnly: !!req.self_arranged });
+    }
     return { result: 'unfilled', emailed: [] };
   }
 
@@ -1358,6 +1368,110 @@ async function adminConfirmSelfArrangedSub(subRequestId) {
   return { ...result, subName: named.name };
 }
 
+/**
+ * "Still open" alert (Kyle, 2026-09-30): "If nobody from that session's
+ * roster nor the broader sub list says they can sub, is there any email ...
+ * back to the original player?" There wasn't. Now one email goes to the
+ * requesting player and one to the session's admin_report_emails, once per
+ * request (sub_requests.still_open_alert_sent_at):
+ *
+ *   - at session.still_open_alert_hours before the match (default 4), if
+ *     the spot still isn't taken (processStillOpenSubs, every cron tick), or
+ *   - right away when nobody is left to ask (escalateOneRequest finds no
+ *     one on the sub list and no roster links are still out).
+ *
+ * `adminsOnly` skips the player's copy when they were just told the same
+ * thing by another email (an "I found a sub" request opening up).
+ * Deliberately no email to the rest of that week's players (Kyle).
+ */
+async function sendStillOpenAlert(subRequestId, { reason = 'deadline', adminsOnly = false } = {}) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  if (!sr || sr.still_open_alert_sent_at) return false;
+  if (!['open', 'escalated', 'unfilled'].includes(sr.status)) return false;
+  db.prepare("UPDATE sub_requests SET still_open_alert_sent_at = datetime('now') WHERE id = ?").run(sr.id);
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(sr.week_assignment_id);
+  const week = getWeekWithSession(assignment.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(sr.requesting_player_id || assignment.player_id);
+  const counts = db
+    .prepare(
+      `SELECT COUNT(*) AS asked, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+       FROM sub_offers WHERE sub_request_id = ?`
+    )
+    .get(sr.id);
+  const threadKey = subThreadKey(sr.id);
+  if (!adminsOnly && player) {
+    await email.sendSubStillOpen({ player, week, session, reason, threadKey });
+  }
+  await email.sendSubStillOpenAdmin({
+    session,
+    week,
+    playerName: player ? fullName(player) : 'A player',
+    reason,
+    asked: counts.asked || 0,
+    pending: counts.pending || 0,
+    threadKey,
+  });
+  const { logSystemActivity } = require('./activityLog');
+  logSystemActivity({
+    action: 'sub.still_open',
+    description: `Sub still needed for ${player ? fullName(player) : 'a player'}'s ${week.match_date} spot — ${
+      reason === 'nobody_left' ? 'nobody left to ask' : `${session.still_open_alert_hours}h before the match`
+    }; alerted ${adminsOnly ? 'admins' : 'the player and admins'} (${counts.asked || 0} asked, ${counts.pending || 0} links still open)`,
+    sessionId: session.id,
+  });
+  return true;
+}
+
+/** Cron pass: the timed half of the "still open" alert. See sendStillOpenAlert(). */
+async function processStillOpenSubs(now = new Date()) {
+  const rows = db
+    .prepare(
+      `SELECT sr.id FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN sessions s ON s.id = w.session_id
+       WHERE sr.status IN ('open', 'escalated', 'unfilled') AND sr.still_open_alert_sent_at IS NULL
+         AND s.archived_at IS NULL AND w.locked = 0`
+    )
+    .all();
+  let sent = 0;
+  for (const { id } of rows) {
+    try {
+      const did = await withSubRequestLock(id, () => stillOpenStep(id, now));
+      if (did) sent++;
+    } catch (err) {
+      console.error(`[cron] still-open alert for sub request ${id} failed:`, err);
+    }
+  }
+  return sent;
+}
+
+async function stillOpenStep(subRequestId, now) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  if (!sr || sr.still_open_alert_sent_at || !['open', 'escalated', 'unfilled'].includes(sr.status)) return false;
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(sr.week_assignment_id);
+  const week = getWeekWithSession(assignment.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const matchAt = zonedTimeToUtc(week.match_date, session.match_time, getTimezone());
+  const alertAt = new Date(matchAt.getTime() - (session.still_open_alert_hours || 4) * HOUR_MS);
+  if (now < alertAt || now >= matchAt) return false;
+  let adminsOnly = false;
+  if (sr.self_arranged) {
+    const t = selfArrangedTimeline(sr, week, session);
+    // Named too close to the match: admins already got the late alert.
+    if (t.late) return false;
+    // Still inside the named sub's window: it has its own warning and
+    // opens up at its deadline; this alert waits until after that.
+    if (sr.status === 'open') return false;
+    // If it opened up at or after the alert time, the player just got the
+    // "your spot is open to other players" email — only tell the admins.
+    const openedAt = sr.escalated_at ? new Date(String(sr.escalated_at).replace(' ', 'T') + 'Z') : now;
+    adminsOnly = openedAt.getTime() >= alertAt.getTime() - 5 * 60 * 1000;
+  }
+  return sendStillOpenAlert(sr.id, { reason: 'deadline', adminsOnly });
+}
+
 /** A second pass: once match time has actually arrived and an escalated
  * request still isn't filled, flag it for the admin dashboard rather than
  * leaving it silently "escalated" forever. Same timezone-aware comparison as
@@ -1468,6 +1582,10 @@ function adoptPendingSubThread(weekAssignmentId, subRequestId) {
 }
 
 module.exports = {
+  processStillOpenSubs,
+  escalateOneRequest,
+  stillOpenStep,
+  sendStillOpenAlert,
   processSelfArrangedSubs,
   stepSelfArrangedRequest,
   selfArrangedTimeline,

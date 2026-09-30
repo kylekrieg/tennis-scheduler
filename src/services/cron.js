@@ -478,6 +478,9 @@ async function processEscalations() {
   // (Kyle, 2026-09-30). Separate from escalateOverdueRequests(), which
   // skips self-arranged requests.
   await subFlow.processSelfArrangedSubs();
+  // "Still open" alert, after the self-arranged pass so a spot that just
+  // opened up this tick only alerts the admins (Kyle, 2026-09-30).
+  await subFlow.processStillOpenSubs();
   subFlow.flagStillUnfilled();
   // Direct-swap equivalent (Kyle, 2026-08-11): a pending swap otherwise has
   // no timeout at all — see swapFlow.js's nudgeOverdueSwaps()/

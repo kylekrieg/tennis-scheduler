@@ -396,6 +396,41 @@ function getUpcomingActions(days = 21) {
         }
       }
 
+      // "Still open" alert (Kyle, 2026-09-30) — mirrors subFlow.stillOpenStep():
+      // any request not yet alerted, at still_open_alert_hours before the match.
+      // Self-arranged ones still inside their named-sub window, or named too
+      // late, don't get one. Not suspendable.
+      const stillOpen = db
+        .prepare(
+          `SELECT sr.*, COALESCE(p.full_name, p.name) AS original_player_name FROM sub_requests sr
+           JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+           JOIN players p ON p.id = wa.player_id
+           WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated', 'unfilled') AND sr.still_open_alert_sent_at IS NULL`
+        )
+        .all(week.id)
+        .filter((r) => {
+          if (!r.self_arranged) return true;
+          const t = require('./subFlow').selfArrangedTimeline(r, week, session);
+          return !t.late;
+        });
+      if (stillOpen.length) {
+        const alertAt = new Date(matchAt.getTime() - (session.still_open_alert_hours || 4) * 60 * 60 * 1000);
+        const alertLocal = utcToZonedParts(alertAt, tz);
+        if (alertAt <= windowEnd) {
+          events.push({
+            type: 'still_open',
+            at: alertAt,
+            atDate: alertLocal.date,
+            atTime: alertLocal.time,
+            overdue: alertAt < now,
+            speculative: true,
+            session,
+            week,
+            recipients: stillOpen.map((r) => `if ${r.original_player_name}'s spot is still open → ${r.original_player_name} + admin report address`),
+          });
+        }
+      }
+
       // Week locking — deterministic, not speculative. A week showing up
       // here with `overdue: true` (match time already passed, still
       // unlocked) is a real, concrete signal the cron loop isn't running.
