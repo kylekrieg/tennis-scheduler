@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   admin_report_emails      TEXT,    -- regular sessions only: comma-separated admin address(es) that get a pre-match status report for each week (who's confirmed/unconfirmed/needs a sub/subbed out/swapped). NULL/blank = feature off for this session. See "Admin pre-match status report" in CLAUDE.md.
   admin_report_lead_hours  INTEGER NOT NULL DEFAULT 8, -- hours before match_time the status report above goes out
   escalation_lead_hours    INTEGER NOT NULL DEFAULT 24, -- hours before match_time an unfilled sub request escalates from the original 5-player roster fan-out to this session's broader sub list (session_sub_list) — see subFlow.js's escalateOverdueRequests(). Was hardcoded at 24 for every session until Kyle asked (2026-09-08) whether it was per-session configurable.
+  self_arranged_reminder_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours after a player names their own sub before both of them get a "please confirm" reminder, if the named sub still hasn't confirmed. See subFlow.js's processSelfArrangedSubs().
+  self_arranged_deadline_hours INTEGER NOT NULL DEFAULT 4, -- "I found a sub" (Kyle, 2026-09-30): hours before match_time an unconfirmed self-arranged sub gets opened to the roster + sub list. The requester gets a warning 1 hour before this. Self-arranged requests never use escalation_lead_hours.
   weather_enabled     INTEGER NOT NULL DEFAULT 0, -- per-session opt-in (Kyle, 2026-09-05) for the weather forecast widget/email block — off by default so an existing session doesn't suddenly start showing/emailing weather with no location configured. See "Weather forecast" in CLAUDE.md and src/services/weather.js.
   weather_lat         REAL,    -- per-session (not global) location for the forecast lookup — matches club_name/court_info's existing per-session pattern, since different sessions can be at different clubs. NULL = not configured; weather.js's cron pass skips a session until both lat and lon are set even if weather_enabled is on.
   weather_lon         REAL,
@@ -304,6 +306,9 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   initiated_by          TEXT NOT NULL DEFAULT 'player', -- 'player' | 'admin' — see subFlow.js's adminFlagNeedsSub()
   fanout_sent_at        TEXT, -- NULL until the candidate roster has actually been emailed. Self-service requests set this immediately (see fanOutSubRequest()); an admin-flagged request leaves it NULL until cron.js's processReminders() reaches that week's normal reminder time, so the flag itself never emails anyone by surprise.
   requesting_player_id  INTEGER REFERENCES players(id), -- snapshot of who was on the assignment at request-creation time, same "capture identity before it can drift" reasoning as swap_requests.initiator_player_id. Without this, the Stats page's Sub History table would resolve "who this was about" via the assignment's *current* player_id, which silently relabels old history under a new name once that slot is later reassigned/swapped.
+  self_arranged_reminder_sent_at TEXT, -- "I found a sub" follow-up timestamps (Kyle, 2026-09-30) — see processSelfArrangedSubs(). Each is set once so the step never repeats.
+  self_arranged_warning_sent_at  TEXT,
+  self_arranged_late_alert_sent_at TEXT,
   self_arranged         INTEGER NOT NULL DEFAULT 0 -- set only by arrangeSelfSub() ("I found a sub" — one specific named candidate), never by createSubRequest()'s normal fan-out or adminFlagNeedsSub(). Lets the Activity Log's Player Behavior stats (Kyle, 2026-09-15) count "found their own sub" separately from "waited on the app's fan-out" without re-deriving it from sub_offers row counts, which stops being reliable once a self-arranged request later escalates (it can gain more offers, same as any other still-open request — see arrangeSelfSub()'s doc comment).
 );
 
@@ -315,6 +320,7 @@ CREATE TABLE IF NOT EXISTS sub_offers (
   token                 TEXT UNIQUE NOT NULL, -- SHA-256 hash of the raw token
   status                TEXT NOT NULL DEFAULT 'pending', -- pending | claimed | closed
   responded_at          TEXT,
+  nudge_token           TEXT, -- hashed second claim link (Kyle, 2026-09-30), minted by the "I found a sub" reminder/warning emails; claimSub() accepts either this or `token`, so the original invite link keeps working.
   source                TEXT, -- 'roster' (initial fan-out) | 'self_arranged' (arrangeSelfSub's one invite) | 'escalation' (sent to the sub list). NULL on offers from before 2026-09-28; claimSub() infers those. Drives the sub.claim / sub.self_arranged_confirm / sub.claim_escalated activity-log split.
   was_new_person        INTEGER NOT NULL DEFAULT 0 -- set only on the one offer arrangeSelfSub() creates for a genuinely-new person (selection.newPerson, matched against neither `players` nor `broader_sub_list` by email — see that function's "isNewPerson" branch and the resulting sub.self_arranged_new_person activity-log entry). Every other offer (the normal roster fan-out, an escalation to the broader list, or a self-arranged pick of someone already known) leaves this 0. Lets the Player Behavior stats (Kyle, 2026-09-15) bucket a filled sub_request's winning offer as "roster" / "broader sub list" / "unknown player" without guessing from timestamps.
 );

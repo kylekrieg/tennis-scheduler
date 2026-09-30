@@ -65,7 +65,7 @@ function getWeekWithSession(weekId) {
       // already has a week-with-session row on hand can check the season-lock
       // gate below without a second query — see createSubRequest()/
       // adminFlagNeedsSub()/arrangeSelfSub()'s "not_locked" checks.
-      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours, s.schedule_locked_at
+      `SELECT w.*, s.match_time, s.name as session_name, s.id as session_id, s.escalation_lead_hours, s.self_arranged_reminder_hours, s.self_arranged_deadline_hours, s.schedule_locked_at
        FROM weeks w JOIN sessions s ON s.id = w.session_id WHERE w.id = ?`
     )
     .get(weekId);
@@ -133,7 +133,10 @@ function eligibleSelfArrangedCandidates(weekId) {
 
   const alreadyPlaying = new Set(
     db
-      .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ? AND status != 'subbed_out'`)
+      // Any row this week, including 'subbed_out' (Kyle, 2026-09-30): a
+      // player who gave up their own spot can't take another spot the same
+      // week — week_assignments is UNIQUE(week_id, player_id).
+      .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ?`)
       .all(weekId)
       .map((r) => r.player_id)
   );
@@ -288,8 +291,9 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
   const week = getWeekWithSession(assignment.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
 
+  // Any row this week, subbed_out included — see eligibleSelfArrangedCandidates().
   const alreadyPlaying = db
-    .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ? AND status != 'subbed_out'`)
+    .prepare(`SELECT player_id FROM week_assignments WHERE week_id = ?`)
     .all(week.id)
     .map((r) => r.player_id);
 
@@ -319,7 +323,13 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
   );
   for (const key of carriedOverBlackoutsForSession(week.session_id).keys()) blackoutSet.add(key);
 
-  const candidates = allCandidates.filter((c) => !blackoutSet.has(`${c.id}|${week.match_date}`));
+  // Skip anyone who already has an offer on this request — e.g. the named
+  // sub on an "I found a sub" request that later opens up to the roster
+  // (Kyle, 2026-09-30): their original invite link is still live.
+  const alreadyOffered = new Set(
+    db.prepare('SELECT candidate_player_id FROM sub_offers WHERE sub_request_id = ? AND candidate_player_id IS NOT NULL').all(subRequestId).map((r) => r.candidate_player_id)
+  );
+  const candidates = allCandidates.filter((c) => !blackoutSet.has(`${c.id}|${week.match_date}`) && !alreadyOffered.has(c.id));
 
   const offers = db.transaction(() => {
     db.prepare(`UPDATE sub_requests SET fanout_sent_at = datetime('now') WHERE id = ?`).run(subRequestId);
@@ -571,8 +581,20 @@ function offerSource(offer, subRequest) {
 
 async function claimSub(rawToken) {
   const hashed = hashToken(rawToken);
-  const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ?').get(hashed);
+  // Either the offer's original link or its nudge link (the "I found a sub"
+  // reminder/warning emails mint a second one — Kyle, 2026-09-30).
+  const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ? OR nudge_token = ?').get(hashed, hashed);
   if (!offer) return { ok: false, reason: 'invalid' };
+  return claimOffer(offer);
+}
+
+/**
+ * The actual claim, shared by claimSub() (the sub clicking their link) and
+ * adminConfirmSelfArrangedSub() (an admin confirming on the named sub's
+ * behalf — Kyle, 2026-09-30). `byAdmin` skips the player-self-service
+ * activity-log entry; the admin route logs its own.
+ */
+async function claimOffer(offer, { byAdmin = false } = {}) {
   if (offer.status !== 'pending') return { ok: false, reason: 'already_claimed' };
 
   const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
@@ -636,6 +658,16 @@ async function claimSub(rawToken) {
     subPlayer = existing;
   }
 
+  // Already has a row this week — playing another spot, or gave their own
+  // spot up (Kyle, 2026-09-30). week_assignments is UNIQUE(week_id,
+  // player_id), so this used to crash with a 500. Refuse cleanly instead.
+  const existingRow = db
+    .prepare('SELECT status FROM week_assignments WHERE week_id = ? AND player_id = ?')
+    .get(originalAssignment.week_id, subPlayer.id);
+  if (existingRow) {
+    return { ok: false, reason: existingRow.status === 'subbed_out' ? 'gave_up_spot' : 'already_playing' };
+  }
+
   db.transaction(() => {
     db.prepare("UPDATE sub_offers SET status = 'claimed', responded_at = datetime('now') WHERE id = ?").run(offer.id);
     db.prepare(
@@ -672,7 +704,7 @@ async function claimSub(rawToken) {
     escalation: { action: 'sub.claim_escalated', description: `${subName} (from the sub list) confirmed they're subbing for ${origName} on ${week.match_date}` },
     roster: { action: 'sub.claim', description: `${subName} confirmed they're subbing for ${origName} on ${week.match_date}` },
   }[source];
-  logPlayerActivity({ playerName: subName, action: claimLog.action, description: claimLog.description, sessionId: session.id });
+  if (!byAdmin) logPlayerActivity({ playerName: subName, action: claimLog.action, description: claimLog.description, sessionId: session.id });
 
   // Notify that week's full group of 4 (other 3 originals + the new sub)
   const groupRows = db
@@ -895,8 +927,12 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
 
   // Ordered (Kyle, 2026-09-29): the invite to the named sub and the admin
   // alert go out first, the requester's own confirmation last.
+  // The follow-up timeline (reminder / warning / open-up times) the
+  // confirmation and invite spell out — Kyle, 2026-09-30.
+  const timeline = selfArrangedTimeline(db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId), week, session);
   await withSubRequestLock(subRequestId, async () => {
     await email.sendSelfArrangedSubInvite({
+      deadlineAt: timeline.late ? null : timeline.deadlineAt,
       recipient: candidate,
       week,
       session,
@@ -914,7 +950,7 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
         threadKey: subThreadKey(subRequestId),
       });
     }
-    await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName, threadKey: subThreadKey(subRequestId) });
+    await email.sendSelfArrangedSubConfirmation({ player, week, session, subName: candidate.fullName, timeline, threadKey: subThreadKey(subRequestId) });
   });
 
   return { ok: true, week, session, candidate, isNewPerson, subRequestId };
@@ -1066,6 +1102,11 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
   const week = getWeekWithSession(req.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+  // "I found a sub" requests have their own timeline (Kyle, 2026-09-30):
+  // they never escalate on escalation_lead_hours — processSelfArrangedSubs()
+  // opens them up at session.self_arranged_deadline_hours instead, calling
+  // this with onlyIfDue: false.
+  if (onlyIfDue && req.self_arranged) return { result: 'not_due', emailed: [] };
   const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
   if (onlyIfDue && now < escalateAt) return { result: 'not_due', emailed: [] };
 
@@ -1102,6 +1143,16 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
     db.prepare('SELECT DISTINCT player_id FROM blackout_dates WHERE date = ?').all(week.match_date).map((r) => r.player_id)
   );
   sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !blackedOutPlayerIds.has(s.id));
+  // A sub-list player who already has a row this week (playing, or gave
+  // their own spot up) can't take this one — UNIQUE(week_id, player_id).
+  const inWeek = new Set(db.prepare('SELECT player_id FROM week_assignments WHERE week_id = ?').all(week.id).map((r) => r.player_id));
+  sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !inWeek.has(s.id));
+  // Skip anyone already offered this spot (the named sub on an "I found a
+  // sub" request, or a roster player from the fan-out) — Kyle, 2026-09-30.
+  const priorOffers = db.prepare('SELECT candidate_player_id, broader_list_id FROM sub_offers WHERE sub_request_id = ?').all(req.id);
+  const offeredPlayers = new Set(priorOffers.filter((o) => o.candidate_player_id).map((o) => o.candidate_player_id));
+  const offeredBroader = new Set(priorOffers.filter((o) => o.broader_list_id).map((o) => o.broader_list_id));
+  sessionSubs = sessionSubs.filter((c) => (c.candidateType === 'player' ? !offeredPlayers.has(c.id) : !offeredBroader.has(c.id)));
 
   if (sessionSubs.length === 0) {
     db.prepare("UPDATE sub_requests SET status = 'unfilled' WHERE id = ?").run(req.id);
@@ -1129,6 +1180,182 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
     emailed.push(candidate);
   }
   return { result: 'escalated', emailed };
+}
+
+/**
+ * "I found a sub" follow-up timeline (Kyle, 2026-09-30). Worked out from
+ * when the sub was arranged (sub_requests.created_at, UTC) and the
+ * session's two settings:
+ *
+ *   deadlineAt = match time − self_arranged_deadline_hours (default 4).
+ *                If the named sub still hasn't confirmed, the spot opens to
+ *                the roster and the sub list here.
+ *   warnAt     = deadlineAt − 1 hour. The requester gets "this opens up at
+ *                <deadline> unless <sub> confirms or you contact an admin",
+ *                and the sub gets one more nudge.
+ *   reminderAt = arrangedAt + self_arranged_reminder_hours (default 4). A
+ *                "please confirm" reminder to both. Dropped (null) when it
+ *                would land less than 15 minutes before the warning, since
+ *                the warning covers it.
+ *   late       = arranged at or after warnAt (i.e. less than deadline + 1
+ *                hours before the match). Nothing automatic happens at all —
+ *                the admin gets one email and the requester's confirmation
+ *                says so. A sub arranged that close to the match has almost
+ *                certainly been talked to directly.
+ *
+ * Self-arranged requests never use escalation_lead_hours (see
+ * escalateOneRequest()'s early return).
+ */
+const HOUR_MS = 60 * 60 * 1000;
+function selfArrangedTimeline(subRequest, week, session) {
+  const tz = getTimezone();
+  const arrangedAt = new Date(String(subRequest.created_at).replace(' ', 'T') + 'Z');
+  const matchAt = zonedTimeToUtc(week.match_date, session.match_time, tz);
+  const deadlineAt = new Date(matchAt.getTime() - (session.self_arranged_deadline_hours || 4) * HOUR_MS);
+  const warnAt = new Date(deadlineAt.getTime() - HOUR_MS);
+  const late = arrangedAt >= warnAt;
+  let reminderAt = new Date(arrangedAt.getTime() + (session.self_arranged_reminder_hours || 4) * HOUR_MS);
+  if (late || reminderAt.getTime() > warnAt.getTime() - 15 * 60 * 1000) reminderAt = null;
+  return { arrangedAt, matchAt, deadlineAt, warnAt, reminderAt, late };
+}
+
+/** The named sub's still-pending invite on a self-arranged request, with
+ * who they are — or null once it's been claimed/closed. */
+function pendingSelfArrangedOffer(subRequestId) {
+  const offer = db
+    .prepare(
+      `SELECT * FROM sub_offers WHERE sub_request_id = ? AND status = 'pending'
+       AND (source = 'self_arranged' OR (source IS NULL AND id = (SELECT MIN(id) FROM sub_offers WHERE sub_request_id = ?)))
+       ORDER BY id LIMIT 1`
+    )
+    .get(subRequestId, subRequestId);
+  if (!offer) return null;
+  let person;
+  if (offer.candidate_player_id) {
+    person = db.prepare('SELECT * FROM players WHERE id = ?').get(offer.candidate_player_id);
+  } else {
+    person = db.prepare('SELECT * FROM broader_sub_list WHERE id = ?').get(offer.broader_list_id);
+  }
+  if (!person) return null;
+  return { offer, person, name: fullName(person) };
+}
+
+/** Mint a second claim link for the named sub (keeps the original working). */
+function mintOfferNudgeToken(offerId) {
+  const raw = generateRawToken();
+  db.prepare('UPDATE sub_offers SET nudge_token = ? WHERE id = ?').run(hashToken(raw), offerId);
+  return raw;
+}
+
+/**
+ * Cron pass (every tick, from cron.js's processEscalations()): walks every
+ * still-open "I found a sub" request and does whichever step of
+ * selfArrangedTimeline() is due. Each step stamps its own column on
+ * sub_requests so it runs once. Runs inside withSubRequestLock() so its
+ * emails never interleave with a claim's "sub found" emails.
+ */
+async function processSelfArrangedSubs() {
+  const rows = db
+    .prepare(
+      `SELECT sr.id FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN sessions s ON s.id = w.session_id
+       WHERE sr.status = 'open' AND sr.self_arranged = 1 AND s.archived_at IS NULL AND w.locked = 0`
+    )
+    .all();
+  for (const { id } of rows) {
+    try {
+      await withSubRequestLock(id, () => stepSelfArrangedRequest(id));
+    } catch (err) {
+      console.error(`[cron] self-arranged sub request ${id} failed:`, err);
+    }
+  }
+}
+
+async function stepSelfArrangedRequest(subRequestId, now = new Date()) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  if (!sr || sr.status !== 'open' || !sr.self_arranged) return 'not_open';
+  const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(sr.week_assignment_id);
+  const week = getWeekWithSession(assignment.week_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+  const requester = db.prepare('SELECT * FROM players WHERE id = ?').get(sr.requesting_player_id || assignment.player_id);
+  const named = pendingSelfArrangedOffer(sr.id);
+  const t = selfArrangedTimeline(sr, week, session);
+  const threadKey = subThreadKey(sr.id);
+  const requesterName = fullName(requester);
+  const subName = named ? named.name : 'your sub';
+
+  if (t.late) {
+    if (!sr.self_arranged_late_alert_sent_at) {
+      db.prepare("UPDATE sub_requests SET self_arranged_late_alert_sent_at = datetime('now') WHERE id = ?").run(sr.id);
+      await email.sendSelfArrangedLateAlert({ session, week, requesterName, subName, threadKey });
+      logPlayerActivity({
+        playerName: requesterName,
+        action: 'sub.self_arranged_late',
+        description: `${requesterName} named ${subName} as their sub for ${week.match_date} less than ${session.self_arranged_deadline_hours + 1} hours before the match — no automatic follow-up; admin notified`,
+        sessionId: session.id,
+      });
+    }
+    return 'late';
+  }
+
+  if (now >= t.deadlineAt) {
+    // Admin suspended this week's escalation on the Status page — leave it
+    // open, logged once as "Suspended — did not fire" (same as any other
+    // escalation).
+    if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) return 'suspended';
+    const roster = await fanOutSubRequest(sr.id, requesterName);
+    const esc = await escalateOneRequest(sr.id, { onlyIfDue: false });
+    const emailedNames = [...roster.candidates, ...(esc.emailed || [])].map((c) => fullName(c));
+    await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'escalated', deadlineAt: t.deadlineAt, emailedNames, threadKey });
+    logPlayerActivity({
+      playerName: requesterName,
+      action: 'sub.self_arranged_escalated',
+      description: `${subName} didn't confirm the sub ${requesterName} arranged for ${week.match_date} — opened to the roster and sub list (${emailedNames.length} emailed)`,
+      sessionId: session.id,
+    });
+    return 'escalated';
+  }
+
+  if (now >= t.warnAt) {
+    if (!sr.self_arranged_warning_sent_at) {
+      db.prepare("UPDATE sub_requests SET self_arranged_warning_sent_at = datetime('now') WHERE id = ?").run(sr.id);
+      await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'warning', deadlineAt: t.deadlineAt, threadKey });
+      if (named) {
+        const raw = mintOfferNudgeToken(named.offer.id);
+        await email.sendSelfArrangedSubNudge({ recipient: named.person, week, session, claimToken: raw, requestingPlayerName: requesterName, deadlineAt: t.deadlineAt, final: true, threadKey });
+      }
+    }
+    return 'warned';
+  }
+
+  if (t.reminderAt && now >= t.reminderAt && !sr.self_arranged_reminder_sent_at) {
+    db.prepare("UPDATE sub_requests SET self_arranged_reminder_sent_at = datetime('now') WHERE id = ?").run(sr.id);
+    if (named) {
+      const raw = mintOfferNudgeToken(named.offer.id);
+      await email.sendSelfArrangedSubNudge({ recipient: named.person, week, session, claimToken: raw, requestingPlayerName: requesterName, deadlineAt: t.deadlineAt, final: false, threadKey });
+    }
+    await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'reminder', deadlineAt: t.deadlineAt, threadKey });
+    return 'reminded';
+  }
+  return 'waiting';
+}
+
+/**
+ * Admin confirms the named sub on their behalf (Kyle, 2026-09-30: "unless
+ * Kyle contacts an admin to confirm Shawn is playing"). Same claim as the
+ * sub clicking their own link — status, emails, Sub History all identical.
+ * Works while the request is open or already escalated, as long as the
+ * named sub's invite is still pending.
+ */
+async function adminConfirmSelfArrangedSub(subRequestId) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  if (!sr || !sr.self_arranged) return { ok: false, reason: 'not_self_arranged' };
+  const named = pendingSelfArrangedOffer(sr.id);
+  if (!named) return { ok: false, reason: 'no_pending_invite' };
+  const result = await claimOffer(named.offer, { byAdmin: true });
+  return { ...result, subName: named.name };
 }
 
 /** A second pass: once match time has actually arrived and an escalated
@@ -1241,6 +1468,11 @@ function adoptPendingSubThread(weekAssignmentId, subRequestId) {
 }
 
 module.exports = {
+  processSelfArrangedSubs,
+  stepSelfArrangedRequest,
+  selfArrangedTimeline,
+  pendingSelfArrangedOffer,
+  adminConfirmSelfArrangedSub,
   subThreadKey,
   pendingSubThreadKey,
   createSubRequest,

@@ -474,6 +474,10 @@ async function processScoreReminders() {
 
 async function processEscalations() {
   await subFlow.escalateOverdueRequests();
+  // "I found a sub" follow-ups: reminder, warning, then opening the spot up
+  // (Kyle, 2026-09-30). Separate from escalateOverdueRequests(), which
+  // skips self-arranged requests.
+  await subFlow.processSelfArrangedSubs();
   subFlow.flagStillUnfilled();
   // Direct-swap equivalent (Kyle, 2026-08-11): a pending swap otherwise has
   // no timeout at all — see swapFlow.js's nudgeOverdueSwaps()/

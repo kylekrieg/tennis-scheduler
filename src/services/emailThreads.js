@@ -17,8 +17,9 @@ const SUB_STAGES = [
   { key: 'request', label: 'Request', categories: ['sub_request_verification', 'found_sub_verification', 'sub_request_self_notice', 'self_arranged_sub_self_notice'] },
   { key: 'roster', label: 'Sent to the roster', categories: ['sub_request'] },
   { key: 'invite', label: 'Invite to the sub they named', categories: ['self_arranged_sub_invite'] },
-  { key: 'sublist', label: 'Escalated to the sub list', categories: ['escalation'] },
-  { key: 'admin', label: 'Admin alert', categories: ['new_sub_list_entry_alert'] },
+  { key: 'followup', label: 'Reminders & warning', categories: ['self_arranged_sub_reminder', 'self_arranged_requester_reminder', 'self_arranged_warning'] },
+  { key: 'sublist', label: 'Escalated to the sub list', categories: ['escalation', 'self_arranged_escalated'] },
+  { key: 'admin', label: 'Admin alert', categories: ['new_sub_list_entry_alert', 'self_arranged_late_alert'] },
   { key: 'confirmed', label: 'Sub confirmed', categories: ['sub_filled', 'sub_filled_original'] },
 ];
 const STAGE_BY_CATEGORY = new Map();

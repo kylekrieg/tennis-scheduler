@@ -137,6 +137,17 @@ function findSecondWeek(sessionId, excludeWeekId) {
   );
 }
 
+/** Timeline for "I found a sub" test sends: as if the sub was named 24
+ * hours before the match. */
+function testSelfArrangedTimeline(ctx) {
+  const { selfArrangedTimeline } = require('./subFlow');
+  const { zonedTimeToUtc } = require('./tz');
+  const { getTimezone } = require('./settings');
+  const matchAt = zonedTimeToUtc(ctx.week.match_date, ctx.session.match_time, getTimezone());
+  const created = new Date(matchAt.getTime() - 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  return selfArrangedTimeline({ created_at: created }, ctx.week, ctx.session);
+}
+
 const NEEDS_SESSION_WEEK = new Set([
   'sendConfirmationReminder',
   'sendFollowUpReminder',
@@ -155,6 +166,9 @@ const NEEDS_SESSION_WEEK = new Set([
   'sendFoundSubVerification',
   'sendSelfArrangedSubInvite',
   'sendSelfArrangedSubConfirmation',
+  'sendSelfArrangedSubNudge',
+  'sendSelfArrangedRequesterUpdate',
+  'sendSelfArrangedLateAlert',
   'sendNewSubListEntryAlert',
   // Ball-duty scores-still-needed reminder (Kyle, 2026-09-15) — new template,
   // needs a real week/session the same as the other per-week reminders above.
@@ -297,6 +311,77 @@ const TEMPLATES = {
       player: ctx.player,
       week: ctx.week,
       session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      timeline: testSelfArrangedTimeline(ctx),
+      test: true,
+    }),
+  },
+  // "I found a sub" follow-ups (Kyle, 2026-09-30) — see subFlow.js's
+  // stepSelfArrangedRequest(). Times are worked out as if the sub had been
+  // named 24 hours before the match.
+  self_arranged_sub_reminder: {
+    label: 'Found your own sub — reminder to the named sub',
+    fn: 'sendSelfArrangedSubNudge',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      claimToken: fakeToken(),
+      requestingPlayerName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Player',
+      deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt,
+      final: false,
+      test: true,
+    }),
+  },
+  self_arranged_sub_last_call: {
+    label: 'Found your own sub — last call to the named sub (1 hour before it opens up)',
+    fn: 'sendSelfArrangedSubNudge',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      claimToken: fakeToken(),
+      requestingPlayerName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Player',
+      deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt,
+      final: true,
+      test: true,
+    }),
+  },
+  self_arranged_requester_reminder: {
+    label: 'Found your own sub — "hasn\'t confirmed yet" to the player',
+    fn: 'sendSelfArrangedRequesterUpdate',
+    build: (ctx) => ({
+      player: ctx.player, week: ctx.week, session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      stage: 'reminder', deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt, test: true,
+    }),
+  },
+  self_arranged_warning: {
+    label: 'Found your own sub — warning before the spot opens up',
+    fn: 'sendSelfArrangedRequesterUpdate',
+    build: (ctx) => ({
+      player: ctx.player, week: ctx.week, session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      stage: 'warning', deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt, test: true,
+    }),
+  },
+  self_arranged_escalated: {
+    label: 'Found your own sub — spot opened up to other players',
+    fn: 'sendSelfArrangedRequesterUpdate',
+    build: (ctx) => ({
+      player: ctx.player, week: ctx.week, session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      stage: 'escalated', deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt,
+      emailedNames: ctx.others.slice(1).map((p) => fullName(p)), test: true,
+    }),
+  },
+  self_arranged_late_alert: {
+    // Sends to session.admin_report_emails, like new_sub_list_entry_alert.
+    label: 'Found your own sub — admin alert (named too close to match time)',
+    fn: 'sendSelfArrangedLateAlert',
+    build: (ctx) => ({
+      session: ctx.session, week: ctx.week,
+      requesterName: fullName(ctx.player),
       subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
       test: true,
     }),

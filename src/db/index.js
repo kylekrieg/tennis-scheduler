@@ -518,6 +518,14 @@ ensureColumn('sessions', 'games_won_enabled', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('sub_requests', 'self_arranged', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sub_offers', 'was_new_person', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sub_offers', 'source', 'TEXT');
+// "I found a sub" follow-up flow (Kyle, 2026-09-30) — see subFlow.js's
+// processSelfArrangedSubs(). Literal integer defaults are safe in ALTER TABLE.
+ensureColumn('sessions', 'self_arranged_reminder_hours', 'INTEGER NOT NULL DEFAULT 4');
+ensureColumn('sessions', 'self_arranged_deadline_hours', 'INTEGER NOT NULL DEFAULT 4');
+ensureColumn('sub_requests', 'self_arranged_reminder_sent_at', 'TEXT');
+ensureColumn('sub_requests', 'self_arranged_warning_sent_at', 'TEXT');
+ensureColumn('sub_requests', 'self_arranged_late_alert_sent_at', 'TEXT');
+ensureColumn('sub_offers', 'nudge_token', 'TEXT');
 
 // Ball duty games-won reminder (Kyle, 2026-09-15) — see schema.sql's comment
 // on this column and cron.js's processScoreReminders(). Defaults to 24,

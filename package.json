@@ -10,7 +10,8 @@
     "test:scheduler": "node src/scheduler/engine.test.js",
     "backup": "node src/scripts/backup-db.js",
     "backup:offsite": "node src/scripts/backup-offsite.js",
-    "reset-data": "node src/scripts/reset-data.js"
+    "reset-data": "node src/scripts/reset-data.js",
+    "email-map": "node src/scripts/write-email-map.js"
   },
   "license": "SEE LICENSE IN LICENSE",
   "author": "Kyle Krieg",

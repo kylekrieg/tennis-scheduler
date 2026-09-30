@@ -351,19 +351,35 @@ function getUpcomingActions(days = 21) {
       // escalate; if it gets filled before the deadline, it never will.
       const openRequests = db
         .prepare(
-          `SELECT sr.id, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
+          `SELECT sr.id, sr.self_arranged, sr.created_at, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
            JOIN week_assignments wa ON wa.id = sr.week_assignment_id
            JOIN players p ON p.id = wa.player_id
            WHERE wa.week_id = ? AND sr.status = 'open'`
         )
         .all(week.id);
-      if (openRequests.length > 0) {
-        // Fixed 2026-09-27: this used to preview a hard-coded "24h before
-        // match", but subFlow.escalateOverdueRequests() actually fires at
-        // match time minus session.escalation_lead_hours — mirror that
-        // exactly (same approach as the follow-up entry above), so the
-        // preview and the Suspend checkbox line up with the real firing time.
-        const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
+      // Fixed 2026-09-27: mirrors subFlow.escalateOverdueRequests() —
+      // match time minus session.escalation_lead_hours. "I found a sub"
+      // requests (Kyle, 2026-09-30) open up at their own deadline instead
+      // (subFlow.selfArrangedTimeline()), and one named too close to the
+      // match never opens up automatically, so it isn't listed.
+      const byTime = new Map();
+      for (const r of openRequests) {
+        let at;
+        let label;
+        if (r.self_arranged) {
+          const t = require('./subFlow').selfArrangedTimeline(r, week, session);
+          if (t.late) continue;
+          at = t.deadlineAt;
+          label = `"I found a sub" for ${r.original_player_name}'s slot, if still unconfirmed → roster + broader sub list`;
+        } else {
+          at = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
+          label = `sub request for ${r.original_player_name}'s slot → broader sub list`;
+        }
+        const key = at.getTime();
+        if (!byTime.has(key)) byTime.set(key, { at, recipients: [] });
+        byTime.get(key).recipients.push(label);
+      }
+      for (const { at: escalateAt, recipients } of byTime.values()) {
         const escalateLocal = utcToZonedParts(escalateAt, tz);
         if (escalateAt <= windowEnd) {
           events.push({
@@ -375,7 +391,7 @@ function getUpcomingActions(days = 21) {
             speculative: true,
             session,
             week,
-            recipients: openRequests.map((r) => `sub request for ${r.original_player_name}'s slot → broader sub list`),
+            recipients,
           });
         }
       }

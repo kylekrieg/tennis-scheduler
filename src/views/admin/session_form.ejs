@@ -107,6 +107,12 @@
     <input type="number" name="escalation_lead_hours" id="escalation_lead_hours" value="<%= session ? session.escalation_lead_hours : 24 %>" min="1">
     <p class="muted">If a sub request is still open this many hours before match time, it opens up beyond the original 5 non-playing regulars to this session's broader sub list (Admin -&gt; Sub List). Defaults to 24.</p>
 
+    <label for="self_arranged_reminder_hours">"I found a sub" — remind after this many hours</label>
+    <input type="number" name="self_arranged_reminder_hours" id="self_arranged_reminder_hours" value="<%= session ? session.self_arranged_reminder_hours : 4 %>" min="1">
+    <label for="self_arranged_deadline_hours">"I found a sub" — open the spot up this many hours before match time</label>
+    <input type="number" name="self_arranged_deadline_hours" id="self_arranged_deadline_hours" value="<%= session ? session.self_arranged_deadline_hours : 4 %>" min="1">
+    <p class="muted">When a player names their own sub, nothing goes to anyone else while that sub has time to confirm (the escalation time above doesn't apply). If the sub hasn't confirmed, both get a reminder after the first number of hours, the player gets a warning 1 hour before the deadline, and at the deadline the spot opens up to the roster and sub list. A sub named less than (deadline + 1) hours before the match gets no automatic follow-up; the admin status report address is emailed instead. Both default to 4.</p>
+
     <label for="players_per_week">Players per week</label>
     <input type="number" name="players_per_week" id="players_per_week" value="<%= session ? session.players_per_week : 4 %>" min="4" step="4">
     <p class="muted">Must be a multiple of 4 — one doubles court is 4 players. 8 for 2 courts running at once, 12 for 3, and so on.</p>

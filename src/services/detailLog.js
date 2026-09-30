@@ -99,8 +99,8 @@ const RESOLVERS = {
     const r = db.prepare(
       `SELECT o.candidate_player_id, o.broader_list_id, wa.week_id, sr.requesting_player_id
        FROM sub_offers o JOIN sub_requests sr ON sr.id = o.sub_request_id
-       JOIN week_assignments wa ON wa.id = sr.week_assignment_id WHERE o.token = ?`
-    ).get(hashToken(raw));
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id WHERE o.token = ? OR o.nudge_token = ?`
+    ).get(hashToken(raw), hashToken(raw));
     if (!r) return null;
     let actor = 'unknown';
     let playerId = null;

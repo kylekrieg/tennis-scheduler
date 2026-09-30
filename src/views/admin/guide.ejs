@@ -10,7 +10,7 @@
     <li><a href="#blackouts">3. Collect blackout dates</a></li>
     <li><a href="#schedule">4. Schedule the players</a></li>
     <li><a href="#week-to-week">5. Running it week to week</a></li>
-    <li><a href="#timing">6. The full email/notification timeline</a></li>
+    <li><a href="#timing">6. The full email/notification timeline</a> — start with the <a href="#email-map">email map</a></li>
     <li><a href="#monitoring">7. Keeping an eye on things</a></li>
     <li><a href="#multi-session">8. Running more than one session at once</a></li>
     <li><a href="#weather-setup">9. Weather forecast</a></li>
@@ -83,6 +83,30 @@
 
 <h2 id="timing">6. The full email/notification timeline</h2>
 <p>Section 5 covers what you do. This section covers what the app does by itself, and when. The first few flows match the ones on the player's <a href="/help#timing">How It Works</a> page, shown from your side with the places you can step in. After those come the pickup game flow (also on <a href="/help#adhoc">How It Works</a>) and one that's only for you: the status report email. It's good to know these well, because they're how you tell whether something is really stuck or just hasn't reached its next automatic step.</p>
+
+<h3 id="email-map">Email map: who gets what, when</h3>
+<p>Every email the app sends in one place. The flowcharts after it walk through the same flows step by step. The same map is in <code>EMAIL_MAP.md</code> in the project folder.</p>
+<h4>A normal week (default settings, Wednesday 5:30 PM match)</h4>
+<div class="table-scroll"><table class="wide">
+  <tr><th>When</th><th>What</th><th>Who gets it</th></tr>
+  <% emailMap.EXAMPLE_WEEK.forEach(function(r) { %>
+    <tr><td style="white-space:nowrap;"><%= r.when %></td><td><%= r.what %></td><td><%= r.to %></td></tr>
+  <% }) %>
+</table></div>
+<% emailMap.FLOWS.forEach(function(f) { %>
+  <h4><%= f.title %></h4>
+  <% if (f.note) { %><p class="muted"><%= f.note %></p><% } %>
+  <div class="table-scroll"><table class="wide">
+    <tr><th>Email</th><th>Sent when</th><th>Who gets it</th><th>Setting</th></tr>
+    <% f.emails.forEach(function(e) { %>
+      <tr><td><%= e.name %></td><td><%= e.when %></td><td><%= e.to %></td><td><%= e.setting %></td></tr>
+    <% }) %>
+  </table></div>
+<% }) %>
+<h4>Rules that apply to every email</h4>
+<ul>
+  <% emailMap.RULES.forEach(function(r) { %><li><%= r %></li><% }) %>
+</ul>
 
 <h3>Confirming you're playing</h3>
 <div class="flowchart">
@@ -251,14 +275,19 @@
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step">
     <div class="flow-title">That person gets an invite email</div>
-    <div class="flow-detail">It says the player asked them to cover their spot, with a button that opens the same "claim this spot" page every sub uses. One click there accepts. If they don't answer, it goes to the sub list the same way a regular Request a Sub does (24 hours before the match by default, set per session).</div>
+    <div class="flow-detail">It says the player asked them to cover their spot, with a button that opens the same "claim this spot" page every sub uses. One click there accepts. Nobody else is asked yet; the session's normal escalation time doesn't apply.</div>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step pending">
+    <div class="flow-title">If they haven't accepted: reminder, warning, then open it up</div>
+    <div class="flow-detail">Set per session under <strong>"I found a sub"</strong> on the session form (both default to 4 hours). After the reminder hours, both the sub and the player get a reminder. One hour before the deadline (deadline = that many hours before the match), the player gets a warning and the sub a last call. At the deadline, the spot goes to the roster and the sub list at the same time, and the named sub's link keeps working; first to accept wins. The player can ask you to confirm the sub instead: the week card shows <strong>Confirm &lt;sub&gt; is playing</strong> while their invite is open. If the sub is named less than (deadline + 1) hours before the match, none of this runs; the admin report address gets one email instead. Suspending the week's sub escalation on the Status page also stops the open-up step.</div>
   </div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-step success">
     <div class="flow-title">They accept</div>
     <div class="flow-detail">They go into the slot as <strong>confirmed</strong> (no separate confirm step), the original player shows <span class="badge subbed_out">subbed out</span>, and the week's group plus the original player get the "X will be subbing for Y" email.</div>
   </div>
-  <p class="flow-note">Activity Log: naming the sub is <code>sub.self_arranged</code>; the sub accepting is <code>sub.self_arranged_confirm</code>. A regular fan-out claim is <code>sub.claim</code>, and a claim after escalation to the sub list is <code>sub.claim_escalated</code>.</p>
+  <p class="flow-note">Activity Log: naming the sub is <code>sub.self_arranged</code>; the sub accepting is <code>sub.self_arranged_confirm</code>; you confirming them is <code>sub.self_arranged_admin_confirm</code>; the spot opening up is <code>sub.self_arranged_escalated</code>; a too-late pick is <code>sub.self_arranged_late</code>. A regular fan-out claim is <code>sub.claim</code>, and a claim after escalation to the sub list is <code>sub.claim_escalated</code>.</p>
   <p class="flow-note">The original player's confirmation email explains what happens if the person doesn't answer. Their spot shows <span class="badge needs_sub">needs sub</span> the whole time, like any other open sub request.</p>
 </div>
 
@@ -407,6 +436,8 @@
 <p><a href="/admin/backup">Backup</a> is where you can make a backup or push one off-site whenever you want. Both also run automatically every night. It isn't part of running a session, but it's good to know where it is.</p>
 <img class="screenshot" src="/img/admin-guide/dashboard.png?v=<%= assetVersion %>" alt="Admin dashboard showing three session cards, two of them with red-bordered flags for players enrolled in or actually double-booked into another overlapping session.">
 <p class="screenshot-caption">Each session card on the dashboard shows its own problems. Here, two sessions share players on overlapping dates. Click into a session to fix it.</p>
+
+<p><strong>Active Links</strong> (admin menu) lists every emailed link that still works: sub links, confirm / need-a-sub links, pending swaps, pickup sign-ups and "My Other Dates" edit links. Cancel any of them and that link shows "Link not found" from then on. A cancelled sub link also keeps that person from being emailed about the same spot again if it later goes to the sub list. Every cancel is in the Activity Log as <code>link.cancel</code>.</p>
 
 <h2 id="multi-session">8. Running more than one session at once</h2>
 <p>You can run several sessions at the same time: different clubs, different courts, or a season split into two halves. If the same player is in two sessions that play on the same day of the week with overlapping dates, you'll get a warning when you save the roster. It's only a warning. The scheduler doesn't prevent it, so check whether the two schedules actually collide once both are made. If a player does end up double-booked, it's flagged everywhere: the session detail page, the dashboard, the Status page, and also on the player's own schedule, PDF, and calendar. That way they can fix it themselves with a sub request or a swap without waiting for you to notice.</p>

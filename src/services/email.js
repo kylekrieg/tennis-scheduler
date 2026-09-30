@@ -273,6 +273,25 @@ function relativeDayPhrase(matchDateStr) {
 }
 
 /**
+ * "today" / "this week" / "that week" for a match date, as seen right now
+ * in the app's timezone (Kyle, 2026-09-30): an email sent on match day says
+ * "Playing today", one sent earlier the same calendar week (Sunday–Saturday)
+ * says "Playing this week", and anything further out says "that week".
+ * Computed at send time, so the same template reads correctly whenever it
+ * goes out.
+ */
+function weekPhrase(matchDateStr) {
+  const todayStr = utcToZonedParts(new Date(), getTimezone()).date;
+  if (matchDateStr === todayStr) return 'today';
+  const day = (str) => Date.parse(str + 'T00:00:00Z') / 86400000;
+  const today = day(todayStr);
+  const match = day(matchDateStr);
+  const weekStart = today - new Date(todayStr + 'T00:00:00Z').getUTCDay(); // this Sunday
+  if (match > today && match < weekStart + 7) return 'this week';
+  return 'that week';
+}
+
+/**
  * "Session name · Day of week · Match Time · Court/location · Club/group
  * name" — the full composed title Kyle asked for (2026-08-29), first built
  * for the admin dashboard's session headings and then extended to the
@@ -396,7 +415,9 @@ function footer(session, player) {
  * the admin resend route's `assignment` row) against week.ball_duty_player_id. */
 function ballDutyNotice(player, week) {
   if (!player || !week || player.player_id !== week.ball_duty_player_id) return '';
-  return `<p class="flag" style="border:1px solid #ffd77a;background:#fff8e6;border-radius:8px;padding:10px 14px;margin:12px 0;"><strong>You're on ball duty this week</strong> — please bring the balls.</p>`;
+  const when = weekPhrase(week.match_date);
+  const label = when === 'that week' ? "You're on ball duty for this match" : `You're on ball duty ${when}`;
+  return `<p class="flag" style="border:1px solid #ffd77a;background:#fff8e6;border-radius:8px;padding:10px 14px;margin:12px 0;"><strong>${label}</strong> — please bring the balls.</p>`;
 }
 
 /**
@@ -452,7 +473,7 @@ function currentWeekRosterHtml(week) {
     freshWeek && freshWeek.ball_duty_player_id
       ? db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(freshWeek.ball_duty_player_id)
       : null;
-  return `<p style="margin:12px 0;"><strong>Playing that week:</strong> ${names}${ballDuty ? `<br><strong>Bringing balls:</strong> ${fullName(ballDuty)}` : ''}</p>`;
+  return `<p style="margin:12px 0;"><strong>Playing ${weekPhrase(week.match_date)}:</strong> ${names}${ballDuty ? `<br><strong>Bringing balls:</strong> ${fullName(ballDuty)}` : ''}</p>`;
 }
 
 function nextWeeksPreviewHtml(weeks) {
@@ -484,6 +505,15 @@ function nextWeeksPreviewHtml(weeks) {
 function escalationHoursPhrase(session) {
   const h = session.escalation_lead_hours;
   return `${h} hour${h === 1 ? '' : 's'}`;
+}
+
+/** A UTC instant as local wall-clock text for an email about `week`:
+ * "12:30 PM" on the match date, otherwise "12:30 PM on Tuesday, Sep 29". */
+function fmtWhen(instant, week) {
+  const { utcToZonedParts } = require('./tz');
+  const parts = utcToZonedParts(instant, getTimezone());
+  const t = fmtTime(parts.time);
+  return parts.date === week.match_date ? `${t} on match day` : `${t} on ${fmtDate(parts.date)}`;
 }
 
 function foundSubLine(foundSubToken) {
@@ -789,7 +819,7 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
  * broader_sub_list if this person hasn't subbed in before, notifies the
  * rest of the week's group, notifies the original player once claimed).
  */
-async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken, requestingPlayerName, threadKey = null, test = false }) {
+async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken, requestingPlayerName, deadlineAt = null, threadKey = null, test = false }) {
   const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
   const subject = `${requestingPlayerName} asked you to sub in — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
@@ -798,7 +828,8 @@ async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken,
     <p>${requestingPlayerName} said you agreed to cover their spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}. Click below to confirm you're in:</p>
     <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I'm playing</a></p>
     ${currentWeekRosterHtml(week)}
-    <p class="muted" style="color:#888;">Didn't agree to this? No action needed — nothing changes unless you click the button above, and ${requestingPlayerName} will be nudged to find someone else if it isn't confirmed before match time.</p>
+    ${deadlineAt ? `<p>Please confirm by <strong>${fmtWhen(deadlineAt, week)}</strong>. If you haven't by then, the spot opens up to other players.</p>` : ''}
+    <p class="muted" style="color:#888;">Didn't agree to this? No action needed — nothing changes unless you click the button above.</p>
     ${footer(session)}
   `;
   return sendMail({ to: recipient.email, subject, html, category: 'self_arranged_sub_invite', relatedWeekId: week.id, session, threadKey, test });
@@ -806,29 +837,121 @@ async function sendSelfArrangedSubInvite({ recipient, week, session, claimToken,
 
 /**
  * Sent to the requesting player right after they name their already-arranged
- * sub — the "I found a sub" equivalent of sendSubRequestOwnConfirmation()
- * above, same reasoning: confirms exactly who was just emailed, and spells
- * out what happens if that person doesn't actually click through (the
- * request sits `open` exactly like any other, so escalateOverdueRequests()'s
- * normal 24-hours-before-match fallback picks it up automatically — Kyle's
- * own choice, "falls back to normal escalation" — no special-casing needed
- * here beyond saying so).
+ * sub — the "I found a sub" equivalent of sendSubRequestOwnConfirmation().
+ * Confirms who was emailed and lists the follow-up times from
+ * subFlow.selfArrangedTimeline() (Kyle, 2026-09-30).
  */
-async function sendSelfArrangedSubConfirmation({ player, week, session, subName, threadKey = null, test = false }) {
+async function sendSelfArrangedSubConfirmation({ player, week, session, subName, timeline = null, threadKey = null, test = false }) {
   const subject = `Sub request sent to ${subName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  // Kyle, 2026-09-30: nothing opens up to other players while the named sub
+  // has time to confirm. The steps below come from subFlow.js's
+  // selfArrangedTimeline(); `timeline` is null only for a test send.
+  let steps;
+  if (timeline && timeline.late) {
+    steps = `
+      <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set.</li>
+      <li><strong>This is close to match time,</strong> so the app won't send any more reminders or open your spot up to anyone else. Your admin has been told. If ${subName} can't make it after all, contact your admin right away.</li>`;
+  } else if (timeline) {
+    steps = `
+      <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
+      ${timeline.reminderAt ? `<li><strong>If they haven't confirmed by ${fmtWhen(timeline.reminderAt, week)}:</strong> we'll remind both of you.</li>` : ''}
+      <li><strong>At ${fmtWhen(timeline.warnAt, week)}:</strong> if they still haven't confirmed, you'll get a warning email.</li>
+      <li><strong>At ${fmtWhen(timeline.deadlineAt, week)}:</strong> if they still haven't confirmed, your spot opens up to the rest of the roster and the sub list — unless you contact an admin first to say ${subName} is playing.</li>`;
+  } else {
+    steps = `
+      <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
+      <li><strong>If they haven't confirmed a few hours after you named them:</strong> we'll remind both of you, then warn you before your spot opens up to other players.</li>`;
+  }
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${fullName(player)},</p>
     <p>Got it — we've emailed <strong>${subName}</strong> asking them to confirm they're covering your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
-    <ul>
-      <li><strong>Once they click confirm:</strong> you'll get a separate email letting you know it's all set — no need to keep checking.</li>
-      <li><strong>If they haven't confirmed within ${escalationHoursPhrase(session)} of the match:</strong> the request automatically opens up to this session's regular sub list, the same as any other sub request.</li>
-      <li><strong>If nobody has confirmed by match time:</strong> please contact your admin for help.</li>
+    <ul>${steps}
     </ul>
-    <p><strong>Named the wrong person, or they didn't actually agree?</strong> Reach out right away so it can be sorted out before match time.</p>
+    <p><strong>Named the wrong person, or they didn't actually agree?</strong> Reach out to your admin right away so it can be sorted out before match time.</p>
     ${footer(session)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'self_arranged_sub_self_notice', relatedWeekId: week.id, session, threadKey, test });
+}
+
+/**
+ * "I found a sub" reminder to the named sub (Kyle, 2026-09-30) — sent at the
+ * reminder time, and again with `final: true` an hour before the spot opens
+ * up. `claimToken` is a fresh nudge link (the original invite still works).
+ */
+async function sendSelfArrangedSubNudge({ recipient, week, session, claimToken, requestingPlayerName, deadlineAt, final = false, threadKey = null, test = false }) {
+  const claimUrl = `${siteUrl()}/claim-sub/${claimToken}`;
+  const subject = `${final ? 'Last call' : 'Reminder'}: please confirm you're subbing for ${requestingPlayerName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${fullName(recipient)},</p>
+    <p>${requestingPlayerName} named you as their sub for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}, but we haven't seen your confirmation yet.</p>
+    <p><a href="${claimUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Confirm — I'm playing</a></p>
+    <p>${final ? `<strong>If you haven't confirmed by ${fmtWhen(deadlineAt, week)}, the spot opens up to other players</strong> (you can still claim it until someone else does).` : `Please confirm by ${fmtWhen(deadlineAt, week)} — after that the spot opens up to other players.`}</p>
+    <p class="muted" style="color:#888;">Not actually able to play? Let ${requestingPlayerName} know so they can find someone else.</p>
+    ${footer(session)}
+  `;
+  return sendMail({ to: recipient.email, subject, html, category: 'self_arranged_sub_reminder', relatedWeekId: week.id, session, threadKey, test });
+}
+
+/**
+ * "I found a sub" updates to the player who named the sub (Kyle, 2026-09-30):
+ *   stage 'reminder'  — sub still hasn't confirmed; we reminded them too.
+ *   stage 'warning'   — spot opens up at deadlineAt unless the sub confirms
+ *                       or the player contacts an admin.
+ *   stage 'escalated' — it just opened up; `emailedNames` is who got asked.
+ */
+async function sendSelfArrangedRequesterUpdate({ player, week, session, subName, stage, deadlineAt, emailedNames = [], threadKey = null, test = false }) {
+  const when = deadlineAt ? fmtWhen(deadlineAt, week) : 'a few hours before the match';
+  let subject;
+  let body;
+  let category;
+  if (stage === 'escalated') {
+    category = 'self_arranged_escalated';
+    subject = `Your spot is open to other players — ${subName} didn't confirm — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+    body = `
+      <p><strong>${subName}</strong> never confirmed they're covering your spot, so we've opened it up to find another sub.</p>
+      ${emailedNames.length ? `<p>Emailed just now: ${emailedNames.join(', ')}.</p>` : `<p>There wasn't anyone else available to email — please contact your admin.</p>`}
+      <p>${subName}'s link still works — whoever confirms first gets the spot. You'll get an email as soon as someone does. If ${subName} is definitely playing, contact your admin and they can confirm it for them.</p>`;
+  } else if (stage === 'warning') {
+    category = 'self_arranged_warning';
+    subject = `Action needed: ${subName} still hasn't confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+    body = `
+      <p><strong>${subName}</strong> still hasn't confirmed they're covering your spot. We've sent them one more reminder.</p>
+      <p><strong>At ${when}, your spot will open up to the rest of the roster and the sub list</strong> — unless ${subName} confirms first, or you contact an admin to confirm ${subName} is playing.</p>`;
+  } else {
+    category = 'self_arranged_requester_reminder';
+    subject = `${subName} hasn't confirmed yet — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+    body = `
+      <p>Just a heads-up: <strong>${subName}</strong> hasn't confirmed they're covering your spot yet. We've sent them a reminder. You may want to check in with them too.</p>
+      <p>If they haven't confirmed by ${when}, your spot opens up to other players (you'll get a warning an hour before).</p>`;
+  }
+  const html = `
+    ${matchBanner(session, week)}
+    <p>Hi ${fullName(player)},</p>
+    ${body}
+    ${footer(session)}
+  `;
+  return sendMail({ to: player.email, subject, html, category, relatedWeekId: week.id, session, threadKey, test });
+}
+
+/**
+ * Admin alert (to admin_report_emails) when a player names their own sub so
+ * close to match time that the app won't follow up automatically (Kyle,
+ * 2026-09-30). Nothing configured = no email; the Activity Log entry is
+ * still written by the caller.
+ */
+async function sendSelfArrangedLateAlert({ session, week, requesterName, subName, threadKey = null, test = false }) {
+  const to = (session.admin_report_emails || '').trim();
+  if (!to) return true;
+  const subject = `Late "I found a sub": ${subName} for ${requesterName} — ${fmtDate(week.match_date)}, ${timeAndPlace(session)}`;
+  const html = `
+    ${matchBanner(session, week)}
+    <p>${requesterName} named <strong>${subName}</strong> as their sub for <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)} in ${sessionFullTitle(session)}.</p>
+    <p>This was less than ${session.self_arranged_deadline_hours + 1} hours before the match, so the app won't send reminders or open the spot up to other players. ${subName} has been emailed a confirm link.</p>
+    <p>If you hear from either of them, you can confirm ${subName} from the session page ("Confirm ${subName} is playing"), or use Reassign.</p>
+  `;
+  return sendMail({ to, subject, html, category: 'self_arranged_late_alert', relatedWeekId: week.id, session, threadKey, test });
 }
 
 /**
@@ -1286,6 +1409,9 @@ module.exports = {
   sendSubFilledOriginalNotice,
   sendSelfArrangedSubInvite,
   sendSelfArrangedSubConfirmation,
+  sendSelfArrangedSubNudge,
+  sendSelfArrangedRequesterUpdate,
+  sendSelfArrangedLateAlert,
   sendNewSubListEntryAlert,
   sendFoundSubVerification,
   sendPersonalEventsLink,
@@ -1312,4 +1438,5 @@ module.exports = {
   sessionColor,
   matchBanner,
   DOW_NAMES,
+  weekPhrase,
 };

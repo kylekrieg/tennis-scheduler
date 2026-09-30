@@ -287,13 +287,42 @@ router.get('/', (req, res) => {
 // page, so a player can never reach it and there's no conditional-rendering
 // logic to get wrong.
 router.get('/guide', (req, res) => {
-  res.render('admin/guide', { title: 'Admin Guide' });
+  res.render('admin/guide', { title: 'Admin Guide', emailMap: require('../services/emailMap'), wideMain: true });
 });
 
 // Dedicated "to-do list + is this actually running" page — flattens every
 // needs-attention item across all sessions into one list, and previews what
 // the cron loop is about to do over the next N days (reminders, follow-ups,
 // escalations, week locks) without sending anything. See statusPage.js.
+// Active Links (Kyle, 2026-09-30) — every emailed link that still works,
+// with a Cancel button each. See services/activeLinks.js.
+router.get('/links', (req, res) => {
+  const activeLinks = require('../services/activeLinks');
+  const sessionId = req.query.session ? Number(req.query.session) : null;
+  const sessions = db.prepare(`SELECT * FROM sessions WHERE archived_at IS NULL ${SESSION_DISPLAY_ORDER}`).all();
+  res.render('admin/links', {
+    title: 'Active Links',
+    flashMsg: popFlash(req),
+    links: activeLinks.listActiveLinks(sessionId),
+    sessions,
+    sessionId,
+    wideMain: true,
+  });
+});
+
+router.post('/links/cancel', (req, res) => {
+  const activeLinks = require('../services/activeLinks');
+  const back = '/admin/links' + (req.body.session ? `?session=${encodeURIComponent(req.body.session)}` : '');
+  const result = activeLinks.cancelLink(req.body.kind, req.body.id);
+  if (!result.ok) {
+    flash(req, 'That link was already used, cancelled, or expired — nothing to cancel.', 'error');
+    return res.redirect(back);
+  }
+  logActivity(req, { action: 'link.cancel', description: `${req.session.adminName || 'An admin'}: ${result.description}`, sessionId: result.sessionId });
+  flash(req, result.description + '. Those links now show "Link not found" if clicked.');
+  res.redirect(back);
+});
+
 router.get('/status', (req, res) => {
   const days = Number(req.query.days) || 21;
   const attention = statusPage.getAttentionItems();
@@ -1232,6 +1261,28 @@ function invalidEscalationLeadHours(b) {
   return null;
 }
 
+// "I found a sub" follow-up timing (Kyle, 2026-09-30) — see
+// subFlow.js's selfArrangedTimeline(). Both whole hours > 0.
+function invalidSelfArrangedHours(b) {
+  for (const [field, label] of [
+    ['self_arranged_reminder_hours', '"I found a sub" reminder'],
+    ['self_arranged_deadline_hours', '"I found a sub" open-up deadline'],
+  ]) {
+    if (b[field] === undefined || b[field] === '') continue;
+    const hours = Number(b[field]);
+    if (!Number.isInteger(hours) || hours <= 0) return `${label} must be a whole number of hours, greater than 0.`;
+  }
+  return null;
+}
+
+function saveSelfArrangedHours(sessionId, b) {
+  db.prepare('UPDATE sessions SET self_arranged_reminder_hours = ?, self_arranged_deadline_hours = ? WHERE id = ?').run(
+    Number(b.self_arranged_reminder_hours || 4),
+    Number(b.self_arranged_deadline_hours || 4),
+    sessionId
+  );
+}
+
 // Ball duty games-won reminder lead time (Kyle, 2026-09-15) — same "plain
 // positive whole number of hours" shape as the three validators above, just
 // counting forward from match time instead of back from it (see
@@ -1374,6 +1425,11 @@ router.post('/sessions', (req, res) => {
     flash(req, escalationError, 'error');
     return res.redirect('/admin/sessions/new');
   }
+  const selfArrangedError = invalidSelfArrangedHours(b);
+  if (selfArrangedError) {
+    flash(req, selfArrangedError, 'error');
+    return res.redirect('/admin/sessions/new');
+  }
   const scoreReminderError = invalidGamesWonReminderLeadHours(b);
   if (scoreReminderError) {
     flash(req, scoreReminderError, 'error');
@@ -1446,6 +1502,7 @@ router.post('/sessions', (req, res) => {
       sessionType === 'adhoc' ? 'active' : 'draft'
     );
   const sessionId = info.lastInsertRowid;
+  saveSelfArrangedHours(sessionId, b);
   db.prepare('UPDATE sessions SET season_id = ?, count_toward_season = ? WHERE id = ?').run(
     seasonIdForSession,
     b.count_toward_season ? 1 : 0,
@@ -1624,6 +1681,8 @@ const SESSION_FIELD_LABELS = [
   ['admin_report_emails', 'admin report emails', (v) => v || 'none'],
   ['admin_report_lead_hours', 'admin report lead hours', (v) => v],
   ['escalation_lead_hours', 'escalation lead hours', (v) => v],
+  ['self_arranged_reminder_hours', '"I found a sub" reminder hours', (v) => v],
+  ['self_arranged_deadline_hours', '"I found a sub" open-up hours before match', (v) => v],
   ['weather_enabled', 'weather forecast', (v) => (Number(v) ? 'on' : 'off')],
   ['weather_lat', 'weather latitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
@@ -1704,6 +1763,11 @@ router.post('/sessions/:id', (req, res) => {
     flash(req, escalationError, 'error');
     return res.redirect(`/admin/sessions/${req.params.id}/edit`);
   }
+  const selfArrangedError = invalidSelfArrangedHours(b);
+  if (selfArrangedError) {
+    flash(req, selfArrangedError, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}/edit`);
+  }
   const scoreReminderError = invalidGamesWonReminderLeadHours(b);
   if (scoreReminderError) {
     flash(req, scoreReminderError, 'error');
@@ -1767,6 +1831,7 @@ router.post('/sessions/:id', (req, res) => {
     b.count_toward_season ? 1 : 0,
     req.params.id
   );
+  saveSelfArrangedHours(req.params.id, b);
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
   const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   logActivity(req, {
@@ -2078,6 +2143,12 @@ router.get('/sessions/:id', (req, res) => {
     // here (not in the view) so session_detail.ejs/adhoc_session_detail.ejs
     // can keep reading a plain `.playerName` string as before.
     if (openSubRequest) openSubRequest.playerName = fullName(openSubRequest);
+    // "I found a sub" request with the named sub's invite still pending —
+    // lets the admin confirm them on their behalf (Kyle, 2026-09-30).
+    if (openSubRequest && openSubRequest.self_arranged) {
+      const pend = subFlow.pendingSelfArrangedOffer(openSubRequest.id);
+      if (pend) openSubRequest.namedSubName = pend.name;
+    }
     // Same idea, for a pending direct swap touching either side of this
     // week (either this week's player gave up their slot, or someone from
     // another week is trying to take one of this week's slots) — see
@@ -2815,6 +2886,43 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   flash(req, `Sub request cleared — ${activePlayerName} is back to "scheduled" for that week. If someone else is actually playing instead, use Reassign below.`);
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
+
+// Admin confirms the sub a player named via "I found a sub", on the sub's
+// behalf (Kyle, 2026-09-30: the player "contacts an admin to confirm
+// <sub> is playing"). Same claim as the sub clicking their own link:
+// original player subbed out, sub confirmed, group + original player
+// emailed, every other pending offer closed.
+router.post('/sessions/:id/weeks/:weekId/confirm-arranged-sub', asyncHandler(async (req, res) => {
+  const active = db
+    .prepare(
+      `SELECT sr.id, w.match_date, p.name, p.full_name FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       JOIN weeks w ON w.id = wa.week_id
+       JOIN players p ON p.id = wa.player_id
+       WHERE wa.week_id = ? AND w.session_id = ? AND sr.self_arranged = 1 AND sr.status IN ('open', 'escalated', 'unfilled')`
+    )
+    .get(req.params.weekId, req.params.id);
+  if (!active) {
+    flash(req, 'No open "I found a sub" request for this week.', 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  const result = await subFlow.adminConfirmSelfArrangedSub(active.id);
+  if (!result.ok) {
+    const why = {
+      already_playing: "they're already playing another spot that week",
+      gave_up_spot: 'they gave up their own spot that week — use Reassign instead',
+    }[result.reason] || "the named sub's invite is no longer open (someone may have already taken the spot)";
+    flash(req, `Couldn't confirm — ${why}.`, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  logActivity(req, {
+    action: 'sub.self_arranged_admin_confirm',
+    description: `${req.session.adminName || 'An admin'} confirmed ${result.subName} as the sub ${fullName(active)} arranged for ${email.fmtDate(active.match_date)}`,
+    sessionId: Number(req.params.id),
+  });
+  flash(req, `${result.subName} is confirmed for ${fullName(active)}'s spot. The group and ${fullName(active)} have been emailed.`);
+  res.redirect(`/admin/sessions/${req.params.id}`);
+}));
 
 router.post('/sessions/:id/weeks/:weekId/cancel-swap', (req, res) => {
   // Mirrors clear-sub-request above, for the swap-request equivalent (see

@@ -2251,3 +2251,99 @@ Follow-up to the Shawn/Jim investigation. Kyle wants more logging but doesn't wa
 **Super Log page:** a third source joined to weeks/sessions. On a timestamp tie the sort order is detail, then activity, then email. The type filter gained "Link opens, clicks, refused only", and text search also covers actor, device and IP. Detail rows show a badge (link opened / clicked / admin / refused), who, the description, and a muted device · IP line; hover shows the full user agent. Admin nav, the Email Log/Activity Log cross-links, the admin guide and the README now say Super Log.
 
 **Verified** on a scratch copy of the production DB (with its WAL), over real HTTP with an iPhone user agent and a fake `CF-Connecting-IP`. The test opened and clicked a real Confirm link (logged "opened" then "clicked … went through"), a bogus `/claim-sub` GET and POST (both "refused" with the rendered reason), a honeypot hit on `/request-sub/start`, a failed admin login, and Resend link. All seven showed on `?type=detail` with "iPhone · Safari · IP 203.0.113.7". The full page rendered, `/admin/combined-log?type=email` 301-redirected to `/admin/super-log?type=email`, and the Activity Log got no new rows from any of it besides the tester's own login.
+
+### "I found a sub": no escalation while the named sub can still confirm; reminder, warning, then open it up (Kyle, 2026-09-30)
+
+What happened on Sept 30: Kyle clicked "I found a sub" and named Shawn Anderson at 8:12 AM CT for a 5:30 PM match. 34 seconds later the cron emailed 7 people on the broader sub list. `arrangeSelfSub()` left the request `open`, and `escalateOverdueRequests()` treats any open request inside `escalation_lead_hours` (30 on Kyle's sessions) as overdue. The code comment said this fallback was deliberate ("falls back to normal escalation"), but it meant a self-arranged sub never got any time to answer.
+
+Kyle's rules: while the named sub can still confirm, nobody else is asked. If the sub hasn't confirmed 4 hours after being named, remind both people. If the sub still hasn't confirmed 4 hours before the match, open the spot up to the roster and the sub list, unless the player contacts an admin to confirm. He picked a warning 1 hour before it opens up. "Jim" in his message meant Kyle, the player who arranged the sub.
+
+**Timeline** (`subFlow.selfArrangedTimeline(subRequest, week, session)`, all times computed from `sub_requests.created_at` and two new per-session settings, `sessions.self_arranged_reminder_hours` and `self_arranged_deadline_hours`, both `INTEGER NOT NULL DEFAULT 4`):
+
+- **deadlineAt** = match time − deadline hours. The spot opens up here.
+- **warnAt** = deadlineAt − 1 hour. The player gets a warning and the sub a last call.
+- **reminderAt** = arranged time + reminder hours. Both get a reminder. It's dropped (null) if it would land less than 15 minutes before warnAt.
+- **late** = arranged at or after warnAt, i.e. less than (deadline + 1) hours before the match. Nothing automatic happens: the player's confirmation says so, and `session.admin_report_emails` gets one `self_arranged_late_alert` email.
+
+**Engine.** `escalateOneRequest()` now returns `not_due` for a self-arranged request when `onlyIfDue` is set, so the normal escalation pass skips it. New `processSelfArrangedSubs()` (called from `cron.js`'s `processEscalations()`) runs `stepSelfArrangedRequest(id, now)` per open self-arranged request inside `withSubRequestLock()`. Each step stamps its own column (`sub_requests.self_arranged_reminder_sent_at` / `_warning_sent_at` / `_late_alert_sent_at`) so it runs once. At the deadline it:
+- checks the week's escalation Suspend checkbox (same one as normal escalation)
+- runs the roster fan-out (`fanOutSubRequest`)
+- runs `escalateOneRequest(id, { onlyIfDue: false })`
+- emails the player who was just asked
+
+The named sub's invite stays live the whole time; first to confirm wins.
+
+**Named sub isn't re-invited.** `fanOutSubRequest()` and `escalateOneRequest()` now skip anyone who already has an offer on the request. This applies to every request, not just self-arranged ones.
+
+**Second link.** New `sub_offers.nudge_token` (hashed). The reminder and last-call emails mint one via `mintOfferNudgeToken()` so the original invite link keeps working. `claimSub()`, `GET /claim-sub/:token` and `detailLog`'s offer lookup accept either `token` or `nudge_token`.
+
+**Admin confirm on the sub's behalf.** `claimSub()` was split into `claimSub(rawToken)` → `claimOffer(offer, { byAdmin })`. New `adminConfirmSelfArrangedSub(subRequestId)` claims the named sub's pending offer, so the result is the same as the sub clicking their own link, and the player-self-service log line is skipped. Route: `POST /admin/sessions/:id/weeks/:weekId/confirm-arranged-sub`, logged `sub.self_arranged_admin_confirm`. `session_detail.ejs` shows "named sub: X (not confirmed yet)" and a **Confirm X is playing** button while that invite is pending, including after the spot has opened up.
+
+**Emails** (`email.js`):
+- `sendSelfArrangedSubConfirmation()` now takes `timeline` and lists the real times (reminder, warning, deadline) or the late wording.
+- `sendSelfArrangedSubInvite()` takes `deadlineAt` and says "please confirm by …".
+- New `sendSelfArrangedSubNudge()` (category `self_arranged_sub_reminder`, reminder or `final` last call).
+- New `sendSelfArrangedRequesterUpdate()` with stages `reminder` / `warning` / `escalated` (categories `self_arranged_requester_reminder`, `self_arranged_warning`, `self_arranged_escalated`).
+- New `sendSelfArrangedLateAlert()`.
+- Helper `fmtWhen(instant, week)` gives "12:30 PM on match day" or "… on Tuesday, Sep 29".
+- `emailThreads.js`: a new "Reminders & warning" stage, `self_arranged_escalated` under "Escalated to the sub list", `self_arranged_late_alert` under "Admin alert".
+- `testEmail.js` has 6 new test templates (timeline worked out as if the sub were named 24h before the match).
+
+**Activity Log** new actions: `sub.self_arranged_escalated`, `sub.self_arranged_late`, `sub.self_arranged_admin_confirm`.
+
+**UI and docs:**
+- `session_form.ejs`: the two fields, under the escalation field. Saved by `saveSelfArrangedHours()` after the main INSERT/UPDATE, validated by `invalidSelfArrangedHours()`, and added to `SESSION_FIELD_LABELS`.
+- `statusPage.js`: the upcoming-escalation preview uses the self-arranged deadline, and skips late ones.
+- `getWeekWithSession()` also selects the two new columns.
+- `found_sub.ejs`, `help.ejs` and `admin/guide.ejs` were reworded.
+
+**Verified** on a copy of the local DB outside the connected folder, dev-mode email:
+- Walked a request named 30h before the match (inside the old 30h window): `escalateOverdueRequests()` left it alone.
+- Stepping at the reminder, warning and deadline times sent the right emails exactly once each. At the deadline it went to 5 roster players and 5 sub-list people, with the named sub excluded from both. Admin confirm then filled it and closed the other 10 offers.
+- A request named 3h before the match went `late`: only the invite, the confirmation (with the late wording) and one admin alert.
+- Over HTTP: GET and POST on a nudge link claimed the spot; session detail showed the button; the confirm route filled the request and logged; the Status page previewed the self-arranged deadline; the edit form rendered the fields.
+- All 7 related test templates sent. Scheduler tests pass.
+
+**Known edge case, not fixed:** if a player who gave up their own spot in a week is later named (or claims) as the sub for another spot in that same week, the claim fails on `UNIQUE(week_id, player_id)` (500). This predates this change.
+
+**Existing data:** Sept 30's request (id 8) is already `escalated`, and the new code leaves it as is.
+
+### Subbed-out player claiming another spot; "Playing today / this week / that week"; Active Links page; email map (Kyle, 2026-09-30)
+
+**1) Claim crash fixed.** A player with a `subbed_out` row in a week (they gave up their own spot) could be offered or named for another spot in that same week. Claiming then failed on `week_assignments UNIQUE(week_id, player_id)` with a 500. Found while testing the "I found a sub" follow-ups.
+- Everyone with *any* row in the week, `subbed_out` included, is now excluded from:
+  - `eligibleSelfArrangedCandidates()`
+  - `fanOutSubRequest()`
+  - `escalateOneRequest()`, which previously didn't exclude player-type sub-list candidates already in the week at all
+- `claimOffer()` also checks before inserting and returns `gave_up_spot` / `already_playing`, which the public claim route and the admin confirm-arranged-sub route turn into plain messages.
+
+**2) Day-relative wording in emails.** Kyle: "Playing that week" is for emails sent weeks ahead, "Playing this week" for the week of the match, "Playing today" for match day.
+- New `email.weekPhrase(matchDate)`, computed at send time in the app timezone, returns:
+  - `today` on match day
+  - `this week` when the match is later in the same Sunday–Saturday calendar week
+  - `that week` otherwise
+- Used by `currentWeekRosterHtml()` (the "Playing …:" line in the sub request, escalation, sub found, invite and swap-group emails) and by `ballDutyNotice()` ("You're on ball duty today / this week", or "for this match" when further out).
+- The follow-up's subject already used `relativeDayPhrase()` (today/tomorrow/weekday) and is unchanged.
+
+**3) Active Links (`GET /admin/links`, `POST /admin/links/cancel`, `services/activeLinks.js`, `views/admin/links.ejs`, admin nav after Status).** Kyle wanted a way to void any emailed link, e.g. so nobody from the sub list takes a spot they shouldn't.
+- Lists every link that would still act if clicked, for non-archived sessions and unlocked weeks, with a session filter. Only hashes are stored, so it shows who has a link and what it does, never the link itself.
+- Cancel behavior by kind:
+  - **Sub links:** grouped per request; cancel one or all. The offer is set to `closed`. A closed offer still counts as "already offered", so a later escalation won't re-invite that person. The request itself stays open ("Clear sub request" calls it off).
+  - **Confirm / need-a-sub / "I found a sub" links:** grouped per spot; cancelling deletes all its `week_assignment_tokens`. Resend link issues a new one.
+  - **Pending swaps:** set to `cancelled`.
+  - **Unclicked swap-proposal verifications:** deleted.
+  - **Unclicked pickup sign-ups:** the token is replaced with an unguessable `void:` value, and `reminded_at` is set so the cron doesn't mint a new reminder link.
+  - **"My Other Dates" edit links:** deleted.
+- Each cancel is logged as `link.cancel`.
+
+**4) Email map.** Kyle: "map out all the escalations and emails … in a concise and consistent way." New `services/emailMap.js` holds one list:
+- a default-settings example week
+- one table per flow (weekly confirmations, Request a Sub, I Found a Sub, swaps, pickup games, scores, admin/manual)
+- rules that apply to every email
+
+It's rendered in the admin guide's section 6 (`#email-map`) and written to `EMAIL_MAP.md` by `npm run email-map` (`src/scripts/write-email-map.js`). README links it. **When an email is added or retimed, update `emailMap.js` and rerun the script.**
+
+**Verified** on a copy of the local DB outside the connected folder:
+- `weekPhrase` on Wed Sep 30: today → today; Oct 2–3 → this week; Oct 4 → that week; past → that week. A sub-request email for a match today rendered "Playing today".
+- A subbed-out player POSTing a claim link got the "gave up your own spot" page with no 500, and the request stayed open. They were also missing from the candidate list.
+- Over HTTP: `/admin/links` listed the offers. Cancelling one closed it, and a second cancel flashed "already used". Cancelling a spot's confirm links made `/confirm/<token>` show "Link not found". Cancel-all closed the rest. Three `link.cancel` log rows were written, the filtered view rendered, and `/admin/guide` rendered the map (9 tables).

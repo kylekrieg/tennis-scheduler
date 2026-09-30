@@ -121,6 +121,12 @@
         <% if (r.week.needs_attention) { %><span class="muted">⚠ <%= r.week.notes %></span><% } %>
         <% if (r.openSubRequest) { %>
           <span class="badge needs_sub">sub <%= r.openSubRequest.status %> — <%= r.openSubRequest.playerName %></span>
+          <% if (r.openSubRequest.namedSubName && !r.week.locked) { %>
+            <span class="muted" style="font-size:12px;">named sub: <%= r.openSubRequest.namedSubName %> (not confirmed yet)</span>
+            <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/confirm-arranged-sub" style="display:inline;" onsubmit="return confirm('Confirm <%= r.openSubRequest.namedSubName.replace(/'/g, '') %> is playing? This emails the group and <%= r.openSubRequest.playerName.replace(/'/g, '') %>.');">
+              <button class="btn small green" type="submit">Confirm <%= r.openSubRequest.namedSubName %> is playing</button>
+            </form>
+          <% } %>
           <% if (!r.week.locked) { %>
             <form class="inline" method="post" action="/admin/sessions/<%= session.id %>/weeks/<%= r.week.id %>/clear-sub-request" style="display:inline;">
               <button class="btn small neutral" type="submit">Clear sub request</button>

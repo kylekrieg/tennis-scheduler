@@ -32,6 +32,6 @@
     </div>
   </form>
 
-  <p class="muted" style="margin-top:16px;">We'll email them to confirm — nothing changes until they click that link. If they don't respond within <%= week.escalation_lead_hours %> hour<%= week.escalation_lead_hours === 1 ? '' : 's' %> of the match, this automatically falls back to the regular sub-list process, same as any other sub request.</p>
+  <p class="muted" style="margin-top:16px;">We'll email them to confirm — nothing changes until they click that link, and nobody else is asked while they have time to answer. If they haven't confirmed after <%= week.self_arranged_reminder_hours %> hour<%= week.self_arranged_reminder_hours === 1 ? '' : 's' %>, we'll remind you both. If they still haven't confirmed <%= week.self_arranged_deadline_hours %> hour<%= week.self_arranged_deadline_hours === 1 ? '' : 's' %> before the match, your spot opens up to other players (you'll get a warning an hour before that). Your confirmation email lists the exact times.</p>
 </div>
 <%- include('partials/footer') %>

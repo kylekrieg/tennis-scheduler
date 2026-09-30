@@ -1990,7 +1990,8 @@ router.post('/me/:idOrSlug/other-dates/:eventId/delete', otherDatesEditLimiter, 
 
 router.get('/claim-sub/:token', detailLog.linkPage('claim_sub'), (req, res) => {
   const hashed = hashToken(req.params.token);
-  const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ?').get(hashed);
+  // nudge_token: the "I found a sub" reminder/warning emails' second link (Kyle, 2026-09-30).
+  const offer = db.prepare('SELECT * FROM sub_offers WHERE token = ? OR nudge_token = ?').get(hashed, hashed);
   if (!offer) return res.render('message', { title: 'Claim sub', heading: 'Link not found', body: 'This link is invalid or has expired.', tone: 'error' });
   const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
   const originalAssignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(subRequest.week_assignment_id);
@@ -2005,6 +2006,8 @@ router.post('/claim-sub/:token', detailLog.linkPage('claim_sub'), asyncHandler(a
       invalid: 'This link is invalid or has expired.',
       already_claimed: 'This spot has already been claimed by someone else.',
       already_filled: 'This spot has already been filled.',
+      already_playing: "You're already playing in this match, so you can't take a second spot. Contact your admin if something looks wrong.",
+      gave_up_spot: "You gave up your own spot this week, so the app can't put you in a different one. If you can play after all, contact your admin and they can sort it out.",
     };
     return res.render('message', { title: 'Claim sub', heading: 'Spot no longer available', body: messages[result.reason] || 'This link is no longer valid.', tone: 'error' });
   }

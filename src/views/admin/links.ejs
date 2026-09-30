@@ -1,0 +1,142 @@
+<%- include('../partials/admin_header', {title, flashMsg}) %>
+<%
+  function cancelForm(kind, id, label, confirmText) {
+    return '<form class="inline" method="post" action="/admin/links/cancel" style="display:inline;" onsubmit="return confirm(\'' + confirmText.replace(/[\\'"<>&]/g, '') + '\');">' +
+      '<input type="hidden" name="kind" value="' + kind + '"><input type="hidden" name="id" value="' + id + '">' +
+      (sessionId ? '<input type="hidden" name="session" value="' + sessionId + '">' : '') +
+      '<button class="btn small neutral" type="submit">' + label + '</button></form>';
+  }
+%>
+<h1>Active Links</h1>
+<p class="muted">Every link the app has emailed that would still do something if clicked. Cancel one and that link shows "Link not found" from then on. The links themselves can't be shown here, since only a scrambled copy is stored, but you can see who has one and what it does. Weeks that have already locked, and archived sessions, aren't listed, because their links have stopped working already.</p>
+
+<form method="get" action="/admin/links" class="inline" style="margin-bottom:12px;">
+  <label for="session" style="display:inline;">Session</label>
+  <select name="session" id="session" onchange="this.form.submit()">
+    <option value="">All sessions</option>
+    <% sessions.forEach(function(s) { %>
+      <option value="<%= s.id %>" <%= sessionId === s.id ? 'selected' : '' %>><%= sessionFullTitle(s) %></option>
+    <% }) %>
+  </select>
+  <noscript><button class="btn small" type="submit">Show</button></noscript>
+</form>
+
+<% if (links.total === 0) { %>
+  <p class="notice">No active links<%= sessionId ? ' for this session' : '' %> right now.</p>
+<% } %>
+
+<% if (links.subRequests.length) { %>
+<h2>Sub links</h2>
+<p class="muted">Anyone listed here can click their link and take the spot. Cancelling a link stops that person, and they won't be emailed about this spot again if it later goes to the sub list. The request itself stays open; to call it off entirely, use "Clear sub request" on the session page.</p>
+<% links.subRequests.forEach(function(r) { %>
+  <div class="card wide" style="border-left:6px solid <%= sessionColor(r.session) %>;">
+    <h3 style="margin-top:0;">
+      <%= r.forName %>'s spot — <%= fmtDate(r.matchDate) %>
+      <span class="badge needs_sub">sub <%= r.status %></span>
+    </h3>
+    <p class="muted" style="margin-top:-6px;"><a href="/admin/sessions/<%= r.session.id %>"><%= sessionFullTitle(r.session) %></a></p>
+    <div class="table-scroll"><table>
+      <tr><th>Link sent to</th><th>What it is</th><th>Sent</th><th></th></tr>
+      <% r.offers.forEach(function(o) { %>
+        <tr>
+          <td><%= o.name %></td>
+          <td><%= o.kind %><%= o.twoLinks ? ' (plus a reminder link)' : '' %></td>
+          <td style="white-space:nowrap;"><%= o.sent %></td>
+          <td><%- cancelForm('sub_offer', o.id, 'Cancel', 'Cancel the link sent to ' + o.name + '? They will not be able to take this spot.') %></td>
+        </tr>
+      <% }) %>
+    </table></div>
+    <% if (r.offers.length > 1) { %>
+      <p style="margin-bottom:0;"><%- cancelForm('sub_request', r.id, 'Cancel all ' + r.offers.length + ' links for this spot', 'Cancel all ' + r.offers.length + ' links for this spot? Nobody will be able to take it by email.') %></p>
+    <% } %>
+  </div>
+<% }) %>
+<% } %>
+
+<% if (links.assignmentLinks.length) { %>
+<h2>Confirm / Need a sub links</h2>
+<p class="muted">From reminder and follow-up emails, "Resend link", and the Request a Sub and "I found a sub" check-it's-you emails. One row per player's spot; cancelling kills every such link for that spot. Use "Resend link" on the session page if they need a new one.</p>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Player</th><th>Match</th><th>Session</th><th>Status</th><th>Links</th><th>Newest</th><th></th></tr>
+  <% links.assignmentLinks.forEach(function(a) { %>
+    <tr>
+      <td><%= a.name %></td>
+      <td style="white-space:nowrap;"><%= fmtDate(a.matchDate) %></td>
+      <td><a href="/admin/sessions/<%= a.session.id %>"><%= sessionFullTitle(a.session) %></a></td>
+      <td><span class="badge <%= a.status %>"><%= a.status %></span></td>
+      <td><%= a.count %></td>
+      <td style="white-space:nowrap;"><%= a.last %></td>
+      <td><%- cancelForm('assignment', a.id, 'Cancel', 'Cancel the confirm / need-a-sub links for ' + a.name + ' on ' + fmtDate(a.matchDate) + '?') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
+<% if (links.swaps.length) { %>
+<h2>Pending swaps</h2>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Proposed by</th><th>Sent to</th><th>Trade</th><th>Session</th><th>Sent</th><th></th></tr>
+  <% links.swaps.forEach(function(sw) { %>
+    <tr>
+      <td><%= sw.from %></td>
+      <td><%= sw.to %></td>
+      <td><%= fmtDate(sw.giveDate) %> ↔ <%= fmtDate(sw.takeDate) %><%= sw.nudged ? ' (nudged)' : '' %></td>
+      <td><a href="/admin/sessions/<%= sw.session.id %>"><%= sessionFullTitle(sw.session) %></a></td>
+      <td style="white-space:nowrap;"><%= sw.sent %></td>
+      <td><%- cancelForm('swap', sw.id, 'Cancel swap', 'Cancel this swap? ' + sw.to + ' will no longer be able to accept it.') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
+<% if (links.swapVerifications.length) { %>
+<h2>Unconfirmed swap proposals</h2>
+<p class="muted">The "confirm it's you" email a player gets before their swap proposal goes out.</p>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Player</th><th>Week they'd give up</th><th>Session</th><th>Sent</th><th></th></tr>
+  <% links.swapVerifications.forEach(function(v) { %>
+    <tr>
+      <td><%= v.name %></td>
+      <td style="white-space:nowrap;"><%= fmtDate(v.matchDate) %></td>
+      <td><a href="/admin/sessions/<%= v.session.id %>"><%= sessionFullTitle(v.session) %></a></td>
+      <td style="white-space:nowrap;"><%= v.sent %></td>
+      <td><%- cancelForm('swap_verify', v.id, 'Cancel', 'Cancel this swap-proposal link?') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
+<% if (links.adhoc.length) { %>
+<h2>Pickup game sign-up links</h2>
+<p class="muted">Invited but not signed up yet. Cancelling also stops the straggler reminder for that player that week.</p>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Player</th><th>Match</th><th>Session</th><th>Invited</th><th></th></tr>
+  <% links.adhoc.forEach(function(a) { %>
+    <tr>
+      <td><%= a.name %></td>
+      <td style="white-space:nowrap;"><%= fmtDate(a.matchDate) %></td>
+      <td><a href="/admin/sessions/<%= a.session.id %>"><%= sessionFullTitle(a.session) %></a></td>
+      <td style="white-space:nowrap;"><%= a.sent %><%= a.twoLinks ? ' (plus a reminder link)' : '' %></td>
+      <td><%- cancelForm('adhoc', a.id, 'Cancel', 'Cancel the sign-up link for ' + a.name + ' on ' + fmtDate(a.matchDate) + '?') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
+<% if (links.otherDates.length) { %>
+<h2>"My Other Dates" edit links</h2>
+<p class="muted">Let a player add or delete their own outside dates on My Page for 30 days. Not tied to a session.</p>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Player</th><th>Sent</th><th>Expires</th><th></th></tr>
+  <% links.otherDates.forEach(function(t) { %>
+    <tr>
+      <td><%= t.name %></td>
+      <td style="white-space:nowrap;"><%= t.sent %></td>
+      <td style="white-space:nowrap;"><%= t.expires %></td>
+      <td><%- cancelForm('other_dates', t.id, 'Cancel', 'Cancel the edit link for ' + t.name + '?') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
+<%- include('../partials/footer') %>

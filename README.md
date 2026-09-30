@@ -120,6 +120,8 @@ The in-app `/help` page covers all of this, with a mockup of every email. A few 
 
 ## How the self-service flows work
 
+For a single table of every email the app sends (when, to whom, and which setting controls it), see [EMAIL_MAP.md](EMAIL_MAP.md).
+
 These are the same flows `/help` and `/admin/guide` walk through, drawn as diagrams so you can see how each one plays out (including what happens if nobody responds) without clicking through the site.
 
 ### Confirming a match
