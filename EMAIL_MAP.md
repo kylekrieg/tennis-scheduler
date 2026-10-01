@@ -36,7 +36,7 @@ Players who have that date blacked out are never asked. Anyone already in that w
 | "Confirm it's you" | Right away, when "Need a sub" is clicked on Request a Sub or My Page (not from a reminder email's own link) | The player needing a sub | — | `sub_request_verification` |
 | Sub needed (roster) | Right away once the request is confirmed. An admin "Needs a sub" flag waits until that week's reminder time. | Roster players not playing that week | — | `sub_request` |
 | Your request went out | Right after the roster emails | The player needing a sub | — | `sub_request_self_notice` |
-| Sub still needed (sub list) | escalation_lead_hours before the match (default 24), if nobody has taken it. Right away if the request comes in later than that. | This session's sub list (Manage subs) | Escalate to broader sub list hours; Status page Suspend | `escalation` |
+| Sub still needed (sub list) | escalation_lead_hours before the match (default 24), if nobody has taken it. Right away if the request comes in later than that. | This session's sub list (Manage subs) | Escalate to broader sub list hours; Status page Suspend / Send now | `escalation` |
 | Sub found | When someone takes the spot | Everyone playing that week, including the sub. If the sub took the spot before that week's reminder time, their copy says to confirm when the regular reminder comes | — | `sub_filled` |
 | Your sub is confirmed | Same time | The player who needed the sub | — | `sub_filled_original` |
 | Your spot still needs a sub | still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request. | The player who needed the sub | Sub still open alert hours | `sub_still_open` |
@@ -54,7 +54,7 @@ Nobody else is asked while the named sub has time to answer; the normal escalati
 | New sub list entry | Right away, only if the named sub is new to the app | Admin report addresses | Admin report emails | `new_sub_list_entry_alert` |
 | Reminder / hasn't confirmed yet | self_arranged_reminder_hours after naming the sub (default 4), if still unconfirmed | The named sub and the player | "I found a sub" remind hours | `self_arranged_sub_reminder, self_arranged_requester_reminder` |
 | Warning / last call | 1 hour before the deadline | The player (warning) and the named sub (last call) | "I found a sub" open-up hours | `self_arranged_warning, self_arranged_sub_reminder` |
-| Sub needed (roster) + sub still needed (sub list) | self_arranged_deadline_hours before the match (default 4), if still unconfirmed | Roster players not playing + this session's sub list, at the same time | "I found a sub" open-up hours; Status page Suspend | `sub_request, escalation` |
+| Sub needed (roster) + sub still needed (sub list) | self_arranged_deadline_hours before the match (default 4), if still unconfirmed | Roster players not playing + this session's sub list, at the same time | "I found a sub" open-up hours; Status page Suspend / Send now | `sub_request, escalation` |
 | Your spot is open to other players | Same time | The player | — | `self_arranged_escalated` |
 | Late "I found a sub" | Within a minute, if the sub was named less than (deadline + 1) hours before the match | Admin report addresses | Admin report emails | `self_arranged_late_alert` |
 | Sub found / your sub is confirmed | When the named sub (or anyone) takes the spot | As in Request a Sub | — | `sub_filled, sub_filled_original` |
@@ -105,7 +105,7 @@ Not paused by the reminders toggle.
 
 - Each automatic email goes out once per person per week. The cron checks the Email Log before sending, so a restart never re-sends. "Send reminders now" and "Send status report now" deliberately re-send.
 - Archived sessions send nothing automatic.
-- The Status page lists what's coming up in the next few days and lets you Suspend a reminder, follow-up or sub-list step for one week.
+- The Status page lists what's coming up in the next few days and lets you Suspend a reminder, follow-up or sub-list step for one week, or Send it now instead of waiting (same emails and links; the automatic run won't repeat it).
 - When a match starts its week locks, and every link for that week stops working.
 - Active Links (admin menu) lists every emailed link that still works and lets you cancel any of them.
 - Test sends (Send Email, "Test a template") are marked [TEST], use fake links, and never count as a real send.

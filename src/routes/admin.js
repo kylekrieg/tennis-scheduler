@@ -23,6 +23,7 @@ const backup = require('../services/backup');
 const offsiteBackup = require('../services/offsiteBackup');
 const statusPage = require('../services/statusPage');
 const automationSuspend = require('../services/automationSuspend');
+const automationSendNow = require('../services/automationSendNow');
 const { findOverlappingSessionEnrollments, findActualDoubleBookings, doubleBookingMapForSession, carriedOverBlackoutsForSession, getBlackoutViewableSessions, sessionRosterStats, weekEmailRecipients, orderAssignmentsWithSubGroups, SESSION_DISPLAY_ORDER } = require('../services/sessionHelper');
 const { logActivity } = require('../services/activityLog');
 const swapFlow = require('../services/swapFlow');
@@ -366,6 +367,20 @@ router.post('/status/suspend', (req, res) => {
   }
   res.redirect(`/admin/status?days=${days}`);
 });
+
+// "Send now" on one line of "Upcoming automated actions" (Kyle,
+// 2026-09-30) — runs that action's normal send immediately instead of
+// waiting for its scheduled time. See automationSendNow.js.
+router.post('/status/send-now', asyncHandler(async (req, res) => {
+  const days = Number(req.body.days) || 21;
+  try {
+    const r = await automationSendNow.sendNow(req, Number(req.body.week_id), String(req.body.action_type || ''));
+    flash(req, r.message);
+  } catch (err) {
+    flash(req, `Error: ${err.message}`, 'error');
+  }
+  res.redirect(`/admin/status?days=${days}`);
+}));
 
 // All-active-sessions stats summary (Kyle, 2026-09-01): "if we were going to
 // write a 1 page stats summary for all the active sessions, where would that

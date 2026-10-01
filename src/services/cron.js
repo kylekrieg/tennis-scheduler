@@ -178,50 +178,64 @@ async function processFollowUps() {
         if (now < followUpAt || now >= matchAt) continue;
         if (automationSuspend.skipIfSuspended(week, session, 'followup')) continue;
 
-        const assignments = db
-          .prepare(
-            `SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
-             WHERE wa.week_id = ? AND wa.status = 'scheduled'`
-          )
-          .all(week.id);
-
-        for (const a of assignments) {
-          const originalReminderSent = db
-            .prepare(`SELECT id FROM email_log WHERE category = 'reminder' AND related_week_id = ? AND to_email = ?`)
-            .get(week.id, a.email);
-          if (!originalReminderSent) continue; // don't nudge before the original reminder has even gone out
-
-          const alreadyNudged = db
-            .prepare(
-              `SELECT id FROM email_log WHERE category = 'followup_reminder' AND related_week_id = ? AND to_email = ?`
-            )
-            .get(week.id, a.email);
-          if (alreadyNudged) continue;
-
-          // Mints an ADDITIONAL valid link rather than replacing the original
-          // reminder's — that original link stays live too (see tokenStore.js
-          // and the module docstring above). This is the fix for a real bug:
-          // the follow-up used to overwrite the single stored token, so
-          // clicking the *original* reminder email after the follow-up had
-          // gone out landed on "Link not found" for a player who'd never
-          // clicked anything yet.
-          const raw = tokenStore.issueToken(a.id);
-
-          await email.sendFollowUpReminder({
-            player: a,
-            week,
-            session,
-            confirmToken: raw,
-            needSubToken: raw,
-            foundSubToken: raw,
-            manuallyPlaced: !!a.manually_placed,
-          });
-        }
+        await sendFollowUpsForWeek(week, session);
       }
     } catch (err) {
       console.error(`[cron] processFollowUps failed for session ${session.id} (${session.name}):`, err.message);
     }
   }
+}
+
+/**
+ * One week's follow-up nudges: every player still 'scheduled' who already
+ * got the original reminder and hasn't been nudged yet. Split out of
+ * processFollowUps() (Kyle, 2026-09-30) so the Status page's "Send now" can
+ * send the same nudge early. Returns { sent, skippedNoReminder }.
+ */
+async function sendFollowUpsForWeek(week, session) {
+  let sent = 0;
+  let skippedNoReminder = 0;
+  const assignments = db
+    .prepare(
+      `SELECT wa.*, p.name, p.email, p.slug, p.full_name FROM week_assignments wa JOIN players p ON p.id = wa.player_id
+       WHERE wa.week_id = ? AND wa.status = 'scheduled'`
+    )
+    .all(week.id);
+
+  for (const a of assignments) {
+    const originalReminderSent = db
+      .prepare(`SELECT id FROM email_log WHERE category = 'reminder' AND related_week_id = ? AND to_email = ?`)
+      .get(week.id, a.email);
+    if (!originalReminderSent) { skippedNoReminder++; continue; } // don't nudge before the original reminder has even gone out
+
+    const alreadyNudged = db
+      .prepare(
+        `SELECT id FROM email_log WHERE category = 'followup_reminder' AND related_week_id = ? AND to_email = ?`
+      )
+      .get(week.id, a.email);
+    if (alreadyNudged) continue;
+
+    // Mints an ADDITIONAL valid link rather than replacing the original
+    // reminder's — that original link stays live too (see tokenStore.js
+    // and the module docstring above). This is the fix for a real bug:
+    // the follow-up used to overwrite the single stored token, so
+    // clicking the *original* reminder email after the follow-up had
+    // gone out landed on "Link not found" for a player who'd never
+    // clicked anything yet.
+    const raw = tokenStore.issueToken(a.id);
+
+    await email.sendFollowUpReminder({
+      player: a,
+      week,
+      session,
+      confirmToken: raw,
+      needSubToken: raw,
+      foundSubToken: raw,
+      manuallyPlaced: !!a.manually_placed,
+    });
+    sent++;
+  }
+  return { sent, skippedNoReminder };
 }
 
 // --- Ad-hoc pickup-game sessions (session_type = 'adhoc') ------------------
@@ -588,4 +602,6 @@ module.exports = {
   processAdhocFinalization,
   processWeekLocking,
   sendRemindersNowForWeek,
+  sendReminderEmailsForWeek,
+  sendFollowUpsForWeek,
 };

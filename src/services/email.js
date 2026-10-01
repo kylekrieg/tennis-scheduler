@@ -914,16 +914,22 @@ async function sendSelfArrangedSubNudge({ recipient, week, session, claimToken, 
  *                       or the player contacts an admin.
  *   stage 'escalated' — it just opened up; `emailedNames` is who got asked.
  */
-async function sendSelfArrangedRequesterUpdate({ player, week, session, subName, stage, deadlineAt, emailedNames = [], threadKey = null, test = false }) {
+async function sendSelfArrangedRequesterUpdate({ player, week, session, subName, stage, deadlineAt, emailedNames = [], early = false, threadKey = null, test = false }) {
   const when = deadlineAt ? fmtWhen(deadlineAt, week) : 'a few hours before the match';
   let subject;
   let body;
   let category;
   if (stage === 'escalated') {
     category = 'self_arranged_escalated';
-    subject = `Your spot is open to other players — ${subName} didn't confirm — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+    // early (Kyle, 2026-09-30): an admin used the Status page's "Send now"
+    // before the deadline, so "never confirmed" would be wrong.
+    subject = early
+      ? `Your spot is open to other players — ${subName} hasn't confirmed yet — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`
+      : `Your spot is open to other players — ${subName} didn't confirm — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
     body = `
-      <p><strong>${subName}</strong> never confirmed they're covering your spot, so we've opened it up to find another sub.</p>
+      ${early
+        ? `<p><strong>${subName}</strong> hasn't confirmed they're covering your spot yet, so an admin has opened it up to find another sub ahead of schedule.</p>`
+        : `<p><strong>${subName}</strong> never confirmed they're covering your spot, so we've opened it up to find another sub.</p>`}
       ${emailedNames.length ? `<p>Emailed just now: ${emailedNames.join(', ')}.</p>` : `<p>There wasn't anyone else available to email — please contact your admin.</p>`}
       <p>${subName}'s link still works — whoever confirms first gets the spot. You'll get an email as soon as someone does. If ${subName} is definitely playing, contact your admin and they can confirm it for them.</p>`;
   } else if (stage === 'warning') {

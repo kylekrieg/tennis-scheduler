@@ -390,6 +390,16 @@ const TEMPLATES = {
       emailedNames: ctx.others.slice(1).map((p) => fullName(p)), test: true,
     }),
   },
+  self_arranged_escalated_early: {
+    label: 'Found your own sub — spot opened up early by an admin (Status page Send now)',
+    fn: 'sendSelfArrangedRequesterUpdate',
+    build: (ctx) => ({
+      player: ctx.player, week: ctx.week, session: ctx.session,
+      subName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Sub',
+      stage: 'escalated', deadlineAt: testSelfArrangedTimeline(ctx).deadlineAt, early: true,
+      emailedNames: ctx.others.slice(1).map((p) => fullName(p)), test: true,
+    }),
+  },
   self_arranged_late_alert: {
     // Sends to session.admin_report_emails, like new_sub_list_entry_alert.
     label: 'Found your own sub — admin alert (named too close to match time)',

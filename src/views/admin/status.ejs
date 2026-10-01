@@ -121,6 +121,7 @@
 <h2 style="margin-top:32px;">Upcoming automated actions</h2>
 <p class="muted">What the reminder system is going to do on its own over the next <%= days %> days — reminders and week-locks are exact; follow-up nudges and sub-escalations depend on who's still unconfirmed or unfilled by the time they'd actually fire, so those are "as of right now," not a guarantee.</p>
 <p class="muted">Check <strong>Suspend</strong> on a line to stop that one action from firing automatically (uncheck it to resume, any time before it's due). Once its time passes while suspended, it's logged in the <a href="/admin/activity-log">Activity Log</a> as "Suspended — did not fire," drops off this list, and is complete — it won't fire later, so handle it manually (e.g. "Send reminders now" or "Resend link" on the session page). Week locks can't be suspended.</p>
+<p class="muted"><strong>Send now</strong> runs that action right away instead of waiting for its time — the same emails with the same working links, e.g. sending an open sub request to the broader sub list early. It only sends to people who haven't already gotten that email, and the automatic run won't send it again later. Sending a suspended line clears its Suspend.</p>
 <div class="actions" style="margin-top:0;">
   <% [7, 14, 21, 30].forEach(function(d) { %>
     <a class="btn small <%= d === days ? 'green' : 'neutral' %>" href="/admin/status?days=<%= d %>"><%= d %> days</a>
@@ -132,7 +133,7 @@
 <% } else { %>
   <table class="compact" style="margin-top:16px;">
     <thead>
-      <tr><th>When</th><th>Action</th><th>Session / week</th><th>Who</th><th>Suspend</th></tr>
+      <tr><th>When</th><th>Action</th><th>Session / week</th><th>Who</th><th>Suspend</th><th>Send now</th></tr>
     </thead>
     <tbody>
       <% upcoming.forEach(function(e) { %>
@@ -171,6 +172,23 @@
                 </label>
                 <% if (e.suspension) { %><span class="muted" style="font-size:12px;">by <%= e.suspension.suspended_by_name %></span><% } %>
                 <noscript><button class="btn small neutral" type="submit">Save</button></noscript>
+              </form>
+            <% } else { %><span class="muted">—</span><% } %>
+          </td>
+          <td>
+            <% if (e.suspendable) {
+                 var sendNowConfirm = e.type === 'escalation'
+                   ? 'Send this sub request to the broader sub list now instead of waiting? Everyone on it who hasn\'t been asked yet gets an email with an "I\'ll play" link.'
+                   : e.type === 'followup'
+                     ? 'Send the follow-up nudge now to everyone still unconfirmed for this week (who already got the reminder)?'
+                     : 'Send the reminder email now to everyone in this week who hasn\'t gotten it yet?';
+                 if (e.suspension) sendNowConfirm += ' This also clears its Suspend.';
+            %>
+              <form method="post" action="/admin/status/send-now" style="margin:0;" onsubmit="return confirm(<%= JSON.stringify(sendNowConfirm) %>);">
+                <input type="hidden" name="week_id" value="<%= e.week.id %>">
+                <input type="hidden" name="action_type" value="<%= e.type %>">
+                <input type="hidden" name="days" value="<%= days %>">
+                <button class="btn small" type="submit" style="white-space:nowrap;">Send now</button>
               </form>
             <% } else { %><span class="muted">—</span><% } %>
           </td>

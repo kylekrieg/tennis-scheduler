@@ -1108,7 +1108,7 @@ async function escalateOverdueRequests() {
  * emails interleaving. Uses the same timezone-aware wall-clock conversion as
  * the reminder emails (tz.js).
  */
-async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
+async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspend = false } = {}) {
   const req = db
     .prepare(
       `SELECT sr.*, w.id as week_id, s.archived_at
@@ -1138,7 +1138,9 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true } = {}) {
   // 2026-09-27) — leave the request 'open' and don't email the broader
   // sub list; logged once as "Suspended — did not fire". Lazy require to
   // avoid any load-order cycle.
-  if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) return { result: 'suspended', emailed: [] };
+  // ignoreSuspend: the Status page's "Send now" (Kyle, 2026-09-30) — an
+  // explicit admin click overrides the suspension (sendNow clears it).
+  if (!ignoreSuspend && require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) return { result: 'suspended', emailed: [] };
 
   // Per-session sub pool (broader_sub_list + real players, see
   // sessionSubList()'s doc comment), not the whole master list. Looked up
@@ -1339,16 +1341,7 @@ async function stepSelfArrangedRequest(subRequestId, now = new Date()) {
     // open, logged once as "Suspended — did not fire" (same as any other
     // escalation).
     if (require('./automationSuspend').skipIfSuspended(week, session, 'escalation')) return 'suspended';
-    const roster = await fanOutSubRequest(sr.id, requesterName);
-    const esc = await escalateOneRequest(sr.id, { onlyIfDue: false });
-    const emailedNames = [...roster.candidates, ...(esc.emailed || [])].map((c) => fullName(c));
-    await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'escalated', deadlineAt: t.deadlineAt, emailedNames, threadKey });
-    logPlayerActivity({
-      playerName: requesterName,
-      action: 'sub.self_arranged_escalated',
-      description: `${subName} didn't confirm the sub ${requesterName} arranged for ${week.match_date} — opened to the roster and sub list (${emailedNames.length} emailed)`,
-      sessionId: session.id,
-    });
+    await openUpSelfArranged({ sr, week, session, requester, subName, deadlineAt: t.deadlineAt });
     return 'escalated';
   }
 
@@ -1374,6 +1367,85 @@ async function stepSelfArrangedRequest(subRequestId, now = new Date()) {
     return 'reminded';
   }
   return 'waiting';
+}
+
+/**
+ * Opens an "I found a sub" request up: roster fan-out + sub list, then the
+ * requester's "your spot is open" email. Run inside withSubRequestLock().
+ * Used at the deadline by stepSelfArrangedRequest(), and early by the
+ * Status page's "Send now" (`early: true`, Kyle 2026-09-30), which words the
+ * requester's email as an admin opening it ahead of schedule.
+ */
+async function openUpSelfArranged({ sr, week, session, requester, subName, deadlineAt, early = false }) {
+  const requesterName = fullName(requester);
+  const threadKey = subThreadKey(sr.id);
+  const roster = await fanOutSubRequest(sr.id, requesterName);
+  const esc = await escalateOneRequest(sr.id, { onlyIfDue: false, ignoreSuspend: early });
+  const emailedNames = [...roster.candidates, ...(esc.emailed || [])].map((c) => fullName(c));
+  await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'escalated', deadlineAt, emailedNames, early, threadKey });
+  logPlayerActivity({
+    playerName: requesterName,
+    action: 'sub.self_arranged_escalated',
+    description: early
+      ? `Admin opened ${requesterName}'s ${week.match_date} spot (named sub ${subName} hadn't confirmed) to the roster and sub list ahead of schedule (${emailedNames.length} emailed)`
+      : `${subName} didn't confirm the sub ${requesterName} arranged for ${week.match_date} — opened to the roster and sub list (${emailedNames.length} emailed)`,
+    sessionId: session.id,
+  });
+  return emailedNames;
+}
+
+/**
+ * Status page "Send now" for a week's sub escalation (Kyle, 2026-09-30:
+ * "we might want to escalate ... to the broader sub list and not wait until
+ * X amount of hours before a match"). Does exactly what the cron pass would
+ * do when the time arrives, just now, for every still-open request in the
+ * week, each inside its request lock:
+ *
+ *   - normal request: roster fan-out first if it hasn't gone out yet (an
+ *     admin-flagged request waits for the reminder time otherwise), then
+ *     the sub-list escalation — same emails, same fresh claim links.
+ *   - "I found a sub" request: opens it to the roster + sub list and tells
+ *     the requester (worded as an admin opening it early).
+ *
+ * Returns [{ playerName, emailedNames, result }].
+ */
+async function escalateNowForWeek(weekId) {
+  const rows = db
+    .prepare(
+      `SELECT sr.id FROM sub_requests sr
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       WHERE wa.week_id = ? AND sr.status = 'open'`
+    )
+    .all(weekId);
+  const out = [];
+  for (const { id } of rows) {
+    const r = await withSubRequestLock(id, async () => {
+      const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(id);
+      if (!sr || sr.status !== 'open') return null;
+      const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(sr.week_assignment_id);
+      const week = getWeekWithSession(assignment.week_id);
+      const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
+      const requester = db.prepare('SELECT * FROM players WHERE id = ?').get(sr.requesting_player_id || assignment.player_id);
+      const playerName = requester ? fullName(requester) : 'a player';
+      if (sr.self_arranged) {
+        const named = pendingSelfArrangedOffer(sr.id);
+        const t = selfArrangedTimeline(sr, week, session);
+        const emailedNames = await openUpSelfArranged({
+          sr, week, session, requester, subName: named ? named.name : 'your sub', deadlineAt: t.deadlineAt, early: true,
+        });
+        return { playerName, emailedNames, result: 'escalated' };
+      }
+      let rosterNames = [];
+      if (!sr.fanout_sent_at) {
+        const roster = await fanOutSubRequest(sr.id, playerName);
+        rosterNames = roster.candidates.map((c) => fullName(c));
+      }
+      const esc = await escalateOneRequest(sr.id, { onlyIfDue: false, ignoreSuspend: true });
+      return { playerName, emailedNames: [...rosterNames, ...(esc.emailed || []).map((c) => fullName(c))], result: esc.result };
+    });
+    if (r) out.push(r);
+  }
+  return out;
 }
 
 /**
@@ -1608,6 +1680,7 @@ function adoptPendingSubThread(weekAssignmentId, subRequestId) {
 module.exports = {
   processStillOpenSubs,
   escalateOneRequest,
+  escalateNowForWeek,
   stillOpenStep,
   sendStillOpenAlert,
   processSelfArrangedSubs,
