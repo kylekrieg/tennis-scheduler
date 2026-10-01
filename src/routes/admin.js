@@ -2639,6 +2639,64 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
     .prepare('SELECT 1 FROM blackout_dates WHERE session_id = ? AND player_id = ? AND date = ?')
     .get(week.session_id, newPlayerId, week.match_date);
 
+  // "Record as sub" checkbox (Kyle, 2026-09-30): Pete D requested a sub for
+  // 10/5, Randy J (on the same roster) said yes on the group email thread,
+  // and the admin put Randy in with a plain Reassign, which overwrote Pete's
+  // row in place. Pete vanished from that week and Randy looked like a
+  // regular scheduled player, not a sub. With the checkbox ticked (it's
+  // pre-ticked on the form whenever the slot is 'needs_sub'), a roster pick
+  // gets the same sub semantics as the sub-list branch above: the original
+  // row is kept as subbed_out and a new is_sub=1 row points back at it via
+  // replaces_assignment_id, so the week card shows "subbing for", Stats counts
+  // it as a sub game, and Sub History shows who filled it. Unlike the sub-list
+  // branch, no email goes out now (Kyle's call): the row starts 'scheduled'
+  // and the normal reminder pass picks it up. manually_placed = 1 like the
+  // plain reassign below. Blackouts stay a warning, same as plain Reassign.
+  if (req.body.as_sub === '1') {
+    if (week.locked) {
+      flash(req, "Can't reassign — this week is already locked (already played).", 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    if (newPlayerId === assignment.player_id) {
+      flash(req, `Pick a different player — ${fullName(newPlayer)} can't sub for their own slot.`, 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+    if (assignment.status === 'subbed_out') {
+      flash(req, 'That slot is already subbed out — reassign the sub row underneath it instead.', 'error');
+      return res.redirect(`/admin/sessions/${req.params.id}`);
+    }
+
+    db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(assignment.id);
+    tokenStore.invalidateTokensForAssignment(assignment.id);
+    db.prepare(
+      `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, manually_placed, replaces_assignment_id)
+       VALUES (?, ?, ?, ?, 1, 'scheduled', 1, ?)`
+    ).run(assignment.week_id, newPlayerId, assignment.team, assignment.court, assignment.id);
+
+    const subWasResolvedRoster = subFlow.closeActiveSubRequestForAssignment(assignment.id);
+    const swapWasCancelledRoster = swapFlow.adminCancelSwap(assignment.id);
+    if (!subWasResolvedRoster) {
+      subFlow.recordAdminReassignAsSub(assignment.id, assignment.player_id);
+    }
+
+    logActivity(req, {
+      action: 'week.reassign_as_sub',
+      description: `Assigned ${fullName(newPlayer)} as sub for ${oldPlayer ? fullName(oldPlayer) : `player #${assignment.player_id}`} on ${email.fmtDate(week.match_date)}${blackout ? ' (blackout override)' : ''} — no email sent now; normal reminders will reach them`,
+      sessionId: Number(req.params.id),
+    });
+
+    const suffixRoster =
+      (subWasResolvedRoster ? ' The open sub request was closed out — those invite links are now dead.' : '') +
+      (swapWasCancelledRoster ? ' A pending swap request on that slot was cancelled — it would no longer have gone through.' : '');
+    const base = `${fullName(newPlayer)} is now subbing for ${oldPlayer ? fullName(oldPlayer) : 'the original player'}. No email sent — they'll get the normal reminder for this week.`;
+    if (blackout) {
+      flash(req, `${base} Note: they marked this date as a blackout date — admin override applied.${suffixRoster}`, 'error');
+    } else {
+      flash(req, `${base}${suffixRoster}`);
+    }
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+
   // manually_placed = 1 (Kyle, 2026-09-07): "that email should not have the
   // 'Need a sub' button or the 'already found your own sub'" for a player an
   // admin picked directly, as opposed to one the scheduler placed here. Only
@@ -3295,6 +3353,52 @@ router.post('/sessions/:id/weeks/:weekId/mark-confirmed/:assignmentId', (req, re
     sessionId: Number(req.params.id),
   });
   flash(req, subWasResolved ? 'Marked confirmed. Its open sub request was closed out too — those invite links are now dead.' : 'Marked confirmed.');
+  res.redirect(`/admin/sessions/${req.params.id}`);
+});
+
+// "Unconfirm" (Kyle, 2026-09-30): the reverse of Mark confirmed, for a
+// player marked confirmed too early — the real case was Shawn A claiming
+// Pete D's 10/19 spot almost three weeks out, which (before subClaimStatus()
+// in subFlow.js) went straight to 'confirmed'. Puts the row back to
+// 'scheduled' so the regular reminder / follow-up reach them and the admin
+// pages flag them as unconfirmed again. Sends no email. Unlocked weeks and
+// 'confirmed' rows only.
+router.post('/sessions/:id/weeks/:weekId/unconfirm/:assignmentId', (req, res) => {
+  const assignment = db
+    .prepare(
+      `SELECT wa.id, wa.status, wa.week_id, p.name, p.full_name, p.email, w.match_date, w.locked FROM week_assignments wa
+       JOIN players p ON p.id = wa.player_id JOIN weeks w ON w.id = wa.week_id
+       WHERE wa.id = ?`
+    )
+    .get(req.params.assignmentId);
+  if (!assignment || String(assignment.week_id) !== String(req.params.weekId)) return res.status(404).send('Not found');
+  if (assignment.locked) {
+    flash(req, "Can't unconfirm — this week is already locked (already played).", 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  if (assignment.status !== 'confirmed') {
+    flash(req, `${fullName(assignment)} isn't marked confirmed for that week — nothing to undo.`, 'error');
+    return res.redirect(`/admin/sessions/${req.params.id}`);
+  }
+  db.prepare(
+    `UPDATE week_assignments SET status = 'scheduled', confirmed_at = NULL, admin_confirmed = 0 WHERE id = ? AND status = 'confirmed'`
+  ).run(assignment.id);
+  const reminderSent = db
+    .prepare(`SELECT 1 FROM email_log WHERE category = 'reminder' AND related_week_id = ? AND to_email = ?`)
+    .get(assignment.week_id, assignment.email);
+  const actor = req.session.adminName || 'An admin';
+  logActivity(req, {
+    action: 'week.unconfirm',
+    description: `Admin ${actor} set ${fullName(assignment)} back to scheduled (unconfirmed) for ${email.fmtDate(assignment.match_date)}`,
+    sessionId: Number(req.params.id),
+  });
+  flash(
+    req,
+    `${fullName(assignment)} is back to "scheduled" for ${email.fmtDate(assignment.match_date)}. No email sent now — ` +
+      (reminderSent
+        ? "they already got this week's reminder, so they'll get the follow-up if it hasn't gone out yet (or use Resend link)."
+        : "they'll get this week's regular reminder to confirm.")
+  );
   res.redirect(`/admin/sessions/${req.params.id}`);
 });
 

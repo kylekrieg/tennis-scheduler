@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Season Schedule — Doubles</title>
+  <link rel="stylesheet" href="/css/style.css?v=1790611146207">
+  <script>
+    // Set the theme and text size before first paint so there's no
+    // flash of the wrong look. Both are per-player preferences stored in
+    // this browser's localStorage — see CLAUDE.md's "Larger text" note.
+    (function () {
+      try {
+        var stored = localStorage.getItem('theme');
+        var theme = stored || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) { /* private browsing, etc. — default light */ }
+      try {
+        var textSize = localStorage.getItem('textSize') || 'normal';
+        document.documentElement.setAttribute('data-text-size', textSize);
+      } catch (e) { /* private browsing, etc. — default normal */ }
+    })();
+  </script>
+  <script src="/js/theme.js?v=1790611146207" defer></script>
+  <script src="/js/navmenu.js?v=1790611146207" defer></script>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/schedule">🎾 Frontenac Tennis</a>
+  <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="site-nav">☰</button>
+  <nav id="site-nav">
+    <a href="/me">My Page</a>
+    <a href="/schedule">Full Schedule</a>
+    <a href="/lookahead">Next 4 Weeks</a>
+    <a href="/signup">Sign Up</a>
+    <a href="/blackout">Blackout Dates</a>
+    <a href="/request-sub">Request a Sub</a>
+    <a href="/swap">Swap a Week</a>
+    <a href="/calendar">Calendar</a>
+    <a href="/pdf">Print Schedule</a>
+    <a href="/news">News</a>
+    <a href="/help">How It Works</a>
+    <a href="/stats">Stats</a>
+    <a href="/scores">Enter Scores</a>
+    <a href="/leaderboard">Leaderboard</a>
+    <a href="/scores/history">Score History</a>
+    <a href="/preferences">Preferences</a>
+    <a href="/admin">Admin</a>
+    <button id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+  </nav>
+</header>
+
+<main class="wide">
+
+
+  <div class="card wide" style="border-left:6px solid #0969da;padding:12px 16px;margin-bottom:16px;">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">You're viewing</div>
+    <div style="font-size:19px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:#0969da;flex-shrink:0;"></span>
+      Session 1 · Wednesday · 5:30 PM · Court 4 · Frontenac
+    </div>
+    
+      <div class="muted" style="font-size:12px;margin-top:12px;">Also viewable — switch session:</div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;">
+        
+          <a href="?session=3" class="btn neutral" style="border-left:4px solid #fff700;">
+            Session 1 · Monday · 5:30 PM · Court 3 · Frontenac <span style="opacity:0.75;">(scheduled)</span>
+          </a>
+        
+          <a href="?session=2" class="btn neutral" style="border-left:4px solid #fa0000;">
+            Session 1 · Wednesday · 5:30 PM · Court 2 · Frontenac <span style="opacity:0.75;">(scheduled)</span>
+          </a>
+        
+          <a href="?session=1" class="btn green" style="border-left:4px solid #0969da;">
+            Session 1 · Wednesday · 5:30 PM · Court 4 · Frontenac <span style="opacity:0.75;">(scheduled)</span>
+          </a>
+        
+      </div>
+    
+  </div>
+
+
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr><th style="white-space:nowrap;">Date</th><th>Team A</th><th>Team B</th><th>Ball duty</th><th>Scores</th></tr>
+  </thead>
+  <tbody>
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-09-09
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Kyle K</td>
+          
+            
+            <td style="white-space:nowrap;">
+              22 games
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-09-16
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian P
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">John G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              19 games
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-09-23
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge confirmed">confirmed</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Brian B</td>
+          
+            
+            <td style="white-space:nowrap;">
+              22 games
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-09-30
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">John G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-10-07
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Bart L
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Shawn A</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-10-14
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Bart L
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Mike G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-10-21
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian P
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Doug G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Greg J</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-10-28
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Doug G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">John G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-11-04
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Brian B</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-11-11
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Doug G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Kyle K</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-11-18
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Brian P
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Brian P</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-11-25
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge double_booked">double booked</span>
+                    <div class="muted" style="font-size:11px;">also in Session 1 — Frontenac, Court 2</div>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Brian P
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Bart L
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Bart L</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-12-02
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Bart L
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Greg J</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-12-09
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Shawn A
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian B
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Shawn A</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-12-16
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Brian P
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Mike G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-12-23
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Mike G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Kyle K</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+      
+      
+        <tr class="">
+          <td rowspan="1" style="white-space:nowrap;">
+            2026-12-30
+            
+          </td>
+          
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Kyle K
+                  
+                  
+                    <span class="badge double_booked">double booked</span>
+                    <div class="muted" style="font-size:11px;">also in Session 1 — Frontenac, Court 2</div>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  Doug G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+            <td>
+              
+                <div style="margin-bottom:4px;">
+                  Greg J
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+                <div style="margin-bottom:4px;">
+                  John G
+                  
+                  
+                    <span class="badge scheduled">scheduled</span>
+                  
+                </div>
+              
+            </td>
+          
+          <td rowspan="1">Doug G</td>
+          
+            
+            <td style="white-space:nowrap;">
+              
+            </td>
+          
+        </tr>
+      
+    
+  </tbody>
+</table>
+</div>
+
+
+  <p class="muted" style="margin-top:8px;">"Double booked" means you're scheduled to play in two different sessions on the same date — sort it out ahead of time by reassigning yourself in one of them or finding a sub, rather than the week of.</p>
+
+</main>
+</body>
+</html>
+

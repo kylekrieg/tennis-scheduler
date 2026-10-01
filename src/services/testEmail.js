@@ -284,6 +284,19 @@ const TEMPLATES = {
       test: true,
     }),
   },
+  sub_filled_sub_copy: {
+    label: 'Sub confirmed — the sub\'s own copy (claimed early, confirms at reminder)',
+    fn: 'sendSubFilledNotice',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      subName: fullName(ctx.player),
+      originalName: (ctx.others[0] && fullName(ctx.others[0])) || 'Test Player',
+      reminderNote: true,
+      test: true,
+    }),
+  },
   found_sub_verification: {
     label: 'Found your own sub — "confirm it\'s you" gate',
     fn: 'sendFoundSubVerification',

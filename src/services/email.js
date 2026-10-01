@@ -800,7 +800,7 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, threa
 // the group knows whose spot changed hands ("Shawn will be subbing for Jim on
 // Monday, Sep 28") instead of just that *someone* got a sub. Falls back to
 // the old wording if a caller ever doesn't pass it.
-async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, threadKey = null, test = false }) {
+async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, threadKey = null, reminderNote = false, test = false }) {
   const subject = `Sub confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const subLine = originalName
     ? `${subName} will be subbing for ${originalName} on ${fmtDate(week.match_date)}. See you on the court!`
@@ -809,7 +809,9 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
     ${matchBanner(session, week)}
     <p>Hi ${fullName(recipient)},</p>
     <p>${subLine}</p>
-    <p style="color:#57606a;">Just a heads-up — no reply needed.</p>
+    ${reminderNote
+      ? `<p>You'll get the regular reminder ${session.reminder_days_before === 1 ? 'the day' : `${session.reminder_days_before} days`} before the match asking you to confirm. Please click Confirm when it comes so the group knows you're still on.</p>`
+      : '<p style="color:#57606a;">Just a heads-up — no reply needed.</p>'}
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;

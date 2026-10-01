@@ -37,7 +37,7 @@ Players who have that date blacked out are never asked. Anyone already in that w
 | Sub needed (roster) | Right away once the request is confirmed. An admin "Needs a sub" flag waits until that week's reminder time. | Roster players not playing that week | — | `sub_request` |
 | Your request went out | Right after the roster emails | The player needing a sub | — | `sub_request_self_notice` |
 | Sub still needed (sub list) | escalation_lead_hours before the match (default 24), if nobody has taken it. Right away if the request comes in later than that. | This session's sub list (Manage subs) | Escalate to broader sub list hours; Status page Suspend | `escalation` |
-| Sub found | When someone takes the spot | Everyone playing that week, including the sub | — | `sub_filled` |
+| Sub found | When someone takes the spot | Everyone playing that week, including the sub. If the sub took the spot before that week's reminder time, their copy says to confirm when the regular reminder comes | — | `sub_filled` |
 | Your sub is confirmed | Same time | The player who needed the sub | — | `sub_filled_original` |
 | Your spot still needs a sub | still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request. | The player who needed the sub | Sub still open alert hours | `sub_still_open` |
 | Sub still needed (admin) | Same time | Admin report addresses | Admin report emails | `sub_still_open_admin` |

@@ -3,7 +3,7 @@ const db = require('../db');
 const { generateRawToken, hashToken } = require('./tokens');
 const tokenStore = require('./tokenStore');
 const email = require('./email');
-const { zonedTimeToUtc } = require('./tz');
+const { zonedTimeToUtc, addDays } = require('./tz');
 const { getTimezone } = require('./settings');
 const { carriedOverBlackoutsForSession } = require('./sessionHelper');
 const { generateUniqueSlug, generateUniqueBroaderSubSlug } = require('./playerSlug');
@@ -579,6 +579,24 @@ function offerSource(offer, subRequest) {
   return 'roster';
 }
 
+/**
+ * Status for a sub's new row at claim time (Kyle, 2026-09-30): Shawn A took
+ * Pete D's 10/19 spot almost three weeks out and was marked 'confirmed' on
+ * the spot, so he'd get no follow-up nudge and the admin pages showed him as
+ * settled. Now a claim made BEFORE that week's regular reminder time starts
+ * as 'scheduled', and the sub confirms through the normal reminder/follow-up
+ * like everyone else. A claim at or after the reminder time stays
+ * 'confirmed' (the claim is the confirmation; otherwise the catch-up
+ * reminder pass would email "please confirm" seconds after they said yes).
+ * Also 'confirmed' when the session's automatic reminders are paused or it's
+ * not a regular session, since no reminder would ever come.
+ */
+function subClaimStatus(week, session, now = new Date()) {
+  if (!session || session.session_type !== 'regular' || !session.reminders_enabled) return 'confirmed';
+  const reminderAt = zonedTimeToUtc(addDays(week.match_date, -session.reminder_days_before), session.reminder_time, getTimezone());
+  return now < reminderAt ? 'scheduled' : 'confirmed';
+}
+
 async function claimSub(rawToken) {
   const hashed = hashToken(rawToken);
   // Either the offer's original link or its nudge link (the "I found a sub"
@@ -668,6 +686,9 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
     return { ok: false, reason: existingRow.status === 'subbed_out' ? 'gave_up_spot' : 'already_playing' };
   }
 
+  // 'scheduled' if claimed before this week's reminder time, else 'confirmed'
+  // — see subClaimStatus().
+  const subStatus = subClaimStatus(week, session);
   db.transaction(() => {
     db.prepare("UPDATE sub_offers SET status = 'claimed', responded_at = datetime('now') WHERE id = ?").run(offer.id);
     db.prepare(
@@ -683,8 +704,8 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
     tokenStore.invalidateTokensForAssignment(originalAssignment.id);
     db.prepare(
       `INSERT INTO week_assignments (week_id, player_id, team, court, is_sub, status, confirmed_at, replaces_assignment_id)
-       VALUES (?, ?, ?, ?, 1, 'confirmed', datetime('now'), ?)`
-    ).run(originalAssignment.week_id, subPlayer.id, originalAssignment.team, originalAssignment.court, originalAssignment.id);
+       VALUES (?, ?, ?, ?, 1, ?, ${subStatus === 'confirmed' ? "datetime('now')" : 'NULL'}, ?)`
+    ).run(originalAssignment.week_id, subPlayer.id, originalAssignment.team, originalAssignment.court, subStatus, originalAssignment.id);
   })();
 
   // Activity log — the sub's own confirm click, whichever pool it came from
@@ -726,6 +747,9 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
       subName: fullName(subPlayer),
       originalName: originalPlayerForLog ? fullName(originalPlayerForLog) : null,
       threadKey: subThreadKey(subRequest.id),
+      // Only the sub's own copy, and only when they still have to confirm
+      // through the regular reminder (Kyle, 2026-09-30).
+      reminderNote: subStatus === 'scheduled' && recipient.id === subPlayer.id,
     });
   }
 
@@ -742,7 +766,7 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
   }
   });
 
-  return { ok: true, week, subPlayer };
+  return { ok: true, week, subPlayer, subStatus };
 }
 
 /**
@@ -1597,6 +1621,7 @@ module.exports = {
   adminFlagNeedsSub,
   fanOutPendingAdminFlagsForWeek,
   claimSub,
+  subClaimStatus,
   closeActiveSubRequestForAssignment,
   recordAdminReassignAsSub,
   escalateOverdueRequests,

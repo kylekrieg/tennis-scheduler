@@ -2011,7 +2011,7 @@ router.post('/claim-sub/:token', detailLog.linkPage('claim_sub'), asyncHandler(a
     };
     return res.render('message', { title: 'Claim sub', heading: 'Spot no longer available', body: messages[result.reason] || 'This link is no longer valid.', tone: 'error' });
   }
-  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id, sessionId: result.week.session_id });
+  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.${result.subStatus === 'scheduled' ? " You'll get the regular reminder a couple of days before the match — please click Confirm when it comes." : ''}`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id, sessionId: result.week.session_id });
 }));
 
 // Ad-hoc pickup-game sign-up (see adhocFlow.js) — GET renders a landing page

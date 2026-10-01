@@ -95,9 +95,10 @@ function confirmTimingStats(sessionId) {
  * Per-player count of assignments that reached their week's lock (match time
  * passed) still sitting at 'scheduled' — never confirmed, never requested a
  * sub, never got a swap or reassign to move them off the slot. `is_sub = 0`
- * excludes a sub's own row, which is never relevant here: claimSub() always
- * inserts a sub's row already 'confirmed' (see subFlow.js), so a sub can
- * never end up in this bucket.
+ * excludes a sub's own row. Until 2026-09-30 claimSub() always inserted a
+ * sub's row already 'confirmed'; a claim made before the week's reminder
+ * time now starts 'scheduled' (see subFlow.js's subClaimStatus()), but subs
+ * are still left out of this stat — it measures regulars' own slots.
  */
 function neverConfirmedStats(sessionId) {
   const params = [];
