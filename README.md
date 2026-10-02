@@ -4,7 +4,7 @@ A website for running a recurring doubles group. It works for tennis, pickleball
 
 The original spec is in `Full_Scope_Of_Work.md` and `Technical_Architecture.md`.
 
-This README covers what the app does and how to get it running. For detail on any one feature, use the docs built into the app: **`/help`** is the guide for players and **Admin → Guide** is the guide for admins. Both have screenshots and get updated along with the app, so they'll be more current than this file.
+This README covers what the app does and how to get it running. For detail on any one feature, use the docs built into the app: **`/help`** is the guide for players and **Admin → Guide** is the guide for admins. Both have screenshots and get updated along with the app, so they'll be more current than this file. You can read the same two guides here on GitHub without running the app: **[Player guide (How It Works)](docs/USER_GUIDE.md)** and **[Admin guide](docs/ADMIN_GUIDE.md)**.
 
 ## What it does
 
@@ -170,7 +170,7 @@ The in-app `/help` page covers all of this, with a mockup of every email. A few 
 - **Weather, dark mode, text size, and a phone-friendly layout.** Players set these themselves and their browser remembers them.
 - **Double-booking warnings.** If someone is in two sessions that land on the same date, they see it everywhere they'd look (schedule, My Page, PDF, calendar) weeks ahead of time. The admin isn't the only one who finds out.
 
-*For a full walkthrough with every email shown, see `/help` in the app.*
+*For a full walkthrough with every email shown, see `/help` in the app, or [docs/USER_GUIDE.md](docs/USER_GUIDE.md).*
 
 ### For admins (password protected; Admin → Guide has the details)
 
@@ -182,7 +182,7 @@ The in-app `/help` page covers all of this, with a mockup of every email. A few 
 - **Activity Log, Email Log, and Super Log.** A record of every admin action and every email sent, for when someone says "I never got that." The Email Log shows each recipient's player name as well as their address. Click an email's subject to see exactly what was sent. Each sub request's emails (request, roster, sub list, sub confirmed) are grouped into one trail. The Super Log puts actions and emails on one timeline, so you can see which emails an action sent. It also records detail the other two leave out: when someone opens an emailed link or presses its button (with the device and IP it came from), admin buttons like Resend link, and refused attempts (used links, a spot already filled, rate limits, bot traps, failed admin logins).
 - **Manual controls.** Reassign a spot, mark someone confirmed, change ball duty, send a one-off email (to a player, a roster, a week, or a test of any template), preview every automatic email without sending it, and add a **one-time sub (not on roster)** for someone who was lined up outside the app.
 - **Database backups.** A backup button, a nightly cron job, and an off-site copy over rsync/SSH. See "Backing up the database" below.
-- **Weather forecasts**, turned on per session. Check a box and enter a latitude and longitude. See `/admin/guide#weather-setup` for the API key and troubleshooting.
+- **Weather forecasts**, turned on per session. Check a box and enter a latitude and longitude. See `/admin/guide#weather-setup` ([docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md#weather-setup)) for the API key and troubleshooting.
 - **Ad-hoc sessions.** A second kind of session for pickup games. No targets and no blackout dates. People sign up first come, first served, and every 4 sign-ups make a court.
 
 *For a full walkthrough, including when each email goes out, see **Admin → Guide** in the app.*

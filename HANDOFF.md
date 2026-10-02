@@ -16,7 +16,7 @@ Five other docs exist in this folder, each answering a different question:
 - **`Technical_Architecture.md`** — a short, high-level architecture summary. Good first read if you want the 5-minute version before diving into `docs/HISTORY.md`.
 - **`README.md`** — feature list and setup commands, written for a human running the app, not extending it.
 - **`RASPBERRY_PI_SETUP.md`** — step-by-step instructions for deploying onto a Raspberry Pi (Node, `pm2`, Cloudflare Tunnel), pulled out of `README.md` into its own doc.
-- **In-app docs** — `/help` is the player-facing walkthrough (confirm, blackout dates, sub/swap, calendar, ad-hoc pickup games). `/admin/guide` is the admin-facing walkthrough of the actual day-to-day workflow. Both are useful to skim before changing anything user-facing, since they describe the intended behavior in plain language.
+- **In-app docs** — `/help` is the player-facing walkthrough (confirm, blackout dates, sub/swap, calendar, ad-hoc pickup games). `/admin/guide` is the admin-facing walkthrough of the actual day-to-day workflow. Both are useful to skim before changing anything user-facing, since they describe the intended behavior in plain language. The same two guides are also in the repo as Markdown — `docs/USER_GUIDE.md` and `docs/ADMIN_GUIDE.md` — generated from those pages by `npm run guides`, so rerun it after editing either page.
 
 This file is the map; `docs/HISTORY.md` is the territory.
 

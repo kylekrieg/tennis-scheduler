@@ -4,7 +4,7 @@ Guidance for Claude working in this repo. Keep this file **short**; it's loaded 
 
 - **Background on any feature** (why it exists, what was tried, how it was verified) lives in `docs/HISTORY.md`, the full dated change log. Don't read it top to bottom. `grep -n` it for the feature, route, table or column you're touching and read only that section.
 - **When you make a real change:** append a short dated entry to the end of `docs/HISTORY.md` (heading `### <change> (Kyle, YYYY-MM-DD)`, 3–10 lines: the ask, root cause, what changed, how verified). Only edit this file if a rule or convention below changed.
-- Other docs: `HANDOFF.md` (start-here map), `README.md` (features/setup), `RASPBERRY_PI_SETUP.md`, `EMAIL_MAP.md` (every email and its timing; generated), `Technical_Architecture.md`. In-app: `/help` (players), `/admin/guide` (admins).
+- Other docs: `HANDOFF.md` (start-here map), `README.md` (features/setup), `RASPBERRY_PI_SETUP.md`, `EMAIL_MAP.md` (every email and its timing; generated), `Technical_Architecture.md`. In-app: `/help` (players), `/admin/guide` (admins); `docs/USER_GUIDE.md` / `docs/ADMIN_GUIDE.md` are generated copies for GitHub — edit the EJS, then `npm run guides`.
 
 ## Working rules
 
@@ -24,6 +24,7 @@ node src/db/seed-example.js                    # example 9-player/17-week roster
 npm start                                      # = npm run dev; no watch/build step
 npm run test:scheduler                         # plain node + assert, add cases in engine.test.js
 npm run email-map                              # regenerate EMAIL_MAP.md from services/emailMap.js
+npm run guides                                 # regenerate docs/USER_GUIDE.md + docs/ADMIN_GUIDE.md from /help and /admin/guide (throwaway DB)
 npm run backup | backup:offsite | reset-data -- --confirm
 ```
 

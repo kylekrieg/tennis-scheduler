@@ -11,7 +11,8 @@
     "backup": "node src/scripts/backup-db.js",
     "backup:offsite": "node src/scripts/backup-offsite.js",
     "reset-data": "node src/scripts/reset-data.js",
-    "email-map": "node src/scripts/write-email-map.js"
+    "email-map": "node src/scripts/write-email-map.js",
+    "guides": "node src/scripts/write-guides.js"
   },
   "license": "SEE LICENSE IN LICENSE",
   "author": "Kyle Krieg",
@@ -28,5 +29,9 @@
     "ics": "^3.7.2",
     "nodemailer": "^10.0.13",
     "pdfkit": "^0.15.0"
+  },
+  "devDependencies": {
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   }
 }
