@@ -529,6 +529,16 @@ ensureColumn('sub_offers', 'nudge_token', 'TEXT');
 // "Still open" sub alert (Kyle, 2026-09-30) — see subFlow.js's processStillOpenSubs().
 ensureColumn('sessions', 'still_open_alert_hours', 'INTEGER NOT NULL DEFAULT 4');
 ensureColumn('sub_requests', 'still_open_alert_sent_at', 'TEXT');
+// Shared sub requests (Kyle, 2026-10-02) — two players needing a sub the same
+// week share one outreach. See subFlow.js's "Shared sub requests" block.
+ensureColumn('sub_requests', 'pool_id', 'INTEGER');
+ensureColumn('sub_requests', 'shared_at', 'TEXT');
+// Backfill: a still-open request whose roster email already went out (or an
+// "I found a sub" one that has opened up) is already "shared". Safe to rerun:
+// new code sets shared_at itself whenever these conditions become true.
+raw.exec(`UPDATE sub_requests SET shared_at = COALESCE(fanout_sent_at, escalated_at, created_at)
+          WHERE shared_at IS NULL AND status IN ('open', 'escalated', 'unfilled')
+            AND ((self_arranged = 0 AND fanout_sent_at IS NOT NULL) OR (self_arranged = 1 AND status != 'open'))`);
 
 // Ball duty games-won reminder (Kyle, 2026-09-15) — see schema.sql's comment
 // on this column and cron.js's processScoreReminders(). Defaults to 24,

@@ -245,6 +245,148 @@ function hasActiveConcurrentSubRequest(weekId) {
   return !!row;
 }
 
+/** Duplicate guard for one slot (Kyle, 2026-10-02). The old one-per-week
+ * block above used to double as this; now that a second player in the same
+ * week is allowed (see "Shared sub requests" below), this is what still
+ * refuses a second active request on the SAME assignment (double-click,
+ * re-flagging) — the real bug the 2026-08-28 fix above was about. */
+function hasActiveSubRequestForAssignment(weekAssignmentId) {
+  return !!db
+    .prepare(`SELECT 1 FROM sub_requests WHERE week_assignment_id = ? AND status IN ('open', 'escalated', 'unfilled')`)
+    .get(weekAssignmentId);
+}
+
+// --- Shared sub requests (Kyle, 2026-10-02) ---------------------------------
+// Two (or more) players needing a sub for the same week. Each player keeps
+// their own sub_requests row (their own emails, still-open alert, Sub History
+// row), but the outreach is shared:
+//
+//   - The first request emails the roster as usual. A request that comes in
+//     while that one is still open JOINS it (sub_requests.pool_id = the
+//     first request's id): no new roster email, no new sub-list email.
+//   - Every link from that outreach stays live until EVERY request in the
+//     group is filled. Each "I'll play" click fills the oldest still-open
+//     request in the group (order requested), whichever email it came from.
+//   - The sub-list escalation goes out once for the group. A request that
+//     joins after it went out is marked escalated straight away.
+//   - If the earlier request(s) are all filled (or cleared) before the next
+//     one comes in, the group is over: the new request starts its own, with
+//     a fresh roster email (everyone already saw "Sub found").
+//   - An "I found a sub" request stays on its own while its named sub has
+//     time to answer (shared_at IS NULL). When it opens up at its deadline
+//     it joins the open group if there is one (no new emails), otherwise it
+//     goes out on its own like before. The named sub's own link always fills
+//     that player's spot first.
+//   - An admin-flagged request waiting for the reminder time joins an open
+//     group right away (joining sends nothing), otherwise waits as before.
+//
+// shared_at marks a request as part of a group's outreach (set when its own
+// roster email starts, or when it joins one). pool_id = the group's id (the
+// request that started it); NULL on old rows means "its own group".
+const CLAIMABLE_STATUSES = ['open', 'escalated', 'unfilled'];
+function poolIdOf(sr) {
+  return sr.pool_id || sr.id;
+}
+function isClaimableRequest(sr) {
+  return !!sr && CLAIMABLE_STATUSES.includes(sr.status);
+}
+/** Still open AND part of a group's outreach — i.e. an "I'll play" click from
+ * that group can fill it. */
+function isSharedRequest(sr) {
+  return isClaimableRequest(sr) && !!sr.shared_at;
+}
+/** An "I found a sub" request still waiting on its named sub. */
+function inNamedSubWindow(sr) {
+  return !!sr && !!sr.self_arranged && sr.status === 'open' && !sr.shared_at;
+}
+function poolMembers(poolId) {
+  return db.prepare('SELECT * FROM sub_requests WHERE id = ? OR pool_id = ? ORDER BY id').all(poolId, poolId);
+}
+/** The group's still-open requests, oldest first — the fill order. */
+function openPoolMembers(poolId) {
+  return poolMembers(poolId).filter(isSharedRequest);
+}
+function poolStillOpenFor(subRequestId) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  return !!sr && openPoolMembers(poolIdOf(sr)).length > 0;
+}
+function weekIdOfRequest(sr) {
+  return db.prepare('SELECT week_id FROM week_assignments WHERE id = ?').get(sr.week_assignment_id).week_id;
+}
+/** The open group in this week another request can join, or null. */
+function joinablePoolForWeek(weekId, excludeSubRequestId = 0) {
+  const rows = db
+    .prepare(
+      `SELECT sr.* FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       WHERE wa.week_id = ? AND sr.id != ? AND sr.status IN ('open', 'escalated', 'unfilled') ORDER BY sr.id`
+    )
+    .all(weekId, excludeSubRequestId);
+  const lead = rows.find(isSharedRequest);
+  return lead ? poolIdOf(lead) : null;
+}
+/** Has this group's sub-list email already gone out? */
+function poolEscalated(poolId, excludeSubRequestId = 0) {
+  return poolMembers(poolId).some((m) => m.id !== excludeSubRequestId && m.escalated_at);
+}
+/** Add a request to an open group. Sends nothing. If the group already went
+ * to the sub list, this request counts as escalated too. */
+function joinPool(subRequestId, poolId) {
+  const escalated = poolEscalated(poolId, subRequestId);
+  db.prepare('UPDATE sub_requests SET pool_id = id WHERE id = ? AND pool_id IS NULL').run(poolId);
+  db.prepare(
+    `UPDATE sub_requests SET pool_id = ?, shared_at = COALESCE(shared_at, datetime('now')),
+            fanout_sent_at = COALESCE(fanout_sent_at, datetime('now'))
+     WHERE id = ?`
+  ).run(poolId, subRequestId);
+  if (escalated) {
+    db.prepare(
+      "UPDATE sub_requests SET status = 'escalated', escalated_at = COALESCE(escalated_at, datetime('now')) WHERE id = ? AND status = 'open'"
+    ).run(subRequestId);
+  }
+  return { escalated };
+}
+/** Everyone currently holding a live link from this group (for "already
+ * asked" lists in the joiner's emails). Full names. */
+function pendingAskedNames(poolId) {
+  const ids = poolMembers(poolId).map((m) => m.id);
+  if (!ids.length) return [];
+  const rows = db
+    .prepare(
+      `SELECT p.name AS p_name, p.full_name AS p_full, bl.name AS bl_name FROM sub_offers o
+       LEFT JOIN players p ON p.id = o.candidate_player_id
+       LEFT JOIN broader_sub_list bl ON bl.id = o.broader_list_id
+       WHERE o.status = 'pending' AND o.sub_request_id IN (${ids.map(() => '?').join(',')}) ORDER BY o.id`
+    )
+    .all(...ids);
+  const names = rows.map((r) => (r.p_name ? fullName({ name: r.p_name, full_name: r.p_full }) : r.bl_name)).filter(Boolean);
+  return [...new Set(names)];
+}
+/** Offer counts across the whole group (asked = ever, pending = still live). */
+function poolOfferCounts(poolId) {
+  const ids = poolMembers(poolId).map((m) => m.id);
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS asked, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+       FROM sub_offers WHERE sub_request_id IN (${ids.map(() => '?').join(',')})`
+    )
+    .get(...ids);
+}
+/**
+ * Start the outreach for a request: join the week's open group if there is
+ * one (no emails), otherwise email the roster (fanOutSubRequest). Returns
+ * { joined, poolId, count, candidates, alreadyAsked, poolEscalated }.
+ */
+async function startOutreach(subRequestId, requestingPlayerName) {
+  const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
+  const poolId = joinablePoolForWeek(weekIdOfRequest(sr), subRequestId);
+  if (poolId) {
+    const { escalated } = joinPool(subRequestId, poolId);
+    return { joined: true, poolId, count: 0, candidates: [], alreadyAsked: pendingAskedNames(poolId), poolEscalated: escalated };
+  }
+  const r = await fanOutSubRequest(subRequestId, requestingPlayerName);
+  return { joined: false, poolId: subRequestId, ...r, alreadyAsked: [], poolEscalated: false };
+}
+
 /**
  * The actual candidate computation + sub_offers creation + fan-out emails for
  * an already-open sub_requests row — shared by the immediate self-service
@@ -329,10 +471,24 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
   const alreadyOffered = new Set(
     db.prepare('SELECT candidate_player_id FROM sub_offers WHERE sub_request_id = ? AND candidate_player_id IS NOT NULL').all(subRequestId).map((r) => r.candidate_player_id)
   );
+  // ...or a live link from another request this week (Kyle, 2026-10-02 —
+  // e.g. the named sub of a separate "I found a sub" request).
+  for (const r of db
+    .prepare(
+      `SELECT o.candidate_player_id FROM sub_offers o JOIN sub_requests sr ON sr.id = o.sub_request_id
+       JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       WHERE wa.week_id = ? AND o.status = 'pending' AND o.candidate_player_id IS NOT NULL`
+    )
+    .all(week.id)) alreadyOffered.add(r.candidate_player_id);
   const candidates = allCandidates.filter((c) => !blackoutSet.has(`${c.id}|${week.match_date}`) && !alreadyOffered.has(c.id));
 
   const offers = db.transaction(() => {
-    db.prepare(`UPDATE sub_requests SET fanout_sent_at = datetime('now') WHERE id = ?`).run(subRequestId);
+    // shared_at/pool_id (Kyle, 2026-10-02): this request now starts its own
+    // group, which a later request in the same week can join.
+    db.prepare(
+      `UPDATE sub_requests SET fanout_sent_at = datetime('now'), shared_at = COALESCE(shared_at, datetime('now')),
+              pool_id = COALESCE(pool_id, id) WHERE id = ?`
+    ).run(subRequestId);
     return candidates.map((c) => {
       const raw = generateRawToken();
       db.prepare(
@@ -344,7 +500,8 @@ async function fanOutSubRequest(subRequestId, requestingPlayerName) {
 
   const emailed = [];
   for (const { candidate, rawToken } of offers) {
-    if (!subRequestStillOpen(subRequestId)) break;
+    // Keep going while ANY request in the group is open (Kyle, 2026-10-02).
+    if (!poolStillOpenFor(subRequestId)) break;
     emailed.push(candidate);
     await email.sendSubRequestFanout({
       recipient: candidate,
@@ -392,8 +549,11 @@ async function createSubRequest(weekAssignmentId) {
   if (!week.schedule_locked_at) return { blocked: true, reason: 'not_locked' };
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
-  if (hasActiveConcurrentSubRequest(week.id)) {
-    return { blocked: true, reason: 'concurrent' };
+  // Another player already needing a sub this week is fine now (Kyle,
+  // 2026-10-02) — this request joins theirs. Only a second request on this
+  // same slot is refused.
+  if (hasActiveSubRequestForAssignment(weekAssignmentId)) {
+    return { blocked: true, reason: 'already_requested' };
   }
 
   const wasBallDuty = week.ball_duty_player_id === player.id;
@@ -435,8 +595,11 @@ async function createSubRequest(weekAssignmentId) {
   // All of this request's emails in one ordered run (Kyle, 2026-09-29):
   // roster fan-out, then escalation to the sub list if the match is already
   // inside the escalation window, then the requester's confirmation last.
-  const { offerCount } = await withSubRequestLock(subRequestId, async () => {
-    const { count: offerCount, candidates } = await fanOutSubRequest(subRequestId, fullName(player));
+  // If another player's request is still open this week, this one joins it
+  // instead of emailing the roster again (Kyle, 2026-10-02) — see
+  // startOutreach().
+  const { offerCount, joined } = await withSubRequestLock(subRequestId, async () => {
+    const out = await startOutreach(subRequestId, fullName(player));
     const esc = await escalateOneRequest(subRequestId, { onlyIfDue: true });
     // Safety net for a wrong-name mix-up (e.g. on the self-service "Request a
     // Sub" page): the affected player gets their own confirmation, so a
@@ -444,11 +607,12 @@ async function createSubRequest(weekAssignmentId) {
     // and what happens next — see sendSubRequestOwnConfirmation().
     const sessionSubs = sessionSubList(session.id);
     await email.sendSubRequestOwnConfirmation({
-      player, week, session, candidates, sessionSubs,
+      player, week, session, candidates: out.candidates, sessionSubs,
       escalatedTo: esc.result === 'escalated' ? esc.emailed : null,
+      joined: out.joined ? { alreadyAsked: out.alreadyAsked, escalated: out.poolEscalated || esc.result === 'escalated' } : null,
       threadKey: subThreadKey(subRequestId),
     });
-    return { offerCount };
+    return { offerCount: out.count, joined: out.joined };
   });
 
   // Activity log — player self-service "Need a sub" (Kyle, 2026-09-09: wants
@@ -458,11 +622,13 @@ async function createSubRequest(weekAssignmentId) {
   logPlayerActivity({
     playerName: fullName(player),
     action: 'sub.request',
-    description: `${fullName(player)} requested a sub for ${week.match_date} (${offerCount} candidate${offerCount === 1 ? '' : 's'} notified)`,
+    description: joined
+      ? `${fullName(player)} requested a sub for ${week.match_date} — joined the sub request already open that week (no new emails)`
+      : `${fullName(player)} requested a sub for ${week.match_date} (${offerCount} candidate${offerCount === 1 ? '' : 's'} notified)`,
     sessionId: session.id,
   });
 
-  return { blocked: false, subRequestId, offerCount };
+  return { blocked: false, subRequestId, offerCount, joined };
 }
 
 /**
@@ -496,8 +662,8 @@ function adminFlagNeedsSub(weekAssignmentId) {
   if (!week.schedule_locked_at) return { blocked: true, reason: 'not_locked' };
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
-  if (hasActiveConcurrentSubRequest(week.id)) {
-    return { blocked: true, reason: 'concurrent' };
+  if (hasActiveSubRequestForAssignment(weekAssignmentId)) {
+    return { blocked: true, reason: 'already_requested' };
   }
 
   const wasBallDuty = week.ball_duty_player_id === player.id;
@@ -524,9 +690,16 @@ function adminFlagNeedsSub(weekAssignmentId) {
     return subRequestId;
   })();
 
+  // Another request already out this week (Kyle, 2026-10-02): join it now.
+  // Joining sends nothing, so there's no reason to wait for the reminder
+  // time — the next "I'll play" click after the earlier request(s) fills
+  // this one.
+  const poolId = joinablePoolForWeek(week.id, subRequestId);
+  if (poolId) joinPool(subRequestId, poolId);
+
   // Admin-facing (flash message + activity log at the admin.js call site) —
   // full name (Kyle, 2026-09-07).
-  return { blocked: false, subRequestId, playerName: fullName(player) };
+  return { blocked: false, subRequestId, playerName: fullName(player), joined: !!poolId };
 }
 
 /**
@@ -553,8 +726,12 @@ async function fanOutPendingAdminFlagsForWeek(weekId) {
   for (const row of pending) {
     // Same ordered run as createSubRequest(): roster first, then the sub
     // list if already due (Kyle, 2026-09-29).
+    // Joins the week's open group instead if one started meanwhile (Kyle,
+    // 2026-10-02) — see startOutreach().
     await withSubRequestLock(row.subRequestId, async () => {
-      await fanOutSubRequest(row.subRequestId, fullName(row));
+      const cur = db.prepare('SELECT status FROM sub_requests WHERE id = ?').get(row.subRequestId);
+      if (!cur || cur.status !== 'open') return;
+      await startOutreach(row.subRequestId, fullName(row));
       await escalateOneRequest(row.subRequestId, { onlyIfDue: true });
     });
   }
@@ -615,7 +792,9 @@ async function claimSub(rawToken) {
 async function claimOffer(offer, { byAdmin = false } = {}) {
   if (offer.status !== 'pending') return { ok: false, reason: 'already_claimed' };
 
-  const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
+  const ownRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
+  // Which request this click fills (Kyle, 2026-10-02) — see claimTarget().
+  const subRequest = ownRequest ? claimTarget(offer, ownRequest) : null;
   // 'resolved_manually' covers an admin having reassigned or manually
   // confirmed this slot directly, and 'resolved_double_booking' covers the
   // joint conflict resolver having moved this player to a different week
@@ -624,13 +803,7 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
   // also closes every pending offer, so the offer.status check above would
   // already catch it; this just means correctness here doesn't depend on
   // that other cleanup having also run.
-  if (
-    !subRequest ||
-    subRequest.status === 'filled' ||
-    subRequest.status === 'resolved_manually' ||
-    subRequest.status === 'resolved_double_booking' ||
-    subRequest.status === 'resolved_injury_return'
-  ) {
+  if (!subRequest || !isClaimableRequest(subRequest)) {
     return { ok: false, reason: 'already_filled' };
   }
 
@@ -690,12 +863,19 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
   // 'scheduled' if claimed before this week's reminder time, else 'confirmed'
   // — see subClaimStatus().
   const subStatus = subClaimStatus(week, session);
+  const poolId = poolIdOf(subRequest);
   db.transaction(() => {
     db.prepare("UPDATE sub_offers SET status = 'claimed', responded_at = datetime('now') WHERE id = ?").run(offer.id);
-    db.prepare(
-      "UPDATE sub_offers SET status = 'closed' WHERE sub_request_id = ? AND id != ? AND status = 'pending'"
-    ).run(subRequest.id, offer.id);
     db.prepare("UPDATE sub_requests SET status = 'filled' WHERE id = ?").run(subRequest.id);
+    // Everyone else's links stay live while another request in the group is
+    // still open (Kyle, 2026-10-02); only once the last one is filled do
+    // they all close.
+    if (openPoolMembers(poolId).length === 0) {
+      const ids = poolMembers(poolId).map((m) => m.id);
+      db.prepare(
+        `UPDATE sub_offers SET status = 'closed' WHERE status = 'pending' AND id != ? AND sub_request_id IN (${ids.map(() => '?').join(',')})`
+      ).run(offer.id, ...ids);
+    }
     db.prepare("UPDATE week_assignments SET status = 'subbed_out' WHERE id = ?").run(originalAssignment.id);
     // A sub's own "I'm playing"/"need a sub" tokens don't exist yet — they
     // won't get any until they're next reminded — but the *original*
@@ -718,7 +898,7 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
   // Kyle, 2026-09-28: one action per route the claim came through, so a
   // self-arranged sub accepting isn't logged the same as someone grabbing a
   // fan-out spot. See offerSource() for how older offers are classified.
-  const source = offerSource(offer, subRequest);
+  const source = offerSource(offer, ownRequest);
   const subName = fullName(subPlayer);
   const origName = fullName(originalPlayerForLog);
   const claimLog = {
@@ -736,6 +916,15 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
     )
     .all(originalAssignment.week_id);
 
+  // Other sub requests still open this week (Kyle, 2026-10-02) — the
+  // "Sub found" email says the match still needs N more.
+  const stillOpenCount = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+       WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated', 'unfilled')`
+    )
+    .get(originalAssignment.week_id).n;
+
   // "Sub found" emails wait for any of this request's emails still being
   // sent (a fan-out or escalation loop stops early now that the request is
   // filled), so they always come after the request emails (Kyle, 2026-09-29).
@@ -751,6 +940,7 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
       // Only the sub's own copy, and only when they still have to confirm
       // through the regular reminder (Kyle, 2026-09-30).
       reminderNote: subStatus === 'scheduled' && recipient.id === subPlayer.id,
+      stillOpenCount,
     });
   }
 
@@ -767,7 +957,32 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
   }
   });
 
-  return { ok: true, week, subPlayer, subStatus };
+  return { ok: true, week, subPlayer, subStatus, originalName: origName };
+}
+
+/**
+ * Which request an "I'll play" click fills (Kyle, 2026-10-02):
+ *   - the named sub's own link on an "I found a sub" request fills that
+ *     player's spot while it's still open;
+ *   - otherwise the oldest still-open request in the click's group
+ *     (order requested), whichever request's email the link came from.
+ * Returns null when nothing in the group is open any more. Read-only, so the
+ * claim page can show who they'd be covering before they click.
+ */
+function claimTarget(offer, ownRequest) {
+  if (isClaimableRequest(ownRequest) && offerSource(offer, ownRequest) === 'self_arranged') return ownRequest;
+  if (inNamedSubWindow(ownRequest)) return null;
+  return openPoolMembers(poolIdOf(ownRequest))[0] || null;
+}
+/** For the claim page: who this link would currently cover, or null. */
+function claimTargetPlayerName(offer) {
+  const own = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
+  const target = own && offer.status === 'pending' ? claimTarget(offer, own) : null;
+  if (!target) return null;
+  const p = db
+    .prepare('SELECT p.* FROM week_assignments wa JOIN players p ON p.id = wa.player_id WHERE wa.id = ?')
+    .get(target.week_assignment_id);
+  return p ? fullName(p) : null;
 }
 
 /**
@@ -809,8 +1024,11 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(assignment.player_id);
 
-  if (hasActiveConcurrentSubRequest(week.id)) {
-    return { ok: false, reason: 'concurrent' };
+  // Another sub request this week is fine (Kyle, 2026-10-02): this one stays
+  // on its own while the named sub has time to answer, and joins the open
+  // group (if any) when it opens up.
+  if (hasActiveSubRequestForAssignment(weekAssignmentId)) {
+    return { ok: false, reason: 'already_requested' };
   }
 
   // { candidateType: 'player'|'broader', id, name (public/short), email,
@@ -1013,12 +1231,22 @@ async function arrangeSelfSub(weekAssignmentId, selection = {}) {
  */
 function closeActiveSubRequestForAssignment(weekAssignmentId, opts = {}) {
   const active = db
-    .prepare(`SELECT id FROM sub_requests WHERE week_assignment_id = ? AND status IN ('open', 'escalated', 'unfilled')`)
+    .prepare(`SELECT * FROM sub_requests WHERE week_assignment_id = ? AND status IN ('open', 'escalated', 'unfilled')`)
     .get(weekAssignmentId);
   if (!active) return false;
   const status = opts.resolution === 'double_booking' ? 'resolved_double_booking' : 'resolved_manually';
   db.prepare(`UPDATE sub_requests SET status = ? WHERE id = ?`).run(status, active.id);
-  db.prepare(`UPDATE sub_offers SET status = 'closed' WHERE sub_request_id = ? AND status = 'pending'`).run(active.id);
+  // Shared requests (Kyle, 2026-10-02): this request's links may also be
+  // serving another player's still-open request in the same group — leave
+  // them live in that case (a click just fills the other one). The named
+  // sub's invite on an "I found a sub" request was for this player only, so
+  // that always closes.
+  db.prepare(`UPDATE sub_offers SET status = 'closed' WHERE sub_request_id = ? AND status = 'pending' AND source = 'self_arranged'`).run(active.id);
+  const poolId = poolIdOf(active);
+  if (openPoolMembers(poolId).length === 0) {
+    const ids = poolMembers(poolId).map((m) => m.id);
+    db.prepare(`UPDATE sub_offers SET status = 'closed' WHERE status = 'pending' AND sub_request_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+  }
   return true;
 }
 
@@ -1082,7 +1310,8 @@ async function escalateOverdueRequests() {
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN sessions s ON s.id = w.session_id
-       WHERE sr.status = 'open' AND s.archived_at IS NULL`
+       WHERE sr.status = 'open' AND s.archived_at IS NULL
+       ORDER BY sr.id`
     )
     .all();
 
@@ -1122,6 +1351,23 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspen
     .get(subRequestId);
   if (!req || req.status !== 'open' || req.archived_at) return { result: 'not_open', emailed: [] };
 
+  // Shared requests (Kyle, 2026-10-02). An admin-flagged request still
+  // waiting for its roster email joins the week's open group if there is
+  // one, instead of emailing the sub list on its own.
+  if (!req.shared_at && !inNamedSubWindow(req)) {
+    const joinId = joinablePoolForWeek(req.week_id, req.id);
+    if (joinId) {
+      joinPool(req.id, joinId);
+      return { result: 'joined', emailed: [] };
+    }
+  }
+  // Part of a group whose sub-list email already went out: nothing new to
+  // send — just count this request as escalated too.
+  if (req.shared_at && poolEscalated(poolIdOf(req), req.id)) {
+    db.prepare("UPDATE sub_requests SET status = 'escalated', escalated_at = COALESCE(escalated_at, datetime('now')) WHERE id = ?").run(req.id);
+    return { result: 'joined', emailed: [] };
+  }
+
   const tz = getTimezone();
   const now = new Date();
   const week = getWeekWithSession(req.week_id);
@@ -1131,7 +1377,9 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspen
   // they never escalate on escalation_lead_hours — processSelfArrangedSubs()
   // opens them up at session.self_arranged_deadline_hours instead, calling
   // this with onlyIfDue: false.
-  if (onlyIfDue && req.self_arranged) return { result: 'not_due', emailed: [] };
+  // (Only while the named sub still has time — one that has opened up and
+  // joined a group escalates with that group, Kyle 2026-10-02.)
+  if (onlyIfDue && inNamedSubWindow(req)) return { result: 'not_due', emailed: [] };
   const escalateAt = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
   if (onlyIfDue && now < escalateAt) return { result: 'not_due', emailed: [] };
 
@@ -1176,7 +1424,12 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspen
   sessionSubs = sessionSubs.filter((s) => s.candidateType !== 'player' || !inWeek.has(s.id));
   // Skip anyone already offered this spot (the named sub on an "I found a
   // sub" request, or a roster player from the fan-out) — Kyle, 2026-09-30.
-  const priorOffers = db.prepare('SELECT candidate_player_id, broader_list_id FROM sub_offers WHERE sub_request_id = ?').all(req.id);
+  // Across the whole group (Kyle, 2026-10-02), so nobody already holding a
+  // link for this match gets a second one.
+  const poolIds = poolMembers(poolIdOf(req)).map((m) => m.id);
+  const priorOffers = db
+    .prepare(`SELECT candidate_player_id, broader_list_id FROM sub_offers WHERE sub_request_id IN (${poolIds.map(() => '?').join(',')})`)
+    .all(...poolIds);
   const offeredPlayers = new Set(priorOffers.filter((o) => o.candidate_player_id).map((o) => o.candidate_player_id));
   const offeredBroader = new Set(priorOffers.filter((o) => o.broader_list_id).map((o) => o.broader_list_id));
   sessionSubs = sessionSubs.filter((c) => (c.candidateType === 'player' ? !offeredPlayers.has(c.id) : !offeredBroader.has(c.id)));
@@ -1187,7 +1440,7 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspen
     // is blacked out / already in this week, and nobody from the roster is
     // still holding a link. Tell the player and admins now instead of
     // waiting for the 4-hour "still open" alert.
-    const pending = db.prepare("SELECT COUNT(*) AS n FROM sub_offers WHERE sub_request_id = ? AND status = 'pending'").get(req.id).n;
+    const pending = poolOfferCounts(poolIdOf(req)).pending || 0;
     if (pending === 0) {
       // A self-arranged request's player is told in the "your spot is open"
       // email that goes right after this, so only the admins get this one.
@@ -1196,13 +1449,22 @@ async function escalateOneRequest(subRequestId, { onlyIfDue = true, ignoreSuspen
     return { result: 'unfilled', emailed: [] };
   }
 
-  db.prepare("UPDATE sub_requests SET status = 'escalated', escalated_at = datetime('now') WHERE id = ?").run(
-    req.id
-  );
+  // shared_at/pool_id: an admin-flagged request escalating before its roster
+  // email ever went out still becomes a group others can join and claim from.
+  db.prepare(
+    `UPDATE sub_requests SET status = 'escalated', escalated_at = datetime('now'),
+            shared_at = COALESCE(shared_at, datetime('now')), pool_id = COALESCE(pool_id, id) WHERE id = ?`
+  ).run(req.id);
+  // One sub-list email for the whole group (Kyle, 2026-10-02): the other
+  // open requests in it count as escalated now too.
+  db.prepare(
+    `UPDATE sub_requests SET status = 'escalated', escalated_at = COALESCE(escalated_at, datetime('now'))
+     WHERE (id = ? OR pool_id = ?) AND id != ? AND status = 'open' AND shared_at IS NOT NULL`
+  ).run(poolIdOf(req), poolIdOf(req), req.id);
 
   const emailed = [];
   for (const candidate of sessionSubs) {
-    if (!subRequestStillOpen(req.id)) break;
+    if (!poolStillOpenFor(req.id)) break;
     const raw = generateRawToken();
     if (candidate.candidateType === 'player') {
       db.prepare(
@@ -1298,7 +1560,7 @@ async function processSelfArrangedSubs() {
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN sessions s ON s.id = w.session_id
-       WHERE sr.status = 'open' AND sr.self_arranged = 1 AND s.archived_at IS NULL AND w.locked = 0`
+       WHERE sr.status = 'open' AND sr.self_arranged = 1 AND sr.shared_at IS NULL AND s.archived_at IS NULL AND w.locked = 0`
     )
     .all();
   for (const { id } of rows) {
@@ -1312,7 +1574,9 @@ async function processSelfArrangedSubs() {
 
 async function stepSelfArrangedRequest(subRequestId, now = new Date()) {
   const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
-  if (!sr || sr.status !== 'open' || !sr.self_arranged) return 'not_open';
+  // shared_at set = already opened up (possibly joined another request's
+  // group while still 'open') — nothing left for this timeline to do.
+  if (!sr || !inNamedSubWindow(sr)) return 'not_open';
   const assignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(sr.week_assignment_id);
   const week = getWeekWithSession(assignment.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
@@ -1380,14 +1644,22 @@ async function stepSelfArrangedRequest(subRequestId, now = new Date()) {
 async function openUpSelfArranged({ sr, week, session, requester, subName, deadlineAt, early = false }) {
   const requesterName = fullName(requester);
   const threadKey = subThreadKey(sr.id);
-  const roster = await fanOutSubRequest(sr.id, requesterName);
-  const esc = await escalateOneRequest(sr.id, { onlyIfDue: false, ignoreSuspend: early });
+  // Joins another player's open sub request this week if there is one
+  // (Kyle, 2026-10-02) — no new emails then, and it reaches the sub list
+  // with that group (unless an admin clicked Send now, which means now).
+  const roster = await startOutreach(sr.id, requesterName);
+  const esc = !roster.joined || early ? await escalateOneRequest(sr.id, { onlyIfDue: false, ignoreSuspend: early }) : { emailed: [] };
   const emailedNames = [...roster.candidates, ...(esc.emailed || [])].map((c) => fullName(c));
-  await email.sendSelfArrangedRequesterUpdate({ player: requester, week, session, subName, stage: 'escalated', deadlineAt, emailedNames, early, threadKey });
+  await email.sendSelfArrangedRequesterUpdate({
+    player: requester, week, session, subName, stage: 'escalated', deadlineAt, emailedNames, early, threadKey,
+    joined: roster.joined ? { alreadyAsked: pendingAskedNames(roster.poolId) } : null,
+  });
   logPlayerActivity({
     playerName: requesterName,
     action: 'sub.self_arranged_escalated',
-    description: early
+    description: roster.joined
+      ? `${subName} didn't confirm the sub ${requesterName} arranged for ${week.match_date}${early ? ' (opened early by an admin)' : ''} — added to the sub request already open that week (${emailedNames.length ? `${emailedNames.length} emailed` : 'no new emails'})`
+      : early
       ? `Admin opened ${requesterName}'s ${week.match_date} spot (named sub ${subName} hadn't confirmed) to the roster and sub list ahead of schedule (${emailedNames.length} emailed)`
       : `${subName} didn't confirm the sub ${requesterName} arranged for ${week.match_date} — opened to the roster and sub list (${emailedNames.length} emailed)`,
     sessionId: session.id,
@@ -1415,7 +1687,8 @@ async function escalateNowForWeek(weekId) {
     .prepare(
       `SELECT sr.id FROM sub_requests sr
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
-       WHERE wa.week_id = ? AND sr.status = 'open'`
+       WHERE wa.week_id = ? AND sr.status = 'open'
+       ORDER BY sr.id`
     )
     .all(weekId);
   const out = [];
@@ -1428,7 +1701,7 @@ async function escalateNowForWeek(weekId) {
       const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
       const requester = db.prepare('SELECT * FROM players WHERE id = ?').get(sr.requesting_player_id || assignment.player_id);
       const playerName = requester ? fullName(requester) : 'a player';
-      if (sr.self_arranged) {
+      if (inNamedSubWindow(sr)) {
         const named = pendingSelfArrangedOffer(sr.id);
         const t = selfArrangedTimeline(sr, week, session);
         const emailedNames = await openUpSelfArranged({
@@ -1437,8 +1710,9 @@ async function escalateNowForWeek(weekId) {
         return { playerName, emailedNames, result: 'escalated' };
       }
       let rosterNames = [];
-      if (!sr.fanout_sent_at) {
-        const roster = await fanOutSubRequest(sr.id, playerName);
+      if (!sr.shared_at) {
+        // Joins the week's open group if there is one (Kyle, 2026-10-02).
+        const roster = await startOutreach(sr.id, playerName);
         rosterNames = roster.candidates.map((c) => fullName(c));
       }
       const esc = await escalateOneRequest(sr.id, { onlyIfDue: false, ignoreSuspend: true });
@@ -1459,6 +1733,7 @@ async function escalateNowForWeek(weekId) {
 async function adminConfirmSelfArrangedSub(subRequestId) {
   const sr = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(subRequestId);
   if (!sr || !sr.self_arranged) return { ok: false, reason: 'not_self_arranged' };
+  if (!isClaimableRequest(sr)) return { ok: false, reason: 'no_pending_invite' };
   const named = pendingSelfArrangedOffer(sr.id);
   if (!named) return { ok: false, reason: 'no_pending_invite' };
   const result = await claimOffer(named.offer, { byAdmin: true });
@@ -1490,12 +1765,9 @@ async function sendStillOpenAlert(subRequestId, { reason = 'deadline', adminsOnl
   const week = getWeekWithSession(assignment.week_id);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(week.session_id);
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(sr.requesting_player_id || assignment.player_id);
-  const counts = db
-    .prepare(
-      `SELECT COUNT(*) AS asked, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
-       FROM sub_offers WHERE sub_request_id = ?`
-    )
-    .get(sr.id);
+  // Whole group (Kyle, 2026-10-02): a request that joined another player's
+  // has no offers of its own.
+  const counts = poolOfferCounts(poolIdOf(sr));
   const threadKey = subThreadKey(sr.id);
   if (!adminsOnly && player) {
     await email.sendSubStillOpen({ player, week, session, reason, threadKey });
@@ -1560,7 +1832,7 @@ async function stillOpenStep(subRequestId, now) {
     if (t.late) return false;
     // Still inside the named sub's window: it has its own warning and
     // opens up at its deadline; this alert waits until after that.
-    if (sr.status === 'open') return false;
+    if (inNamedSubWindow(sr)) return false;
     // If it opened up at or after the alert time, the player just got the
     // "your spot is open to other players" email — only tell the admins.
     const openedAt = sr.escalated_at ? new Date(String(sr.escalated_at).replace(' ', 'T') + 'Z') : now;
@@ -1703,6 +1975,10 @@ module.exports = {
   upcomingWeeksPreview,
   getWeekWithSession,
   hasActiveConcurrentSubRequest,
+  hasActiveSubRequestForAssignment,
+  inNamedSubWindow,
+  isSharedRequest,
+  claimTargetPlayerName,
   sessionSubList,
   eligibleSelfArrangedCandidates,
   arrangeSelfSub,

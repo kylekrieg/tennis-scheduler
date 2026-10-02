@@ -201,17 +201,13 @@ function waitingWeeks() {
   for (const p of db.prepare('SELECT * FROM players WHERE injured = 1 AND injured_until >= ?').all(today)) {
     for (const a of assignmentsInRange(p.id, today, p.injured_until)) {
       if (alreadyHandled(a.assignment_id)) continue;
-      const concurrent = db
-        .prepare(
-          `SELECT 1 FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
-           WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated')`
-        )
-        .get(a.week_id);
+      // 'concurrent' (another request open that week) no longer blocks a
+      // flag — it joins that request instead (Kyle, 2026-10-02).
       rows.push({
         playerName: fullName(p),
         match_date: a.match_date,
         session_id: a.session_id,
-        reason: !a.schedule_locked_at ? 'not_locked' : concurrent ? 'concurrent' : 'pending',
+        reason: !a.schedule_locked_at ? 'not_locked' : 'pending',
       });
     }
   }

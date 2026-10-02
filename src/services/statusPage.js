@@ -357,7 +357,7 @@ function getUpcomingActions(days = 21) {
       // escalate; if it gets filled before the deadline, it never will.
       const openRequests = db
         .prepare(
-          `SELECT sr.id, sr.self_arranged, sr.created_at, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
+          `SELECT sr.id, sr.self_arranged, sr.created_at, sr.status, sr.shared_at, COALESCE(p.full_name, p.name) as original_player_name FROM sub_requests sr
            JOIN week_assignments wa ON wa.id = sr.week_assignment_id
            JOIN players p ON p.id = wa.player_id
            WHERE wa.week_id = ? AND sr.status = 'open'`
@@ -368,22 +368,43 @@ function getUpcomingActions(days = 21) {
       // requests (Kyle, 2026-09-30) open up at their own deadline instead
       // (subFlow.selfArrangedTimeline()), and one named too close to the
       // match never opens up automatically, so it isn't listed.
+      // Shared sub requests (Kyle, 2026-10-02): every request sharing this
+      // week's outreach goes to the sub list in ONE email, so they're listed
+      // on one line; an "I found a sub" request still waiting on its named
+      // sub joins that open request when it opens up (no new emails).
+      const subFlowMod = require('./subFlow');
       const byTime = new Map();
-      for (const r of openRequests) {
-        let at;
-        let label;
-        if (r.self_arranged) {
-          const t = require('./subFlow').selfArrangedTimeline(r, week, session);
-          if (t.late) continue;
-          at = t.deadlineAt;
-          label = `"I found a sub" for ${r.original_player_name}'s slot, if still unconfirmed → roster + broader sub list`;
-        } else {
-          at = new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000);
-          label = `sub request for ${r.original_player_name}'s slot → broader sub list`;
-        }
+      const addAt = (at, label) => {
         const key = at.getTime();
         if (!byTime.has(key)) byTime.set(key, { at, recipients: [] });
         byTime.get(key).recipients.push(label);
+      };
+      const normal = openRequests.filter((r) => !subFlowMod.inNamedSubWindow(r));
+      if (normal.length) {
+        const names = normal.map((r) => `${r.original_player_name}'s`);
+        const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+        addAt(
+          new Date(matchAt.getTime() - session.escalation_lead_hours * 60 * 60 * 1000),
+          normal.length === 1
+            ? `sub request for ${list} slot → broader sub list`
+            : `sub requests for ${list} slots → broader sub list (one email covers all of them)`
+        );
+      }
+      const hasShared = db
+        .prepare(
+          `SELECT 1 FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
+           WHERE wa.week_id = ? AND sr.status IN ('open','escalated','unfilled') AND sr.shared_at IS NOT NULL`
+        )
+        .get(week.id);
+      for (const r of openRequests.filter((x) => subFlowMod.inNamedSubWindow(x))) {
+        const t = subFlowMod.selfArrangedTimeline(r, week, session);
+        if (t.late) continue;
+        addAt(
+          t.deadlineAt,
+          hasShared
+            ? `"I found a sub" for ${r.original_player_name}'s slot, if still unconfirmed → added to the sub request already open this week (no new emails)`
+            : `"I found a sub" for ${r.original_player_name}'s slot, if still unconfirmed → roster + broader sub list`
+        );
       }
       for (const { at: escalateAt, recipients } of byTime.values()) {
         const escalateLocal = utcToZonedParts(escalateAt, tz);

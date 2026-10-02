@@ -11,14 +11,15 @@ A self-hosted, no-login season scheduler for a recurring doubles group — tenni
 Five other docs exist in this folder, each answering a different question:
 
 - **`CLAUDE.md`** — a short rules-and-architecture reference, loaded automatically by Claude every session. Kept small on purpose.
-- **`docs/HISTORY.md`** — the deep one (700+ KB): a dated, decision-by-decision history of *why* the code is built the way it is, including options tried and reverted. Don't read it linearly; search it for the feature you're about to touch.
-- **`Full_Scope_Of_Work.md`** — a chronological log of requirements conversations and what got built in response, numbered by section. Useful for "why does this feature exist" or "what was the original ask" context; less useful as a technical reference.
+- **`docs/HISTORY.md`** — a dated, decision-by-decision history of *why* the code is built the way it is, from 2026-09-15 on, including options tried and reverted. Don't read it linearly; search it for the feature you're about to touch.
+- **`docs/HISTORY_ARCHIVE.md`** — the older part of that history (600+ KB): the original architecture notes and design decisions, and entries before 2026-09-15. Search it when `docs/HISTORY.md` has nothing on a feature. Never add to it.
+- **`Full_Scope_Of_Work.md`** — *archive, not kept up to date.* A chronological log of requirements conversations and what got built in response, numbered by section. Useful for "why does this feature exist" or "what was the original ask" context; less useful as a technical reference.
 - **`Technical_Architecture.md`** — a short, high-level architecture summary. Good first read if you want the 5-minute version before diving into `docs/HISTORY.md`.
 - **`README.md`** — feature list and setup commands, written for a human running the app, not extending it.
 - **`RASPBERRY_PI_SETUP.md`** — step-by-step instructions for deploying onto a Raspberry Pi (Node, `pm2`, Cloudflare Tunnel), pulled out of `README.md` into its own doc.
 - **In-app docs** — `/help` is the player-facing walkthrough (confirm, blackout dates, sub/swap, calendar, ad-hoc pickup games). `/admin/guide` is the admin-facing walkthrough of the actual day-to-day workflow. Both are useful to skim before changing anything user-facing, since they describe the intended behavior in plain language. The same two guides are also in the repo as Markdown — `docs/USER_GUIDE.md` and `docs/ADMIN_GUIDE.md` — generated from those pages by `npm run guides`, so rerun it after editing either page.
 
-This file is the map; `docs/HISTORY.md` is the territory.
+This file is the map; `docs/HISTORY.md` (and its archive) is the territory.
 
 ## Quick start (dev environment)
 
@@ -112,4 +113,4 @@ A few conventions worth telling a fresh Claude session about explicitly, since t
 - **"Warn, don't block."** This app's general philosophy for judgment-call conflicts (double-booking, understaffed weeks, priority conflicts) is to flag them for the admin rather than silently refusing an action. Don't add a hard block without checking whether a softer warning fits the existing pattern better.
 - **Test against a copy, not the live folder.** If you're running the dev server to verify a change, copy the project elsewhere first rather than running it against whatever folder is actually deployed — resetting the database or `.env` for a test can wipe real data.
 
-When in doubt about *why* something works a certain way, search `docs/HISTORY.md` for the feature name before changing it — there's usually a paragraph explaining a rejected alternative and the actual reason behind the current design.
+When in doubt about *why* something works a certain way, search `docs/HISTORY.md` (then `docs/HISTORY_ARCHIVE.md`) for the feature name before changing it — there's usually a paragraph explaining a rejected alternative and the actual reason behind the current design.

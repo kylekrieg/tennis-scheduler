@@ -5,6 +5,7 @@ const { getTimezone } = require('./settings');
 const { utcToZonedParts } = require('./tz');
 const weather = require('./weather');
 const { fullName } = require('./playerName');
+const scoreLinkTokens = require('./scoreLinkTokens');
 
 // Two ways to configure real sending, checked in this order. SMTP_HOST set
 // at all means "use generic SMTP" — the GMAIL_* vars are only a fallback
@@ -667,8 +668,32 @@ async function sendSubRequestVerification({ player, week, session, needSubToken,
  * already were) — this copy always matches whatever that session is actually
  * configured to do, not a hardcoded number.
  */
-async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, escalatedTo = null, threadKey = null, test = false }) {
+async function sendSubRequestOwnConfirmation({ player, week, session, candidates, sessionSubs, escalatedTo = null, joined = null, threadKey = null, test = false }) {
   const subject = `Sub requested for you — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  // joined (Kyle, 2026-10-02): another player's sub request was already open
+  // for this match, so this one was added to it — no new emails went out.
+  // { alreadyAsked: [full names holding a live link], escalated: bool }.
+  if (joined) {
+    const asked = joined.alreadyAsked && joined.alreadyAsked.length ? joined.alreadyAsked.join(', ') : null;
+    const subListNamesJ = sessionSubs && sessionSubs.length ? sessionSubs.map((s) => fullName(s)).join(', ') : null;
+    const htmlJ = `
+    ${matchBanner(session, week)}
+    <p>Hi ${fullName(player)},</p>
+    <p>This confirms a sub was just requested for your spot on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
+    <p><strong>Another player already needs a sub for this same match</strong>, so your request was added to theirs instead of emailing everyone again. The players already asked can now cover either spot — anyone who says yes fills the open spots in the order they were requested, so yours is filled once the earlier one is.</p>
+    <ul>
+      <li><strong>Already asked:</strong> ${asked || 'no one is holding a link right now — see the next step below.'}</li>
+      ${joined.escalated
+        ? `<li><strong>Sub list:</strong> it has already gone out to this session's sub list too.</li>`
+        : `<li><strong>If both spots aren't taken within ${escalationHoursPhrase(session)} of the match:</strong> ${subListNamesJ ? `it automatically goes out to this session's sub list: ${subListNamesJ}.` : `there's currently no one on this session's sub list to escalate to — worth flagging to your admin ahead of time.`}</li>`}
+      <li><strong>If no one has taken your spot ${session.still_open_alert_hours || 4} hours before the match</strong> (or there's nobody left to ask): you'll get an email saying so, and your admin is told too.</li>
+    </ul>
+    <p>You'll get a separate email the moment someone takes your spot — no need to keep checking.</p>
+    <p><strong>Didn't request this yourself?</strong> Reach out right away so it can be sorted out before someone else claims the slot.</p>
+    ${footer(session)}
+  `;
+    return sendMail({ to: player.email, subject, html: htmlJ, category: 'sub_request_self_notice', relatedWeekId: week.id, session, threadKey, test });
+  }
   // Full names throughout (Kyle, 2026-09-07). `candidates` are raw players
   // rows (fanOutSubRequest()'s allCandidates); `sessionSubs` mixes
   // broader_sub_list rows (whose .name IS the full name) and player rows —
@@ -825,7 +850,7 @@ async function sendEscalationEmail({ recipient, week, session, claimToken, threa
 // the group knows whose spot changed hands ("Shawn will be subbing for Jim on
 // Monday, Sep 28") instead of just that *someone* got a sub. Falls back to
 // the old wording if a caller ever doesn't pass it.
-async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, threadKey = null, reminderNote = false, test = false }) {
+async function sendSubFilledNotice({ recipient, week, session, subName, originalName = null, threadKey = null, reminderNote = false, stillOpenCount = 0, test = false }) {
   const subject = `Sub confirmed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const subLine = originalName
     ? `${subName} will be subbing for ${originalName} on ${fmtDate(week.match_date)}. See you on the court!`
@@ -837,6 +862,10 @@ async function sendSubFilledNotice({ recipient, week, session, subName, original
     ${reminderNote
       ? `<p>You'll get the regular reminder ${session.reminder_days_before === 1 ? 'the day' : `${session.reminder_days_before} days`} before the match asking you to confirm. Please click Confirm when it comes so the group knows you're still on.</p>`
       : '<p style="color:#57606a;">Just a heads-up — no reply needed.</p>'}
+    ${stillOpenCount > 0
+      // Kyle, 2026-10-02: another player's spot this week still needs a sub.
+      ? `<p><strong>This match still needs ${stillOpenCount === 1 ? 'one more sub' : `${stillOpenCount} more subs`}</strong> — that request is still open.</p>`
+      : ''}
     ${currentWeekRosterHtml(week)}
     ${footer(session)}
   `;
@@ -939,7 +968,7 @@ async function sendSelfArrangedSubNudge({ recipient, week, session, claimToken, 
  *                       or the player contacts an admin.
  *   stage 'escalated' — it just opened up; `emailedNames` is who got asked.
  */
-async function sendSelfArrangedRequesterUpdate({ player, week, session, subName, stage, deadlineAt, emailedNames = [], early = false, threadKey = null, test = false }) {
+async function sendSelfArrangedRequesterUpdate({ player, week, session, subName, stage, deadlineAt, emailedNames = [], early = false, joined = null, threadKey = null, test = false }) {
   const when = deadlineAt ? fmtWhen(deadlineAt, week) : 'a few hours before the match';
   let subject;
   let body;
@@ -955,7 +984,11 @@ async function sendSelfArrangedRequesterUpdate({ player, week, session, subName,
       ${early
         ? `<p><strong>${subName}</strong> hasn't confirmed they're covering your spot yet, so an admin has opened it up to find another sub ahead of schedule.</p>`
         : `<p><strong>${subName}</strong> never confirmed they're covering your spot, so we've opened it up to find another sub.</p>`}
-      ${emailedNames.length ? `<p>Emailed just now: ${emailedNames.join(', ')}.</p>` : `<p>There wasn't anyone else available to email — please contact your admin.</p>`}
+      ${joined
+        // Kyle, 2026-10-02: another player's sub request was already open
+        // for this match, so this spot was added to it — no new emails.
+        ? `<p>Another player already needs a sub for this same match, so your spot was added to that request instead of emailing everyone again. Anyone who says yes from here fills the open spots in the order they were requested.${joined.alreadyAsked && joined.alreadyAsked.length ? ` Already asked: ${joined.alreadyAsked.join(', ')}.` : ''}${emailedNames.length ? ` Sub list emailed just now: ${emailedNames.join(', ')}.` : ''}</p>`
+        : emailedNames.length ? `<p>Emailed just now: ${emailedNames.join(', ')}.</p>` : `<p>There wasn't anyone else available to email — please contact your admin.</p>`}
       <p>${subName}'s link still works — whoever confirms first gets the spot. You'll get an email as soon as someone does. If ${subName} is definitely playing, contact your admin and they can confirm it for them.</p>`;
   } else if (stage === 'warning') {
     category = 'self_arranged_warning';
@@ -1519,7 +1552,10 @@ async function sendAdminWeekReport({ to, week, session, report, manual = false, 
 // games_won_second_reminder_hours after the match if scores are still
 // missing. Its own category so cron dedups the two separately.
 async function sendScoreReminder({ recipient, week, session, missingCount, second = false, test = false }) {
-  const scoresUrl = `${siteUrl()}/scores?session=${session.id}&week=${week.id}`;
+  // `t` = attribution token (Kyle, 2026-10-02) so the Activity Log can name
+  // who entered scores from this link — see services/scoreLinkTokens.js.
+  const linkToken = scoreLinkTokens.issue(recipient.id, week.id);
+  const scoresUrl = `${siteUrl()}/scores?session=${session.id}&week=${week.id}&t=${linkToken}`;
   const subject = `${second ? 'Reminder: scores' : 'Scores'} still needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}

@@ -69,7 +69,12 @@ function listActiveLinks(sessionId = null) {
        JOIN sessions s ON s.id = w.session_id
        LEFT JOIN players cp ON cp.id = o.candidate_player_id
        LEFT JOIN broader_sub_list bl ON bl.id = o.broader_list_id
-       WHERE o.status = 'pending' AND sr.status IN ('open', 'escalated', 'unfilled')
+       WHERE o.status = 'pending'
+         AND (sr.status IN ('open', 'escalated', 'unfilled')
+              -- shared sub requests (Kyle, 2026-10-02): a filled request's
+              -- links stay live while another request in its group is open
+              OR EXISTS (SELECT 1 FROM sub_requests g WHERE (g.id = COALESCE(sr.pool_id, sr.id) OR g.pool_id = COALESCE(sr.pool_id, sr.id))
+                         AND g.status IN ('open', 'escalated', 'unfilled')))
          AND w.locked = 0 AND s.archived_at IS NULL ${sessFilter}
        ORDER BY w.match_date, sr.id, o.id`
     )

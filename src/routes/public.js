@@ -23,6 +23,7 @@ const detailLog = require('../services/detailLog');
 const { logPlayerActivity, logGroupScoreActivity } = require('../services/activityLog');
 const { fullName } = require('../services/playerName');
 const gameScores = require('../services/gameScores');
+const scoreLinkTokens = require('../services/scoreLinkTokens');
 const statsBoards = require('../services/statsBoards');
 const { getTimezone } = require('../services/settings');
 const { utcToZonedParts, zonedTimeToUtc } = require('../services/tz');
@@ -301,6 +302,10 @@ router.get('/scores', (req, res) => {
     saved: Number(req.query.saved) || 0,
     errorCode: req.query.error || null,
     maxGames: gameScores.MAX_GAMES,
+    // Score-reminder link token (Kyle, 2026-10-02), carried into the form as
+    // a hidden field only if it's valid for the week being shown, so the
+    // POST can name who entered the scores. Not shown on the page.
+    linkToken: selectedWeek && scoreLinkTokens.resolve(req.query.t, selectedWeek.id) ? req.query.t : null,
   });
 });
 
@@ -339,6 +344,11 @@ router.post('/scores', scoreEntryLimiter, (req, res) => {
       tone: 'error',
     });
   }
+
+  // Arrived via a score-reminder email link? (Kyle, 2026-10-02.) null = came
+  // to /scores on their own, logged generically as before.
+  const linkPlayer = scoreLinkTokens.resolve(req.body.t, weekId);
+  const enteredBy = linkPlayer ? fullName(linkPlayer) : null;
 
   const toArray = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
   let savedCount = 0;
@@ -382,8 +392,11 @@ router.post('/scores', scoreEntryLimiter, (req, res) => {
       logGroupScoreActivity({
         playerName: fullName(player),
         action: wasFirstEntry ? 'score.enter' : 'score.update',
-        description: `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} via the group entry page`,
+        description: enteredBy
+          ? `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} by ${enteredBy} via the score reminder email link`
+          : `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} via the group entry page`,
         sessionId: row.session_id,
+        enteredBy,
       });
       savedCount++;
     } catch (err) {
@@ -398,6 +411,7 @@ router.post('/scores', scoreEntryLimiter, (req, res) => {
   const qs = new URLSearchParams({ session: String(week.session_id), week: String(weekId) });
   if (savedCount > 0) qs.set('saved', String(savedCount));
   if (lastErrorCode) qs.set('error', lastErrorCode);
+  if (linkPlayer) qs.set('t', req.body.t); // keep attribution for a follow-up save
   return res.redirect(`/scores?${qs.toString()}`);
 });
 
@@ -623,6 +637,10 @@ router.get('/schedule', (req, res) => {
     notice = n > 0
       ? `Sub request sent to ${n} player${n === 1 ? '' : 's'} — you'll get an email when someone takes your spot.`
       : "Sub request recorded. Nobody else on the roster was free that week, so it'll go to the sub list closer to the match — you'll get an email when someone takes your spot.";
+  } else if (req.query.notice === 'sub_joined') {
+    // Kyle, 2026-10-02: another player's sub request was already out for
+    // this match, so this one joined it (no new emails).
+    notice = "Sub request recorded. Another player already needs a sub for this match, so your spot was added to that request — the next person to say yes after theirs is filled covers yours. You'll get an email when someone takes your spot.";
   }
   res.render('schedule', { title: 'Season Schedule', session, sessions, rows, multiCourt: session.players_per_week > 4, notice });
 });
@@ -1506,15 +1524,17 @@ router.post('/need-sub/:token', detailLog.linkPage('need_sub'), asyncHandler(asy
   const result = await subFlow.createSubRequest(assignment.id);
   if (result.blocked) {
     // Kyle, 2026-09-10: 'not_locked' is the season's schedule not being
-    // locked yet — see subFlow.js's createSubRequest() doc comment. Every
-    // other current reason is 'concurrent'.
+    // locked yet — see subFlow.js's createSubRequest() doc comment. The only
+    // other reason is 'already_requested' (this same slot already has one).
+    // Another player needing a sub the same week is no longer refused —
+    // the request joins theirs (Kyle, 2026-10-02).
     return res.render('message', {
       title: 'Need a sub',
       heading: 'Please contact the admin',
       body:
         result.reason === 'not_locked'
           ? "The schedule for this season isn't finalized yet, so sub requests aren't open — reach out to the admin directly and they'll sort it out."
-          : 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
+          : 'A sub request is already out for your spot this week — no need to do anything else.',
       tone: 'error',
       myPageId: assignment.slug || assignment.player_id,
       sessionId,
@@ -1522,6 +1542,7 @@ router.post('/need-sub/:token', detailLog.linkPage('need_sub'), asyncHandler(asy
   }
   // Kyle, 2026-09-28: same as confirm — back to the full schedule with a
   // banner (their row already shows "needs sub" there).
+  if (sessionId && result.joined) return res.redirect(`/schedule?session=${sessionId}&notice=sub_joined`);
   if (sessionId) return res.redirect(`/schedule?session=${sessionId}&notice=sub_sent&n=${Number(result.offerCount) || 0}`);
   res.render('message', {
     title: 'Need a sub',
@@ -1610,7 +1631,7 @@ router.post('/found-sub/:token', detailLog.linkPage('found_sub'), asyncHandler(a
       // Kyle, 2026-09-10: the season's schedule isn't locked yet — see
       // subFlow.js's arrangeSelfSub() doc comment.
       not_locked: "The schedule for this season isn't finalized yet, so sub requests aren't open — reach out to the admin directly and they'll sort it out.",
-      concurrent: 'Another player already needs a sub for this same week. To keep things simple, the admin will sort out multiple sub requests in the same week manually — reach out directly.',
+      already_requested: 'A sub request is already out for your spot this week — contact the admin if you need to change it.',
       invalid_new_person: 'Enter a valid name (no < or > characters) and email address for the new person.',
       invalid_candidate: 'That pick is no longer available — they may have been scheduled elsewhere since this page loaded. Please go back and try again.',
       self: "You can't name yourself as your own sub.",
@@ -2079,7 +2100,11 @@ router.get('/claim-sub/:token', detailLog.linkPage('claim_sub'), (req, res) => {
   const subRequest = db.prepare('SELECT * FROM sub_requests WHERE id = ?').get(offer.sub_request_id);
   const originalAssignment = db.prepare('SELECT * FROM week_assignments WHERE id = ?').get(subRequest.week_assignment_id);
   const week = subFlow.getWeekWithSession(originalAssignment.week_id);
-  res.render('claim_sub', { title: 'Claim sub', offer, week, token: req.params.token, alreadyClosed: offer.status !== 'pending' });
+  // Who this click would cover right now (Kyle, 2026-10-02): with two sub
+  // requests open the same week, it's the oldest open one, which may not be
+  // the player named in their email.
+  const coverName = subFlow.claimTargetPlayerName(offer);
+  res.render('claim_sub', { title: 'Claim sub', offer, week, token: req.params.token, coverName, alreadyClosed: offer.status !== 'pending' || !coverName });
 });
 
 router.post('/claim-sub/:token', detailLog.linkPage('claim_sub'), asyncHandler(async (req, res) => {
@@ -2094,7 +2119,7 @@ router.post('/claim-sub/:token', detailLog.linkPage('claim_sub'), asyncHandler(a
     };
     return res.render('message', { title: 'Claim sub', heading: 'Spot no longer available', body: messages[result.reason] || 'This link is no longer valid.', tone: 'error' });
   }
-  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}. The rest of the group has been notified.${result.subStatus === 'scheduled' ? " You'll get the regular reminder a couple of days before the match — please click Confirm when it comes." : ''}`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id, sessionId: result.week.session_id });
+  res.render('message', { title: 'Claim sub', heading: "You're in!", body: `Thanks for subbing in for ${email.fmtDate(result.week.match_date)}${result.originalName ? ` — you're covering ${result.originalName}'s spot` : ''}. The rest of the group has been notified.${result.subStatus === 'scheduled' ? " You'll get the regular reminder a couple of days before the match — please click Confirm when it comes." : ''}`, tone: 'ok', myPageId: result.subPlayer.slug || result.subPlayer.id, sessionId: result.week.session_id });
 }));
 
 // Ad-hoc pickup-game sign-up (see adhocFlow.js) — GET renders a landing page

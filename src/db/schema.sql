@@ -301,6 +301,20 @@ CREATE TABLE IF NOT EXISTS week_assignment_tokens (
   created_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Score-reminder link attribution (Kyle, 2026-10-02): "if that email link is
+-- clicked and they enter in scores, that player name should be recorded in
+-- the logs." One row per score-reminder email sent; the link carries the raw
+-- token, this table only the SHA-256 hash (same rule as every other emailed
+-- token). Scoped to the one week the email was about. Attribution only: the
+-- /scores page stays public and works the same with or without a token.
+CREATE TABLE IF NOT EXISTS score_link_tokens (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id             INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  week_id               INTEGER NOT NULL REFERENCES weeks(id) ON DELETE CASCADE,
+  token                 TEXT UNIQUE NOT NULL, -- SHA-256 hash of the raw token
+  created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sub_requests (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
   week_assignment_id    INTEGER NOT NULL REFERENCES week_assignments(id) ON DELETE CASCADE,
@@ -314,6 +328,8 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   self_arranged_warning_sent_at  TEXT,
   self_arranged_late_alert_sent_at TEXT,
   still_open_alert_sent_at TEXT, -- set once the "still open" alert has gone out (Kyle, 2026-09-30), at still_open_alert_hours before the match or right away when nobody is left to ask.
+  pool_id               INTEGER, -- shared sub requests (Kyle, 2026-10-02): id of the request whose outreach this one shares (two players needing a sub the same week). NULL = its own. See subFlow.js's "Shared sub requests" block.
+  shared_at             TEXT, -- when this request became part of a group's outreach (its own roster email started, or it joined another's). NULL while an admin flag waits for the reminder time or an "I found a sub" request waits on its named sub.
   injury                INTEGER NOT NULL DEFAULT 0, -- 1 = created by src/services/injury.js for an injured player (Kyle, 2026-10-02). Closed as 'resolved_injury_return' (left out of Sub History) when the player comes back before it went out.
   self_arranged         INTEGER NOT NULL DEFAULT 0 -- set only by arrangeSelfSub() ("I found a sub" — one specific named candidate), never by createSubRequest()'s normal fan-out or adminFlagNeedsSub(). Lets the Activity Log's Player Behavior stats (Kyle, 2026-09-15) count "found their own sub" separately from "waited on the app's fan-out" without re-deriving it from sub_offers row counts, which stops being reliable once a self-arranged request later escalates (it can gain more offers, same as any other still-open request — see arrangeSelfSub()'s doc comment).
 );

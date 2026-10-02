@@ -39,7 +39,7 @@ const FLOWS = [
   {
     key: 'sub',
     title: 'Request a Sub',
-    note: 'Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked.',
+    note: 'Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked. If another player already needs a sub for the same match, see "Two players need a sub the same week" below.',
     emails: [
       { name: '"Confirm it\'s you"', category: 'sub_request_verification', when: 'Right away, when "Need a sub" is clicked on Request a Sub or My Page (not from a reminder email\'s own link)', to: 'The player needing a sub', setting: '—' },
       { name: 'Sub needed (roster)', category: 'sub_request', when: 'Right away once the request is confirmed. An admin "Needs a sub" flag waits until that week\'s reminder time.', to: 'Roster players not playing that week', setting: '—' },
@@ -49,6 +49,21 @@ const FLOWS = [
       { name: 'Your sub is confirmed', category: 'sub_filled_original', when: 'Same time', to: 'The player who needed the sub', setting: '—' },
       { name: 'Your spot still needs a sub', category: 'sub_still_open', when: 'still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request.', to: 'The player who needed the sub', setting: 'Sub still open alert hours' },
       { name: 'Sub still needed (admin)', category: 'sub_still_open_admin', when: 'Same time', to: 'Admin report addresses', setting: 'Admin report emails' },
+    ],
+  },
+  {
+    // Kyle, 2026-10-02 — subFlow.js's "Shared sub requests" block.
+    key: 'sub_shared',
+    title: 'Two players need a sub the same week',
+    note: 'Each player keeps their own request, but they share one outreach. Every "I\'ll play" link from it stays live until ALL of the shared requests are filled, and each click fills the oldest still-open request (order requested), whichever email the link came from. If the earlier request(s) were already filled or cleared when the next player asks, the next one starts over with a fresh roster email (everyone already saw "Sub found"). An admin "— Needs a sub —" flag or an injured player\'s week joins an open request right away (joining sends nothing). Clearing one player\'s request keeps the links live for the other. The session page shows "1st in line" / "2nd in line" on each badge, with its own Clear button. If the result looks wrong (the "wrong" sub covered someone), fix it with Reassign.',
+    emails: [
+      { name: 'Sub needed (roster)', category: 'sub_request', when: 'Only for the FIRST request. A request that comes in while an earlier one for the same match is still open sends no roster email. If the earlier one(s) are already all filled or cleared, it sends a fresh one as normal.', to: 'Roster players not playing that week (a sub who already took the first spot is playing, so isn\'t asked)', setting: '—' },
+      { name: 'Your request went out (joined)', category: 'sub_request_self_notice', when: 'Right away when a request joins an open one', to: 'The player who just asked. Says another player already needs a sub, lists who was already asked, and that the open spots fill in the order they were requested', setting: '—' },
+      { name: 'Sub still needed (sub list)', category: 'escalation', when: 'Once for the whole group, at escalation_lead_hours before the match. If it already went out when a request joins, nothing new is sent and the new request counts as escalated straight away.', to: 'This session\'s sub list', setting: 'Escalate to broader sub list hours; Status page Suspend / Send now' },
+      { name: 'Sub found', category: 'sub_filled', when: 'Each time a spot is taken. While another spot that week is still open it adds "This match still needs one more sub."', to: 'Everyone playing that week, including the sub', setting: '—' },
+      { name: 'Your sub is confirmed', category: 'sub_filled_original', when: 'When that player\'s own spot is taken (each player gets their own, right away)', to: 'The player whose spot was taken', setting: '—' },
+      { name: 'Still open alerts', category: 'sub_still_open, sub_still_open_admin', when: 'Per player, as in Request a Sub. The admin copy counts the links from the whole shared outreach.', to: 'The player and admin report addresses', setting: 'Sub still open alert hours' },
+      { name: '"I found a sub" in the same week', category: 'self_arranged_escalated', when: 'Stays on its own while the named sub has time to answer (the named sub\'s link always fills that player\'s spot). At its deadline, if another request is still open, it joins that one: no roster or sub-list email, just this note to the player. If nothing else is open, it opens up on its own as in I Found a Sub.', to: 'The player who named the sub', setting: '"I found a sub" open-up hours' },
     ],
   },
   {

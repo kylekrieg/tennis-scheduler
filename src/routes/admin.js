@@ -2184,24 +2184,32 @@ router.get('/sessions/:id', (req, res) => {
     // whose slot is open ("sub open — Alice") rather than just "sub open"
     // with no way to tell which of the week's players it's about without
     // scanning every row's own status badge separately (Kyle, 2026-08-13).
-    const openSubRequest = db
+    // Every open request this week, oldest first (Kyle, 2026-10-02: two
+    // players can need a sub the same week now — one badge + Clear button
+    // each). `openSubRequest` stays as the first one for older callers.
+    const openSubRequests = db
       .prepare(
         `SELECT sr.*, p.name, p.full_name FROM sub_requests sr
          JOIN week_assignments wa ON wa.id = sr.week_assignment_id
          JOIN players p ON p.id = wa.player_id
-         WHERE wa.week_id = ? AND sr.status IN ('open','escalated','unfilled') LIMIT 1`
+         WHERE wa.week_id = ? AND sr.status IN ('open','escalated','unfilled') ORDER BY sr.id`
       )
-      .get(w.id);
-    // Admin-facing week-card badge — full name (Kyle, 2026-09-07). Resolved
-    // here (not in the view) so session_detail.ejs/adhoc_session_detail.ejs
-    // can keep reading a plain `.playerName` string as before.
-    if (openSubRequest) openSubRequest.playerName = fullName(openSubRequest);
-    // "I found a sub" request with the named sub's invite still pending —
-    // lets the admin confirm them on their behalf (Kyle, 2026-09-30).
-    if (openSubRequest && openSubRequest.self_arranged) {
-      const pend = subFlow.pendingSelfArrangedOffer(openSubRequest.id);
-      if (pend) openSubRequest.namedSubName = pend.name;
+      .all(w.id);
+    for (const osr of openSubRequests) {
+      // Admin-facing week-card badge — full name (Kyle, 2026-09-07).
+      osr.playerName = fullName(osr);
+      // "I found a sub" request with the named sub's invite still pending —
+      // lets the admin confirm them on their behalf (Kyle, 2026-09-30).
+      if (osr.self_arranged) {
+        const pend = subFlow.pendingSelfArrangedOffer(osr.id);
+        if (pend) osr.namedSubName = pend.name;
+      }
+      osr.waitingOnNamedSub = subFlow.inNamedSubWindow(osr);
     }
+    // Fill order when more than one shares the outreach: "1st in line" etc.
+    const sharedOpen = openSubRequests.filter((x) => subFlow.isSharedRequest(x));
+    if (sharedOpen.length > 1) sharedOpen.forEach((x, i) => { x.lineNo = i + 1; });
+    const openSubRequest = openSubRequests[0] || null;
     // Same idea, for a pending direct swap touching either side of this
     // week (either this week's player gave up their slot, or someone from
     // another week is trying to take one of this week's slots) — see
@@ -2237,6 +2245,7 @@ router.get('/sessions/:id', (req, res) => {
       ballDutyName: ballDuty ? fullName(ballDuty) : null,
       ballDutyMismatch,
       openSubRequest,
+      openSubRequests,
       openSwapRequest,
       blackedOutNames: blackedOutByDate.get(w.match_date) || [],
       weather: weather.getCachedWeather(w.id),
@@ -2403,18 +2412,22 @@ router.post('/sessions/:id/weeks/:weekId/reassign', asyncHandler(async (req, res
           ? "Can't flag — this week is already locked (already played)."
           : result.reason === 'not_locked'
             ? "Can't flag a sub yet — lock this session's schedule first (see \"Lock this schedule\" above). Sub tracking only starts once the schedule is locked, so reworking the schedule beforehand doesn't leave behind fake sub history."
-            : 'Another sub request is already open for this week — resolve that one first.';
+            : 'This slot already has an open sub request.';
       flash(req, reasonText, 'error');
       return res.redirect(`/admin/sessions/${req.params.id}`);
     }
     logActivity(req, {
       action: 'week.admin_flag_needs_sub',
-      description: `Flagged ${email.fmtDate(week.match_date)} slot (${result.playerName}) as needing a sub — no emails sent yet, will fan out to the roster at this week's normal reminder time`,
+      description: result.joined
+        ? `Flagged ${email.fmtDate(week.match_date)} slot (${result.playerName}) as needing a sub — added to the sub request already open that week (no new emails)`
+        : `Flagged ${email.fmtDate(week.match_date)} slot (${result.playerName}) as needing a sub — no emails sent yet, will fan out to the roster at this week's normal reminder time`,
       sessionId: Number(req.params.id),
     });
     flash(
       req,
-      `${result.playerName}'s slot for ${email.fmtDate(week.match_date)} is flagged as needing a sub. No emails have gone out yet — the roster will be notified when this week's normal reminders fire.`
+      result.joined
+        ? `${result.playerName}'s slot for ${email.fmtDate(week.match_date)} is flagged as needing a sub. Another sub request was already out for this week, so it was added to that one — no new emails. The next person to say yes after the earlier request is filled covers this slot.`
+        : `${result.playerName}'s slot for ${email.fmtDate(week.match_date)} is flagged as needing a sub. No emails have gone out yet — the roster will be notified when this week's normal reminders fire.`
     );
     return res.redirect(`/admin/sessions/${req.params.id}`);
   }
@@ -2957,9 +2970,10 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
   // can play after all). Kyle, 2026-08-25: in that case the player's status
   // needs to go back to 'scheduled' — not stay stuck on 'needs_sub' — so
   // they're back in the normal reminder/follow-up flow and get emailed like
-  // anyone else, rather than silently falling through the cracks. Only one
-  // open/escalated/unfilled sub_requests row can exist per week at a time
-  // (hasActiveConcurrentSubRequest), so weekId alone is enough to find it.
+  // anyone else, rather than silently falling through the cracks. Since
+  // 2026-10-02 a week can have more than one open request (two players
+  // needing a sub), so the button posts sub_request_id; without it this
+  // falls back to the week's oldest open one.
   //
   // This assumes the original player is the one actually playing again. If
   // instead someone else stepped in outside the app (a text message, a
@@ -2974,9 +2988,11 @@ router.post('/sessions/:id/weeks/:weekId/clear-sub-request', (req, res) => {
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
-       WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated', 'unfilled')`
+       WHERE wa.week_id = ? AND sr.status IN ('open', 'escalated', 'unfilled')
+         AND (? = 0 OR sr.id = ?)
+       ORDER BY sr.id LIMIT 1`
     )
-    .get(req.params.weekId);
+    .get(req.params.weekId, Number(req.body.sub_request_id) || 0, Number(req.body.sub_request_id) || 0);
   if (!active) {
     flash(req, 'No open sub request found for this week.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);
@@ -3010,9 +3026,11 @@ router.post('/sessions/:id/weeks/:weekId/confirm-arranged-sub', asyncHandler(asy
        JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = wa.player_id
-       WHERE wa.week_id = ? AND w.session_id = ? AND sr.self_arranged = 1 AND sr.status IN ('open', 'escalated', 'unfilled')`
+       WHERE wa.week_id = ? AND w.session_id = ? AND sr.self_arranged = 1 AND sr.status IN ('open', 'escalated', 'unfilled')
+         AND (? = 0 OR sr.id = ?)
+       ORDER BY sr.id LIMIT 1`
     )
-    .get(req.params.weekId, req.params.id);
+    .get(req.params.weekId, req.params.id, Number(req.body.sub_request_id) || 0, Number(req.body.sub_request_id) || 0);
   if (!active) {
     flash(req, 'No open "I found a sub" request for this week.', 'error');
     return res.redirect(`/admin/sessions/${req.params.id}`);

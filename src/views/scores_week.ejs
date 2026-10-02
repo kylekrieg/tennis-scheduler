@@ -33,6 +33,7 @@
     <p><strong>Counting games:</strong> each regular game won counts as 1. All tiebreaker games won count as 1 if played at the end of a set or as a one-off — credit it to whoever won it, not point-by-point. If games or tiebreakers are not completed, do not count them.</p>
     <form method="post" action="/scores">
       <input type="hidden" name="week_id" value="<%= selectedWeek.id %>">
+      <% if (linkToken) { %><input type="hidden" name="t" value="<%= linkToken %>"><% } %>
       <% courts.forEach(function(c) { %>
         <div class="card wide" style="margin-bottom:16px;">
           <% if (multiCourt) { %><h3 style="margin-top:0;">Court <%= c.court %></h3><% } %>

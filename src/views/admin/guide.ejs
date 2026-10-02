@@ -44,7 +44,7 @@
   <li><strong>Out longer?</strong> Move the date later and the new weeks are flagged the same way.</li>
   <li><strong>Back early?</strong> Move the date earlier or uncheck the box. Any week whose sub request hasn't gone out yet goes back to scheduled. If it has already gone out, it plays out, and if a sub already took the spot, it stays that way.</li>
   <li>The box clears itself the day after the date.</li>
-  <li>Only one sub request can be open per week. If another player already has one open that week, the injured player's week waits, shows on the <a href="/admin/status">Status page</a>, and is flagged as soon as the other request closes. Weeks in a session whose schedule isn't locked yet can't be flagged either. They show on the Status page, and re-running "Schedule these players" will move the player off those dates.</li>
+  <li>If another player already has a sub request open that week, the injured player's week joins it right away instead of waiting (see "Two players need a sub the same week" below). Weeks in a session whose schedule isn't locked yet can't be flagged either. They show on the Status page, and re-running "Schedule these players" will move the player off those dates.</li>
 </ul>
 <img class="screenshot" src="/img/admin-guide/players-injured.png?v=<%= assetVersion %>" alt="Roster players table on the Players page with an Injured column: a checkbox, an Out through date and a Set button on each row, and one player marked injured.">
 <p class="screenshot-caption">One player marked injured. The message at the top of the page after you click Set lists every week that changed.</p>
@@ -259,6 +259,7 @@
     </div>
   </div>
   <p class="flow-note">You can close this out at any point with <strong>Reassign</strong>, <strong>Mark confirmed</strong>, or <strong>Clear sub request</strong> if it was a mistake. Clearing it puts the player back to "scheduled," and they'll get the normal reminder.</p>
+  <p class="flow-note" id="two-subs-same-week"><strong>Two players need a sub the same week.</strong> The first request emails the roster as usual. If a second player asks while the first is still open, nobody is emailed again: the second request joins the first, and that player's confirmation says so. Every "I'll play" link stays live until both spots are filled. The first click covers the first request and the second click covers the second, whichever email the link came from (the claim page tells the sub whose spot they're covering). The sub list is emailed once for both. If the first request was already filled before the second player asked, the second one starts over with a fresh email to the roster. An "I found a sub" request stays on its own while the named sub has time to answer, then joins the open request (no new emails) if it opens up. On the session page each request has its own badge ("1st in line", "2nd in line") and its own Clear button. If the subs end up on the wrong spots, fix it with Reassign. The <a href="#email-map">email map</a> lists every email for this case.</p>
 </div>
 
 <h3>I Found a Sub</h3>

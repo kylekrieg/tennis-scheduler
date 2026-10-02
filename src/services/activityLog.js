@@ -49,11 +49,14 @@ function logPlayerActivity({ playerName, action, description, sessionId = null }
  * stamping it "self-service" would misattribute it. "(group entry)" says
  * plainly that this score exists but doesn't claim who entered it.
  */
-function logGroupScoreActivity({ playerName, action, description, sessionId = null }) {
+// `enteredBy` (Kyle, 2026-10-02): full name of whoever arrived from a
+// score-reminder email link (services/scoreLinkTokens.js). When set, the log
+// names them instead of the generic "(group entry)" label.
+function logGroupScoreActivity({ playerName, action, description, sessionId = null, enteredBy = null }) {
   db.prepare(
     `INSERT INTO admin_activity_log (admin_id, admin_name, action, description, session_id)
      VALUES (?, ?, ?, ?, ?)`
-  ).run(null, `${playerName} (group entry)`, action, description, sessionId);
+  ).run(null, enteredBy ? `${enteredBy} (score reminder link)` : `${playerName} (group entry)`, action, description, sessionId);
 }
 
 /**

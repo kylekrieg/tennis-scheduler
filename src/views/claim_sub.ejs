@@ -5,6 +5,7 @@
   <% if (alreadyClosed) { %>
     <p class="flag error">This spot has already been claimed by someone else.</p>
   <% } else { %>
+    <% if (typeof coverName !== 'undefined' && coverName) { %><p>You'd be covering <strong><%= coverName %></strong>'s spot.</p><% } %>
     <p class="muted">First to confirm gets the spot.</p>
     <form method="post" action="/claim-sub/<%= token %>">
       <div class="actions"><button class="btn green" type="submit">I'll play</button></div>

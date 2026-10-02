@@ -30,7 +30,7 @@ Paused for a session when "Send automatic reminders" is off. Manual sends still 
 
 ## Request a Sub
 
-Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked.
+Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked. If another player already needs a sub for the same match, see "Two players need a sub the same week" below.
 
 | Email | Sent when | Who gets it | Setting | Email Log category |
 |---|---|---|---|---|
@@ -42,6 +42,20 @@ Players who have that date blacked out are never asked. Anyone already in that w
 | Your sub is confirmed | Same time | The player who needed the sub | — | `sub_filled_original` |
 | Your spot still needs a sub | still_open_alert_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request. | The player who needed the sub | Sub still open alert hours | `sub_still_open` |
 | Sub still needed (admin) | Same time | Admin report addresses | Admin report emails | `sub_still_open_admin` |
+
+## Two players need a sub the same week
+
+Each player keeps their own request, but they share one outreach. Every "I'll play" link from it stays live until ALL of the shared requests are filled, and each click fills the oldest still-open request (order requested), whichever email the link came from. If the earlier request(s) were already filled or cleared when the next player asks, the next one starts over with a fresh roster email (everyone already saw "Sub found"). An admin "— Needs a sub —" flag or an injured player's week joins an open request right away (joining sends nothing). Clearing one player's request keeps the links live for the other. The session page shows "1st in line" / "2nd in line" on each badge, with its own Clear button. If the result looks wrong (the "wrong" sub covered someone), fix it with Reassign.
+
+| Email | Sent when | Who gets it | Setting | Email Log category |
+|---|---|---|---|---|
+| Sub needed (roster) | Only for the FIRST request. A request that comes in while an earlier one for the same match is still open sends no roster email. If the earlier one(s) are already all filled or cleared, it sends a fresh one as normal. | Roster players not playing that week (a sub who already took the first spot is playing, so isn't asked) | — | `sub_request` |
+| Your request went out (joined) | Right away when a request joins an open one | The player who just asked. Says another player already needs a sub, lists who was already asked, and that the open spots fill in the order they were requested | — | `sub_request_self_notice` |
+| Sub still needed (sub list) | Once for the whole group, at escalation_lead_hours before the match. If it already went out when a request joins, nothing new is sent and the new request counts as escalated straight away. | This session's sub list | Escalate to broader sub list hours; Status page Suspend / Send now | `escalation` |
+| Sub found | Each time a spot is taken. While another spot that week is still open it adds "This match still needs one more sub." | Everyone playing that week, including the sub | — | `sub_filled` |
+| Your sub is confirmed | When that player's own spot is taken (each player gets their own, right away) | The player whose spot was taken | — | `sub_filled_original` |
+| Still open alerts | Per player, as in Request a Sub. The admin copy counts the links from the whole shared outreach. | The player and admin report addresses | Sub still open alert hours | `sub_still_open, sub_still_open_admin` |
+| "I found a sub" in the same week | Stays on its own while the named sub has time to answer (the named sub's link always fills that player's spot). At its deadline, if another request is still open, it joins that one: no roster or sub-list email, just this note to the player. If nothing else is open, it opens up on its own as in I Found a Sub. | The player who named the sub | "I found a sub" open-up hours | `self_arranged_escalated` |
 
 ## I Found a Sub
 
