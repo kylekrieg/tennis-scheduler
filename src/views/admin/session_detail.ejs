@@ -1,5 +1,5 @@
 <%- include('../partials/admin_header', {title, flashMsg, wideMain: true}) %>
-<h1><%= sessionFullTitle(session) %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %><% if (session.schedule_locked_at) { %> <span class="badge confirmed">schedule locked</span><% } %></h1>
+<h1><%= sessionFullTitle(session) %> <span class="badge scheduled"><%= session.status %></span><% if (session.archived_at) { %> <span class="badge muted">archived</span><% } %><% if (!session.reminders_enabled) { %> <span class="badge needs_sub">automatic reminders off</span><% } %><% if (session.schedule_locked_at) { %> <span class="badge confirmed">schedule locked</span><% } %></h1>
 <p class="muted"><%= session.start_date %> – <%= session.end_date %> · reminders <%= session.reminder_days_before %> day(s) before at <%= fmtTime(session.reminder_time) %><% if (session.schedule_locked_at) { %> · schedule locked <%= session.schedule_locked_at %><% } %></p>
 
 <div class="actions">

@@ -106,7 +106,32 @@ function wrapEmailHtml(innerHtml) {
 // trying to send to it rather than attempting a doomed SMTP send.
 const NO_EMAIL_DOMAIN = 'no-email.invalid';
 
+// Template previews (Kyle, 2026-10-02 — Send Email page "show what all the
+// generated emails look like"). Anything run inside captureEmails(fn) has
+// its sendMail() calls collected instead of sent or logged, so a template
+// function can be rendered with sample data without side effects.
+// AsyncLocalStorage keeps a preview from ever capturing a real send that
+// happens to run at the same moment (the cron tick, another request).
+const { AsyncLocalStorage } = require('node:async_hooks');
+const captureStore = new AsyncLocalStorage();
+async function captureEmails(fn) {
+  const captured = [];
+  await captureStore.run(captured, fn);
+  return captured;
+}
+
 async function sendMail({ to, subject, html, text, category, relatedWeekId = null, session = null, threadKey = null, test = false }) {
+  const capture = captureStore.getStore();
+  if (capture) {
+    const club = session && session.club_name;
+    capture.push({
+      to: Array.isArray(to) ? to.join(', ') : to,
+      subject: club ? `${club} — ${subject}` : subject,
+      html: html ? wrapEmailHtml(html) : '',
+      category,
+    });
+    return true;
+  }
   // Club name is per-session (a single install can run sessions for
   // different clubs/locations) — every template passes its `session` through
   // here so the subject prefix is correct without each one repeating this
@@ -1100,6 +1125,49 @@ async function sendPersonalEventsLink({ player, editToken, days = 30, test = fal
   return sendMail({ to: player.email, subject, html, category: 'personal_events_link', test });
 }
 
+/**
+ * "Edit my blackout dates" link (Kyle, 2026-10-02) — see blackoutEdit.js.
+ * Sent when a player clicks "Edit dates" on My Page or the Blackout Dates
+ * page. The page it opens can only remove upcoming dates. Reusable for
+ * `days` days. Not tied to one session (a blackout date is per player).
+ */
+async function sendBlackoutEditLink({ player, editToken, days = 7, test = false }) {
+  const url = `${siteUrl()}/blackout/edit/${editToken}`;
+  const subject = 'Your link to edit your blackout dates';
+  const html = `
+    <p>Hi ${fullName(player)},</p>
+    <p>Here's your link to remove blackout dates you no longer need. Removing a date means you can be asked to sub or swap that week. It doesn't put you into the schedule by itself.</p>
+    <p><a href="${url}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Edit my blackout dates</a></p>
+    <p>Only upcoming dates can be removed, and new dates can't be added once the season is scheduled. If you need to miss a week, use Request a Sub instead.</p>
+    <p>This link works for ${days} days. Don't forward it — anyone with it can change your list.</p>
+    <p class="muted" style="color:#888;">Didn't ask for this? No action needed — nothing changes unless someone uses the link.</p>
+    <p style="font-size:12px;color:#666;">My Page: <a href="${siteUrl()}/me/${player.slug || player.id}">${siteUrl()}/me/${player.slug || player.id}</a></p>
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'blackout_edit_link', test });
+}
+
+/**
+ * Injured notice (Kyle, 2026-10-02) — see injury.js. Sent when an admin
+ * marks a player injured on the Players page, or changes the "out through"
+ * date. `weeks` is [{ match_date, session }] for their weeks in the range.
+ */
+async function sendInjuryNotice({ player, until, weeks = [], test = false }) {
+  const subject = `You're marked out through ${fmtDate(until)}`;
+  const list = weeks.length
+    ? `<ul>${weeks.map((w) => `<li>${fmtDate(w.match_date)} — ${escapeHtml(sessionPublicLabel(w.session))}</li>`).join('')}</ul>`
+    : '<p>You have no scheduled matches in that time.</p>';
+  const html = `
+    <p>Hi ${fullName(player)},</p>
+    <p>An admin has marked you as out through <strong>${fmtDate(until)}</strong>. Sorry to hear it, and we hope you're back on the court soon.</p>
+    <p>Your weeks in that time will be offered to subs:</p>
+    ${list}
+    <p>You don't need to do anything. Each week's sub request goes out when that week's normal confirmation reminder would, and you won't get confirm emails, sub requests or swap requests for those dates.</p>
+    <p>If you're back sooner, or need more time, let an admin know and they'll change the date.</p>
+    <p style="font-size:12px;color:#666;">My Page: <a href="${siteUrl()}/me/${player.slug || player.id}">${siteUrl()}/me/${player.slug || player.id}</a></p>
+  `;
+  return sendMail({ to: player.email, subject, html, category: 'injury_notice', test });
+}
+
 // --- Direct player-to-player swaps (swapFlow.js) ---------------------------
 
 /** Sent to the target player with a single link to the accept/decline
@@ -1447,21 +1515,25 @@ async function sendAdminWeekReport({ to, week, session, report, manual = false, 
  * shown so the recipient knows at a glance whether it's "just me" or "the
  * whole group forgot."
  */
-async function sendScoreReminder({ recipient, week, session, missingCount, test = false }) {
+// `second: true` = the follow-up reminder (Kyle, 2026-10-02), sent
+// games_won_second_reminder_hours after the match if scores are still
+// missing. Its own category so cron dedups the two separately.
+async function sendScoreReminder({ recipient, week, session, missingCount, second = false, test = false }) {
   const scoresUrl = `${siteUrl()}/scores?session=${session.id}&week=${week.id}`;
-  const subject = `Scores still needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
+  const subject = `${second ? 'Reminder: scores' : 'Scores'} still needed — ${fmtDate(week.match_date)}, ${timeAndPlace(session)} doubles`;
   const html = `
     ${matchBanner(session, week)}
     <p>Hi ${fullName(recipient)},</p>
-    <p>You were on ball duty for <strong>${fmtDate(week.match_date)}</strong>, and ${missingCount === 1 ? 'one player still hasn’t' : `${missingCount} players still haven’t`} entered how many games they won for that match.</p>
+    <p>${second ? 'Second reminder: you' : 'You'} were on ball duty for <strong>${fmtDate(week.match_date)}</strong>, and ${missingCount === 1 ? 'one player still hasn’t' : `${missingCount} players still haven’t`} entered how many games they won for that match.</p>
     <p><a href="${scoresUrl}" style="display:inline-block;background:#1a7f37;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Enter scores</a></p>
     <p>That page shows the whole week's players — anyone can fill in any box, so this doesn't have to be you personally, just a nudge to whoever's around to get it done.</p>
     ${footer(session)}
   `;
-  return sendMail({ to: recipient.email, subject, html, category: 'score_reminder', relatedWeekId: week.id, session, test });
+  return sendMail({ to: recipient.email, subject, html, category: second ? 'score_reminder_2' : 'score_reminder', relatedWeekId: week.id, session, test });
 }
 
 module.exports = {
+  captureEmails,
   NO_EMAIL_DOMAIN,
   sendMail,
   wrapEmailHtml,
@@ -1485,6 +1557,8 @@ module.exports = {
   sendNewSubListEntryAlert,
   sendFoundSubVerification,
   sendPersonalEventsLink,
+  sendBlackoutEditLink,
+  sendInjuryNotice,
   sendSwapProposalVerification,
   sendSwapRequestEmail,
   sendSwapNudge,

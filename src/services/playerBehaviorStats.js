@@ -185,7 +185,7 @@ function subRequestStats(sessionId) {
        JOIN players p ON p.id = COALESCE(sr.requesting_player_id, wa.player_id)
        LEFT JOIN week_assignments filler ON filler.replaces_assignment_id = sr.week_assignment_id AND filler.is_sub = 1
        LEFT JOIN sub_offers so ON so.sub_request_id = sr.id AND so.status = 'claimed'
-       WHERE sr.status != 'resolved_double_booking' ${sessionClause}`
+       WHERE sr.status NOT IN ('resolved_double_booking', 'resolved_injury_return') ${sessionClause}`
     )
     .all(...params);
 

@@ -1319,7 +1319,29 @@ function invalidGamesWonReminderLeadHours(b) {
   if (b.games_won_reminder_lead_hours !== undefined && (!Number.isInteger(hours) || hours <= 0)) {
     return 'Ball duty scores reminder lead time must be a whole number of hours after match time, greater than 0.';
   }
+  // Second reminder (Kyle, 2026-10-02): 0 = off, otherwise must land after
+  // the first one.
+  if (b.games_won_second_reminder_hours !== undefined && b.games_won_second_reminder_hours !== '') {
+    const second = Number(b.games_won_second_reminder_hours);
+    if (!Number.isInteger(second) || second < 0) {
+      return 'Second scores reminder must be a whole number of hours after match time (0 = no second reminder).';
+    }
+    const first = b.games_won_reminder_lead_hours !== undefined ? hours : 24;
+    if (second > 0 && second <= first) {
+      return `Second scores reminder (${second}h) has to come after the first one (${first}h). Use 0 for no second reminder.`;
+    }
+  }
   return null;
+}
+
+// Saved separately from the big INSERT/UPDATE (same as saveSelfArrangedHours)
+// so those column lists don't grow again. Absent field = leave as is.
+function saveSecondScoreReminderHours(sessionId, b) {
+  if (b.games_won_second_reminder_hours === undefined || b.games_won_second_reminder_hours === '') return;
+  db.prepare('UPDATE sessions SET games_won_second_reminder_hours = ? WHERE id = ?').run(
+    Number(b.games_won_second_reminder_hours),
+    sessionId
+  );
 }
 
 // Win % leaderboard qualification threshold (Kyle, 2026-09-23) — how many
@@ -1530,6 +1552,7 @@ router.post('/sessions', (req, res) => {
     );
   const sessionId = info.lastInsertRowid;
   saveSelfArrangedHours(sessionId, b);
+  saveSecondScoreReminderHours(sessionId, b);
   db.prepare('UPDATE sessions SET season_id = ?, count_toward_season = ? WHERE id = ?').run(
     seasonIdForSession,
     b.count_toward_season ? 1 : 0,
@@ -1716,6 +1739,7 @@ const SESSION_FIELD_LABELS = [
   ['weather_lon', 'weather longitude', (v) => (v === null || v === undefined || v === '' ? '—' : v)],
   ['games_won_enabled', 'games-won leaderboard', (v) => (Number(v) ? 'on' : 'off')],
   ['games_won_reminder_lead_hours', 'ball duty scores reminder lead hours', (v) => v],
+  ['games_won_second_reminder_hours', 'second scores reminder hours', (v) => (Number(v) ? v : 'off')],
   ['min_matches_for_win_pct', 'win % leaderboard minimum matches', (v) => v],
 ];
 
@@ -1860,6 +1884,7 @@ router.post('/sessions/:id', (req, res) => {
     req.params.id
   );
   saveSelfArrangedHours(req.params.id, b);
+  saveSecondScoreReminderHours(req.params.id, b);
   const rosterResult = sessionType === 'adhoc' ? saveAdhocRoster(req.params.id, b) : saveRoster(req.params.id, b);
   const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
   logActivity(req, {
@@ -4178,7 +4203,7 @@ router.get('/sessions/:id/stats', (req, res) => {
        FROM sub_requests sr JOIN week_assignments wa ON wa.id = sr.week_assignment_id
        JOIN weeks w ON w.id = wa.week_id
        JOIN players p ON p.id = COALESCE(sr.requesting_player_id, wa.player_id)
-       WHERE w.session_id = ? AND sr.status != 'resolved_double_booking' ORDER BY w.match_date DESC`
+       WHERE w.session_id = ? AND sr.status NOT IN ('resolved_double_booking', 'resolved_injury_return') ORDER BY w.match_date DESC`
     )
     .all(session.id)
     // Admin-facing Stats page — full name (Kyle, 2026-09-07).
@@ -4281,7 +4306,8 @@ router.get('/players', (req, res) => {
   const allPlayers = db.prepare('SELECT * FROM players ORDER BY active DESC, name').all();
   const rosterPlayers = allPlayers.filter((p) => rosterPlayerIds.has(p.id));
   const subPlayers = allPlayers.filter((p) => !rosterPlayerIds.has(p.id));
-  res.render('admin/players', { title: 'Players', rosterPlayers, subPlayers, flashMsg: popFlash(req) });
+  const today = require('../services/injury').localToday();
+  res.render('admin/players', { title: 'Players', rosterPlayers, subPlayers, today, wideMain: true, flashMsg: popFlash(req) });
 });
 
 router.post('/players', (req, res) => {
@@ -4360,6 +4386,58 @@ router.post('/players/:id/edit', (req, res) => {
   flash(req, 'Player identity updated — all existing assignments carried over as-is.');
   res.redirect('/admin/players');
 });
+
+// Injured (Kyle, 2026-10-02) — see services/injury.js. Its own small form
+// on each Players row, separate from the name/email edit above.
+router.post('/players/:id/injury', asyncHandler(async (req, res) => {
+  const injury = require('../services/injury');
+  const before = db.prepare('SELECT * FROM players WHERE id = ?').get(req.params.id);
+  if (!before) return res.status(404).send('Player not found');
+  const parsed = injury.parseForm(req.body);
+  if (parsed.error) {
+    flash(req, `${fullName(before)}: ${parsed.error}`, 'error');
+    return res.redirect('/admin/players#injured');
+  }
+  const wasActive = injury.isActive(before);
+  if (!parsed.injured && !before.injured) {
+    flash(req, `${fullName(before)} isn't marked injured — nothing to change.`);
+    return res.redirect('/admin/players');
+  }
+  db.prepare('UPDATE players SET injured = ?, injured_until = ? WHERE id = ?').run(parsed.injured ? 1 : 0, parsed.until, before.id);
+  const result = injury.syncPlayer(before.id);
+  const player = db.prepare('SELECT * FROM players WHERE id = ?').get(before.id);
+
+  const list = (rows) => rows.map((r) => `${r.match_date} (${r.session_name})`).join(', ');
+  const parts = [];
+  if (result.flagged.length) parts.push(`marked needs sub: ${list(result.flagged)}`);
+  if (result.flagged.some((r) => r.ballDuty)) parts.push('ball duty on those weeks needs reassigning');
+  if (result.reverted.length) parts.push(`back to scheduled: ${list(result.reverted)}`);
+  const waitingConcurrent = result.waiting.filter((r) => r.reason === 'concurrent');
+  const waitingUnlocked = result.waiting.filter((r) => r.reason === 'not_locked');
+  if (waitingConcurrent.length) parts.push(`waiting (another sub request is open that week): ${list(waitingConcurrent)}`);
+  if (waitingUnlocked.length) parts.push(`not flagged (schedule not locked yet — re-run "Schedule these players" to move them): ${list(waitingUnlocked)}`);
+
+  const what = parsed.injured
+    ? `${wasActive ? 'Changed' : 'Marked'} ${fullName(player)} injured, out through ${parsed.until}`
+    : `Cleared ${fullName(player)}'s injured flag`;
+  logActivity(req, {
+    action: parsed.injured ? 'player.injured' : 'player.injury_cleared',
+    description: `${req.session.adminName || 'An admin'}: ${what}${parts.length ? ` — ${parts.join('; ')}` : ''}`,
+  });
+
+  // Email the player when they're newly out or the date changed.
+  let emailed = false;
+  if (parsed.injured && (!wasActive || before.injured_until !== parsed.until)) {
+    await email.sendInjuryNotice({ player, until: parsed.until, weeks: injury.weeksForNotice(player.id, parsed.until) });
+    emailed = true;
+  }
+  flash(
+    req,
+    `${what}.${parts.length ? ' ' + parts.map((x) => x[0].toUpperCase() + x.slice(1)).join('. ') + '.' : ''}${emailed ? ` ${fullName(player)} was emailed.` : ''}`,
+    waitingConcurrent.length || waitingUnlocked.length ? 'error' : 'ok'
+  );
+  res.redirect('/admin/players');
+}));
 
 router.post('/players/:id/deactivate', (req, res) => {
   const player = db.prepare('SELECT name, full_name FROM players WHERE id = ?').get(req.params.id);
@@ -4626,7 +4704,7 @@ router.post('/sessions/:id/subs', (req, res) => {
 
 // --- Custom email ---------------------------------------------------------
 
-router.get('/email', (req, res) => {
+router.get('/email', asyncHandler(async (req, res) => {
   const players = db.prepare('SELECT * FROM players WHERE active = 1 ORDER BY name').all();
   const sessions = db.prepare(`SELECT * FROM sessions ${SESSION_DISPLAY_ORDER}`).all();
   const templates = testEmail.listTemplates();
@@ -4634,8 +4712,57 @@ router.get('/email', (req, res) => {
   // sub list" recipient option below, and so the picker can show exactly
   // who's on it before sending.
   const broaderSubList = db.prepare('SELECT * FROM broader_sub_list ORDER BY name').all();
-  res.render('admin/custom_email', { title: 'Send Email', players, sessions, templates, broaderSubList, flashMsg: popFlash(req) });
-});
+
+  // Email template previews (Kyle, 2026-10-02) — bottom of this page. Every
+  // template rendered with one sample player's real schedule, captured
+  // instead of sent (testEmail.renderPreviews). "When / who" comes from the
+  // email map by category so it can't drift from the admin guide's table.
+  const previewPlayerId = Number(req.query.preview_player) || (players[0] && players[0].id) || 0;
+  const previews = previewPlayerId ? await testEmail.renderPreviews(previewPlayerId) : [];
+  // Some map rows cover two categories ("a, b"); some say "Same time",
+  // meaning the row above it in the same flow — spelled out here since the
+  // rows are shown out of that context.
+  const mapByCategory = {};
+  for (const flow of require('../services/emailMap').FLOWS) {
+    let prev = null;
+    for (const e of flow.emails) {
+      const when = /^Same time/.test(e.when) && prev ? e.when.replace(/^Same time/, `Same time as "${prev.name}"`) : e.when;
+      for (const cat of String(e.category).split(/,\s*/)) {
+        if (!mapByCategory[cat]) mapByCategory[cat] = { when, to: e.to, flow: flow.title };
+      }
+      prev = e;
+    }
+  }
+  for (const p of previews) {
+    for (const e of p.emails) e.map = mapByCategory[e.category] || null;
+  }
+
+  res.render('admin/custom_email', {
+    title: 'Send Email',
+    players,
+    sessions,
+    templates,
+    broaderSubList,
+    previews,
+    previewPlayerId,
+    openPreviews: !!req.query.preview_player,
+    wideMain: true,
+    flashMsg: popFlash(req),
+  });
+}));
+
+// The body of one template preview, for the popup's iframe. Same lockdown
+// as /email-log/:id/body: no scripts, links not clickable (they're fake
+// test tokens anyway).
+router.get('/email/preview/:key', asyncHandler(async (req, res) => {
+  const [entry] = await testEmail.renderPreviews(Number(req.query.player) || 0, req.params.key);
+  const one = entry && entry.emails[Number(req.query.i) || 0];
+  if (!one) return res.status(404).type('text/plain').send((entry && entry.error) || 'No preview for this template.');
+  res.set('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src 'unsafe-inline'; sandbox");
+  res.type('html').send(
+    `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:16px;background:#fff;}a{pointer-events:none;cursor:default;}</style></head><body>${one.html}</body></html>`
+  );
+}));
 
 // recipient_type='session' fans the same message out to every active
 // player currently on that session's roster (session_players — the same

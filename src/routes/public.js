@@ -12,6 +12,7 @@ const subFlow = require('../services/subFlow');
 const swapFlow = require('../services/swapFlow');
 const email = require('../services/email');
 const personalEvents = require('../services/personalEvents');
+const blackoutEdit = require('../services/blackoutEdit');
 const { ensureWeeksExist } = require('../services/scheduleRun');
 const signup = require('../services/signup');
 const adhocFlow = require('../services/adhocFlow');
@@ -62,6 +63,9 @@ const signupLimiter = rateLimiter({ name: 'signup-post', windowMs: 60 * 60 * 100
 // add/delete posts are already gated by an emailed token, so a looser cap.
 const otherDatesLinkLimiter = rateLimiter({ name: 'other-dates-link', windowMs: 60 * 60 * 1000, max: 5 });
 const otherDatesEditLimiter = rateLimiter({ name: 'other-dates-edit', windowMs: 60 * 60 * 1000, max: 60 });
+// "Edit my blackout dates" (Kyle, 2026-10-02) — same limits as My Other Dates.
+const blackoutEditLinkLimiter = rateLimiter({ name: 'blackout-edit-link', windowMs: 60 * 60 * 1000, max: 5 });
+const blackoutEditLimiter = rateLimiter({ name: 'blackout-edit', windowMs: 60 * 60 * 1000, max: 60 });
 const scoreEntryLimiter = rateLimiter({ name: 'score-entry', windowMs: 60 * 60 * 1000, max: 20 });
 
 // Stamps each assignment row with `doubleBooked` (the other session it
@@ -810,6 +814,85 @@ router.post('/blackout', blackoutLimiter, asyncHandler(async (req, res) => {
 
   res.redirect(`/blackout?session=${session.id}&player=${playerId}&saved=1`);
 }));
+
+// --- Remove my own blackout dates (Kyle, 2026-10-02) -----------------------
+// "Edit dates" on My Page and on /blackout (once a season is scheduled)
+// emails the player a link; that page lists their upcoming blackout dates
+// with a Remove button each. Remove only, never add — see blackoutEdit.js.
+
+router.post('/blackout/edit-link', blackoutEditLinkLimiter, asyncHandler(async (req, res) => {
+  const genericOk = {
+    title: 'Blackout Dates',
+    heading: 'Check your email',
+    body: "If that's a valid player, we've emailed a link to the address on file. Nothing has changed yet.",
+    tone: 'ok',
+  };
+  // Same identical-looking response for a bot as for a real request — see honeypot.js.
+  if (honeypot.isBot(req)) return res.render('message', genericOk);
+  const player = db.prepare('SELECT * FROM players WHERE id = ? AND active = 1').get(Number(req.body.player_id) || 0);
+  if (!player) return res.render('message', genericOk);
+  if (!player.email || player.email.endsWith('@' + email.NO_EMAIL_DOMAIN)) {
+    return res.render('message', {
+      title: 'Blackout Dates',
+      heading: 'No email on file',
+      body: "There's no email address on file for this player, so we can't send an edit link. Ask your admin to remove the date for you.",
+      tone: 'error',
+      myPageId: player.slug || player.id,
+    });
+  }
+  const raw = blackoutEdit.issueEditToken(player.id);
+  await email.sendBlackoutEditLink({ player, editToken: raw, days: blackoutEdit.EDIT_TOKEN_DAYS });
+  res.render('message', {
+    title: 'Blackout Dates',
+    heading: 'Check your email',
+    body: `We've emailed a link to the address on file for ${player.name}. Click it to remove any blackout dates you no longer need. It works for ${blackoutEdit.EDIT_TOKEN_DAYS} days.`,
+    tone: 'ok',
+    myPageId: player.slug || player.id,
+  });
+}));
+
+function blackoutEditBadLink(res) {
+  return res.status(403).render('message', {
+    title: 'Blackout Dates',
+    heading: 'That link has expired',
+    body: `Edit links work for ${blackoutEdit.EDIT_TOKEN_DAYS} days. Go back to My Page (or the Blackout Dates page) and click "Edit dates" to get a fresh one.`,
+    tone: 'error',
+  });
+}
+
+router.get('/blackout/edit/:token', (req, res) => {
+  const player = blackoutEdit.findPlayerByEditToken(req.params.token);
+  if (!player) return blackoutEditBadLink(res);
+  const localToday = utcToZonedParts(new Date(), getTimezone()).date;
+  res.render('blackout_edit', {
+    title: 'Edit Blackout Dates',
+    player,
+    token: req.params.token,
+    dates: blackoutEdit.upcomingBlackouts(player.id, localToday),
+    removed: typeof req.query.removed === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.removed) ? req.query.removed : null,
+    error: blackoutEdit.ERROR_MESSAGES[req.query.err] || null,
+  });
+});
+
+router.post('/blackout/edit/:token/remove', blackoutEditLimiter, (req, res) => {
+  const player = blackoutEdit.findPlayerByEditToken(req.params.token);
+  if (!player) return blackoutEditBadLink(res);
+  const localToday = utcToZonedParts(new Date(), getTimezone()).date;
+  const date = String(req.body.date || '');
+  const back = `/blackout/edit/${encodeURIComponent(req.params.token)}`;
+  // Which sessions it lands on, captured before the delete for the log line.
+  const affected = blackoutEdit.upcomingBlackouts(player.id, localToday).find((d) => d.date === date);
+  const result = blackoutEdit.removeDate(player.id, date, localToday);
+  if (result.error) return res.redirect(`${back}?err=${result.error}`);
+  const sessions = affected ? affected.sessions : [];
+  logPlayerActivity({
+    playerName: fullName(player),
+    action: 'blackout.self_remove',
+    description: `${fullName(player)} removed their blackout date ${date}${sessions.length ? ` (${sessions.map((x) => email.sessionFullTitle(x)).join('; ')})` : ''}${affected && affected.adminSet ? ' — it had been entered by an admin' : ''}`,
+    sessionId: sessions.length === 1 ? sessions[0].id : null,
+  });
+  res.redirect(`${back}?removed=${date}`);
+});
 
 // --- Season sign-ups (Kyle, 2026-09-23) ------------------------------------
 //

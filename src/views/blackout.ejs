@@ -29,15 +29,23 @@
 <% } %>
 
 <% if (saved) { %><p class="notice">Blackout dates saved.</p><% } %>
-<% if (locked) { %><p class="flag error">This season's already been scheduled, so blackout dates can't be changed here anymore. Use <a href="/request-sub">Request a Sub</a> if you need to miss a specific week.</p><% } %>
+<% if (locked) { %><p class="flag error">This season's already been scheduled, so blackout dates can't be added anymore. Use <a href="/request-sub">Request a Sub</a> if you need to miss a specific week.</p><% } %>
 
 <% if (schedulingLocked) { %>
-  <p class="flag" style="margin-top:16px;">This season has already been scheduled, so blackout dates are locked in and can't be changed on this page. If you need to miss a specific week, use <a href="/request-sub">Request a Sub</a> for that week instead — either now or from the confirmation email closer to the date.</p>
+  <p class="flag" style="margin-top:16px;">This season has already been scheduled, so you can't add blackout dates anymore. If you need to miss a specific week, use <a href="/request-sub">Request a Sub</a> for that week instead — either now or from the confirmation email closer to the date. If you're free on a date you blacked out, pick your name and click <strong>Edit dates</strong>, and we'll email you a link to remove it.</p>
   <% if (selectedPlayerId) { %>
     <% if (myBlackoutDatesList.length === 0) { %>
       <p class="notice">You have no blackout dates on record for this season.</p>
     <% } else { %>
-      <p class="notice">Your blackout dates for this season: <strong><%= myBlackoutDatesList.join(', ') %></strong></p>
+      <div class="notice" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="flex:1 1 auto;min-width:0;">Your blackout dates for this season: <strong><%= myBlackoutDatesList.join(', ') %></strong></span>
+        <%# "Edit dates" (Kyle, 2026-10-02) — remove-only, see blackoutEdit.js. %>
+        <form method="POST" action="/blackout/edit-link" class="inline" style="margin:0;">
+          <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+          <input type="hidden" name="player_id" value="<%= selectedPlayerId %>">
+          <button type="submit" class="btn small neutral">Edit dates</button>
+        </form>
+      </div>
     <% } %>
   <% } %>
 <% } %>

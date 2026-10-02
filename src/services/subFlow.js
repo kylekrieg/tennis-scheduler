@@ -628,7 +628,8 @@ async function claimOffer(offer, { byAdmin = false } = {}) {
     !subRequest ||
     subRequest.status === 'filled' ||
     subRequest.status === 'resolved_manually' ||
-    subRequest.status === 'resolved_double_booking'
+    subRequest.status === 'resolved_double_booking' ||
+    subRequest.status === 'resolved_injury_return'
   ) {
     return { ok: false, reason: 'already_filled' };
   }

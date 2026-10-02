@@ -1,4 +1,4 @@
-<%- include('../partials/admin_header', {title, flashMsg}) %>
+<%- include('../partials/admin_header', {title, flashMsg, wideMain}) %>
 <h1>Send Custom Email</h1>
 <form method="post" action="/admin/email" class="card">
   <label>Send to</label>
@@ -81,6 +81,41 @@
   </div>
   <div class="actions"><button class="btn green" type="submit">Send</button></div>
 </form>
+
+<h2 id="template-previews">Email templates — preview</h2>
+<details class="card wide"<%= openPreviews ? ' open' : '' %>>
+  <summary style="cursor:pointer;font-weight:600;">Show what every automatic email looks like (<%= previews.length %> templates)</summary>
+  <p class="muted" style="margin-top:8px;">Each template is built from a sample player's own current schedule, the same way "Test a template" above does it, but <strong>nothing is sent</strong> and nothing goes in the Email Log. Links in a preview don't work. Click <strong>Preview</strong> to see the full email. When and who come from the <a href="/admin/guide#email-map">email map</a>.</p>
+  <form method="get" action="/admin/email#template-previews" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+    <label style="margin:0;">Sample player<br>
+      <select name="preview_player" onchange="this.form.submit()">
+        <% players.forEach(function(p) { %><option value="<%= p.id %>" <%= p.id === previewPlayerId ? 'selected' : '' %>><%= fullName(p) %></option><% }) %>
+      </select>
+    </label>
+    <noscript><button class="btn small neutral" type="submit">Show</button></noscript>
+  </form>
+  <div class="table-scroll">
+  <table class="wide">
+    <thead><tr><th>Template</th><th>Subject</th><th>When it goes out</th><th>Who gets it</th><th></th></tr></thead>
+    <tbody>
+      <% previews.forEach(function(p) { %>
+        <% if (p.error || !p.emails.length) { %>
+          <tr><td><%= p.label %></td><td colspan="4" class="muted"><%= p.error || 'This template produced no email for this player.' %></td></tr>
+        <% } else { p.emails.forEach(function(e, i) { %>
+          <tr>
+            <td><%= p.label %><% if (p.emails.length > 1) { %> <span class="muted">(<%= i + 1 %> of <%= p.emails.length %>)</span><% } %></td>
+            <td style="overflow-wrap:anywhere;"><%= e.subject %></td>
+            <td class="muted" style="font-size:calc(13px * var(--text-scale, 1));"><% if (e.map) { %><strong><%= e.map.flow %>:</strong> <%= e.map.when %><% } %></td>
+            <td class="muted" style="font-size:calc(13px * var(--text-scale, 1));"><%= e.map ? e.map.to : '' %></td>
+            <td><a class="btn small neutral email-preview-link" href="/admin/email/preview/<%= encodeURIComponent(p.key) %>?player=<%= previewPlayerId %>&i=<%= i %>" target="_blank" rel="noopener" data-subject="<%= e.subject %>" data-to="<%= e.to %>" data-sent="sample, not sent">Preview</a></td>
+          </tr>
+        <% }) } %>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+</details>
+<%- include('../partials/email_preview_dialog') %>
 
 <script>
   (function () {

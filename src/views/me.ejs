@@ -83,11 +83,21 @@
 
 <% sessionCards.forEach(function(card) { %>
   <% if (card.blackoutDates.length > 0) { %>
-    <p class="notice" style="border-left:4px solid <%= sessionColor(card.session) %>;margin-bottom:4px;">
-      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(card.session) %>;margin-right:4px;"></span>
-      Blackout date<%= card.blackoutDates.length > 1 ? 's' : '' %> for <strong><%= sessionPublicLabel(card.session) %></strong>:
-      <%= card.blackoutDates.map(function(d) { return fmtDate(d); }).join(', ') %>
-    </p>
+    <div class="notice" style="border-left:4px solid <%= sessionColor(card.session) %>;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="flex:1 1 auto;min-width:0;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(card.session) %>;margin-right:4px;"></span>
+        Blackout date<%= card.blackoutDates.length > 1 ? 's' : '' %> for <strong><%= sessionPublicLabel(card.session) %></strong>:
+        <%= card.blackoutDates.map(function(d) { return fmtDate(d); }).join(', ') %>
+      </span>
+      <%# "Edit dates" (Kyle, 2026-10-02): emails a link to a remove-only
+          page — see blackoutEdit.js. Adding dates stays on /blackout, and
+          only before the season is scheduled. %>
+      <form method="POST" action="/blackout/edit-link" class="inline" style="margin:0;">
+        <div class="hp-field" aria-hidden="true"><label>Leave blank<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+        <input type="hidden" name="player_id" value="<%= player.id %>">
+        <button type="submit" class="btn small neutral" title="We'll email you a link to remove dates you no longer need">Edit dates</button>
+      </form>
+    </div>
   <% } %>
   <div class="card wide" style="margin-bottom:20px;border-left:6px solid <%= sessionColor(card.session) %>;">
     <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">

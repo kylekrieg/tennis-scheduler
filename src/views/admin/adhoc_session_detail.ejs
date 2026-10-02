@@ -1,6 +1,6 @@
 <%- include('../partials/admin_header', {title, flashMsg}) %>
 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-  <h1 style="margin-bottom:0;"><%= sessionFullTitle(session) %> <span class="badge scheduled">ad-hoc</span><% if (session.archived_at) { %> <span class="badge subbed_out">archived</span><% } %></h1>
+  <h1 style="margin-bottom:0;"><%= sessionFullTitle(session) %> <span class="badge scheduled">ad-hoc</span><% if (session.archived_at) { %> <span class="badge muted">archived</span><% } %></h1>
   <div class="actions">
     <a class="btn neutral" href="/admin/sessions/<%= session.id %>/edit">Edit / roster</a>
     <% if (!session.archived_at) { %>
@@ -17,7 +17,7 @@
 
 <% weekRows.forEach(function (wr) { %>
   <div class="session-card">
-    <h3><%= fmtDate(wr.week.match_date) %><% if (wr.week.locked) { %> <span class="badge subbed_out">locked</span><% } %>
+    <h3><%= fmtDate(wr.week.match_date) %><% if (wr.week.locked) { %> <span class="badge muted">locked</span><% } %>
       <% if (session.weather_enabled && wr.weather) { %>
         <span class="muted" style="font-size:12px;font-weight:normal;">
           <% if (weatherIconUrl(wr.weather.icon)) { %><img src="<%= weatherIconUrl(wr.weather.icon) %>" width="20" height="20" alt="" style="vertical-align:middle;margin:0 -2px;"><% } %>

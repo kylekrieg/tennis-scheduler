@@ -139,4 +139,20 @@
 </table></div>
 <% } %>
 
+<% if (links.blackoutEdit && links.blackoutEdit.length) { %>
+<h2>"Edit blackout dates" links</h2>
+<p class="muted">Let a player remove their own upcoming blackout dates for 7 days (they can't add any). Not tied to a session.</p>
+<div class="table-scroll"><table class="wide">
+  <tr><th>Player</th><th>Sent</th><th>Expires</th><th></th></tr>
+  <% links.blackoutEdit.forEach(function(t) { %>
+    <tr>
+      <td><%= t.name %></td>
+      <td style="white-space:nowrap;"><%= t.sent %></td>
+      <td style="white-space:nowrap;"><%= t.expires %></td>
+      <td><%- cancelForm('blackout_edit', t.id, 'Cancel', 'Cancel the blackout edit link for ' + t.name + '?') %></td>
+    </tr>
+  <% }) %>
+</table></div>
+<% } %>
+
 <%- include('../partials/footer') %>

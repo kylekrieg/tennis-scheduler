@@ -538,6 +538,13 @@ ensureColumn('sub_requests', 'still_open_alert_sent_at', 'TEXT');
 // follow_up_lead_hours/admin_report_lead_hours before it — turning the whole
 // reminder off means turning games_won_enabled off for the session).
 ensureColumn('sessions', 'games_won_reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
+// Second scores-still-needed reminder (Kyle, 2026-10-02): "two reminders
+// hours after a match." 0 = off. Default 48 so existing sessions get it.
+ensureColumn('sessions', 'games_won_second_reminder_hours', 'INTEGER NOT NULL DEFAULT 48');
+// Injured players (Kyle, 2026-10-02) — see src/services/injury.js.
+ensureColumn('players', 'injured', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('players', 'injured_until', 'TEXT');
+ensureColumn('sub_requests', 'injury', 'INTEGER NOT NULL DEFAULT 0');
 
 // Season sign-ups (Kyle, 2026-09-23) — per-session tier percentages, admin-
 // editable on the new Sign-ups page (src/services/signup.js). Every existing

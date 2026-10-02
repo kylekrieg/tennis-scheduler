@@ -30,7 +30,8 @@
 <p class="muted">When sign-ups open for a new session, you'll get an email with a link that already has your name picked.</p>
 
 <h2 id="blackout">Blackout dates</h2>
-<p>If you already know there are dates you can't make this season, go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off those dates. It saves as soon as you check a box. You can only do this before the admin makes the schedule. After that, blackout dates are locked and you'd use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> instead.</p>
+<p>If you already know there are dates you can't make this season, go to <a href="/blackout">Blackout Dates</a>, pick your name, and check off those dates. It saves as soon as you check a box. You can only add dates before the admin makes the schedule. After that, you'd use <strong>Request a Sub</strong> or <strong>Swap a Week</strong> to miss a week instead.</p>
+<p><strong>Free on a date after all?</strong> Once the schedule is made you can still <em>remove</em> an upcoming blackout date. Click <strong>Edit dates</strong> next to your blackout dates on <a href="#my-page">My Page</a> (or on the Blackout Dates page after picking your name). We'll email you a link that works for 7 days, and from there you can remove any upcoming date. Removing a date doesn't add you to the schedule. It just means you can be asked to sub or swap that week. You can't add new dates this way.</p>
 <p>If you're in more than one session and they have matches on the same date, you only need to enter that blackout once. It carries over to the other session and shows up there already checked (and greyed out). To see all the blackout dates you've entered in every session, not just this one, check "Show all my blackout dates" under the name dropdown.</p>
 <p class="muted" style="margin-bottom:0;">When a new session is ready for blackout dates, you'll get an email about it, so you don't have to go looking:</p>
 <div class="email-mock">
@@ -55,6 +56,8 @@
 <p class="muted" style="margin-bottom:0;">The button brings you here with your name already picked:</p>
 <img class="screenshot" src="/img/help/blackout.png?v=<%= assetVersion %>" alt="Blackout Dates page showing the session switcher banner, a name dropdown, and a checklist of match dates.">
 <p class="screenshot-caption">Pick your name, check the dates you can't make, and save. That's all there is to it.</p>
+<img class="screenshot" src="/img/help/blackout-edit.png?v=<%= assetVersion %>" alt="Edit Blackout Dates page opened from the emailed link, listing upcoming blackout dates with a Remove button next to each.">
+<p class="screenshot-caption">The page the "Edit dates" email opens. You can remove dates here, but not add them.</p>
 
 <h2 id="request-sub">Request a Sub</h2>
 <p>If you know ahead of time that you'll miss a match, go to <a href="/request-sub">Request a Sub</a>, pick your name, and click "Need a sub for this week" next to the date. You don't have to wait for the reminder email.</p>
@@ -308,9 +311,9 @@
 </div>
 
 <h2 id="my-page">My Page</h2>
-<p>This is the quickest way to see everything. Go to <a href="/me">My Page</a>, pick your name, and bookmark the page (or add it to your phone's home screen). It always shows your current schedule for every session you're in, and you won't have to pick your name again. Each upcoming match has buttons to request a sub or propose a swap, and your calendar link is here too. Each session's card also shows your target, games played, and ball duty count for that session. If one of your blackout dates falls on one of that session's match dates, there's a note above the card with the date.</p>
+<p>This is the quickest way to see everything. Go to <a href="/me">My Page</a>, pick your name, and bookmark the page (or add it to your phone's home screen). It always shows your current schedule for every session you're in, and you won't have to pick your name again. Each upcoming match has buttons to request a sub or propose a swap, and your calendar link is here too. Each session's card also shows your target, games played, and ball duty count for that session. If one of your blackout dates falls on one of that session's match dates, there's a note above the card with the date, and an <strong>Edit dates</strong> button for removing a date you no longer need (see <a href="#blackout">Blackout dates</a>).</p>
 <p><strong>My Other Dates.</strong> At the top of My Page there's a collapsible "My Other Dates" section. If you play somewhere else too (another league, a club match, a pickup game), you can add those dates there and they'll show up in your <a href="#calendar">calendar</a> right next to your league matches, so everything you play is in one place. To keep anyone else from changing your calendar, click <em>Email me a link to add dates</em>. We'll email you a link that works for 30 days, and you can add or delete dates from it. These dates are only for your calendar. They don't change your league schedule or your blackout dates.</p>
-<img class="screenshot" src="/img/help/my-page.png?v=<%= assetVersion %>" alt="My Page showing one colored card per enrolled session, each with a table of upcoming matches, status badges, and Need a sub / Propose a swap buttons.">
+<img class="screenshot" src="/img/help/my-page.png?v=<%= assetVersion %>" alt="My Page showing the blackout dates line with an Edit dates button, then a session card with a table of upcoming matches, status badges, and Need a sub / Propose a swap / I found a sub buttons.">
 <p class="screenshot-caption">In more than one session? Each one gets its own card here, in the same color that session uses everywhere else on the site.</p>
 
 <h2 id="confirming">Confirming you're playing</h2>

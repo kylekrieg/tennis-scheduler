@@ -33,6 +33,7 @@ const STATUS_LABELS = {
   filled: 'filled',
   resolved_manually: 'resolved by admin',
   resolved_double_booking: 'closed (double booking)',
+  resolved_injury_return: 'closed (back from injury)',
 };
 
 function parseUtc(s) {

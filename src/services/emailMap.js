@@ -22,6 +22,7 @@ const EXAMPLE_WEEK = [
   { when: 'Wednesday, 1:30 PM', what: 'Sub still open alert (4h before)', to: 'The player who asked + admin report addresses, if a sub request still isn\'t taken' },
   { when: 'Wednesday, 5:30 PM', what: 'Match starts: week locks', to: 'No email. Every link for that week stops working; open swaps expire; still-open sub requests are flagged unfilled' },
   { when: 'Thursday, 5:30 PM', what: 'Scores reminder (24h after)', to: 'That week\'s ball-duty player, if any scores are missing' },
+  { when: 'Friday, 5:30 PM', what: 'Second scores reminder (48h after)', to: 'That week\'s ball-duty player, if scores are still missing' },
 ];
 
 const FLOWS = [
@@ -98,6 +99,7 @@ const FLOWS = [
     title: 'Scores',
     emails: [
       { name: 'Scores still needed', category: 'score_reminder', when: 'games_won_reminder_lead_hours after the match (default 24), if any games-won are missing', to: 'That week\'s ball-duty player', setting: 'Ball duty scores reminder hours (only when Stats is on)' },
+      { name: 'Scores still needed — second reminder', category: 'score_reminder_2', when: 'games_won_second_reminder_hours after the match (default 48, 0 = off), if games-won are still missing', to: 'That week\'s ball-duty player', setting: 'Ball duty scores second reminder hours (only when Stats is on)' },
     ],
   },
   {
@@ -109,6 +111,8 @@ const FLOWS = [
       { name: 'Season sign-ups are open', category: 'signup_notice', when: 'Admin clicks "Notify candidates" on the sign-ups page', to: 'Sign-up candidates', setting: '—' },
       { name: 'Custom email', category: 'custom', when: 'Admin sends from Send Email or "Send email to players"', to: 'Whoever the admin picks', setting: '—' },
       { name: '"My Other Dates" link', category: 'personal_events_link', when: 'Player asks for it on My Page', to: 'That player', setting: '—' },
+      { name: 'Injured notice', category: 'injury_notice', when: 'Admin marks a player Injured on the Players page, or changes their "out through" date', to: 'That player', setting: 'Players page' },
+      { name: 'Edit blackout dates link', category: 'blackout_edit_link', when: 'Player clicks "Edit dates" on My Page or the Blackout Dates page', to: 'That player', setting: '—' },
     ],
   },
 ];

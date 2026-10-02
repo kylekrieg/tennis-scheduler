@@ -180,6 +180,18 @@ function listActiveLinks(sessionId = null) {
         .all(new Date().toISOString())
         .map((r) => ({ id: r.id, name: fullName(r), sent: when(r.created_at), expires: when(r.expires_at.replace('T', ' ').slice(0, 19)) }));
 
+  // "Edit my blackout dates" links (Kyle, 2026-10-02) — see blackoutEdit.js.
+  const blackoutEdit = sessionId
+    ? []
+    : db
+        .prepare(
+          `SELECT t.id, t.created_at, t.expires_at, p.name, p.full_name FROM blackout_edit_tokens t
+           JOIN players p ON p.id = t.player_id
+           WHERE t.expires_at > ? ORDER BY t.created_at`
+        )
+        .all(new Date().toISOString())
+        .map((r) => ({ id: r.id, name: fullName(r), sent: when(r.created_at), expires: when(r.expires_at.replace('T', ' ').slice(0, 19)) }));
+
   const subRequests = [...requests.values()];
   return {
     subRequests,
@@ -188,9 +200,10 @@ function listActiveLinks(sessionId = null) {
     swapVerifications,
     adhoc,
     otherDates,
+    blackoutEdit,
     total:
       subRequests.reduce((n, r) => n + r.offers.length, 0) +
-      assignmentLinks.length + swaps.length + swapVerifications.length + adhoc.length + otherDates.length,
+      assignmentLinks.length + swaps.length + swapVerifications.length + adhoc.length + otherDates.length + blackoutEdit.length,
   };
 }
 
@@ -292,6 +305,13 @@ function cancelLink(kind, rawId) {
     if (!t) return { ok: false };
     db.prepare('DELETE FROM personal_event_tokens WHERE id = ?').run(id);
     return { ok: true, sessionId: null, description: `Cancelled ${fullName(t)}'s "My Other Dates" edit link` };
+  }
+
+  if (kind === 'blackout_edit') {
+    const t = db.prepare('SELECT t.*, p.name, p.full_name FROM blackout_edit_tokens t JOIN players p ON p.id = t.player_id WHERE t.id = ?').get(id);
+    if (!t) return { ok: false };
+    db.prepare('DELETE FROM blackout_edit_tokens WHERE id = ?').run(id);
+    return { ok: true, sessionId: null, description: `Cancelled ${fullName(t)}'s "edit blackout dates" link` };
   }
 
   return { ok: false };

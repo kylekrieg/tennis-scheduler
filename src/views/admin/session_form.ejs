@@ -197,7 +197,11 @@
 
   <label for="games_won_reminder_lead_hours">Ball duty scores reminder — hours after match time</label>
   <input type="number" name="games_won_reminder_lead_hours" id="games_won_reminder_lead_hours" value="<%= session ? session.games_won_reminder_lead_hours : 24 %>" min="1">
-  <p class="muted">If any player who was scheduled that week still hasn't entered games won by this many hours after match time, that week's ball-duty person gets a one-time reminder email with a link to the Scores page. Defaults to 24. Only applies while the checkbox above is on.</p>
+  <p class="muted">If any player who was scheduled that week still hasn't entered games won by this many hours after match time, that week's ball-duty person gets a reminder email with a link to the Scores page. Defaults to 24. Only applies while the checkbox above is on.</p>
+
+  <label for="games_won_second_reminder_hours">Ball duty scores — second reminder, hours after match time</label>
+  <input type="number" name="games_won_second_reminder_hours" id="games_won_second_reminder_hours" value="<%= session ? session.games_won_second_reminder_hours : 48 %>" min="0">
+  <p class="muted">If scores are <em>still</em> missing by this many hours after match time, the ball-duty person gets one more reminder. Has to be later than the first reminder. Defaults to 48. Set to 0 for no second reminder.</p>
 
   <label for="min_matches_for_win_pct">Win % leaderboard — minimum matches scored to be ranked</label>
   <input type="number" name="min_matches_for_win_pct" id="min_matches_for_win_pct" value="<%= session ? session.min_matches_for_win_pct : 2 %>" min="0">

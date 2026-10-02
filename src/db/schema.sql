@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS players (
   email         TEXT NOT NULL UNIQUE,
   active        INTEGER NOT NULL DEFAULT 1,
   slug          TEXT,  -- URL-safe name-based id for "My Page" (/me/<slug>) links, e.g. 'brian-b'. App-level uniqueness only (see playerSlug.js) — generated once at creation and never auto-regenerated on rename, so existing bookmarks/emails/calendar links keep working. NULL only briefly for a pre-migration row before db/index.js's one-time backfill runs. Always derived from the public `name` above, never from full_name — unaffected by the full-name split (Kyle, 2026-09-07).
-  full_name     TEXT  -- the real full name (Kyle, 2026-09-07): "for the broader sub list, I have full names called out... everywhere we have a public facing page, we should use the public name field. Anywhere admin is looking at it, it should be a full name... in emails... we should use full names as that's a trusted system." Shown on every admin page and in every email; NULL until an admin fills it in on the Players page, in which case src/services/playerName.js's fullName() falls back to the public `name` so nothing renders blank.
+  full_name     TEXT, -- the real full name (Kyle, 2026-09-07): "for the broader sub list, I have full names called out... everywhere we have a public facing page, we should use the public name field. Anywhere admin is looking at it, it should be a full name... in emails... we should use full names as that's a trusted system." Shown on every admin page and in every email; NULL until an admin fills it in on the Players page, in which case src/services/playerName.js's fullName() falls back to the public `name` so nothing renders blank.
+  injured       INTEGER NOT NULL DEFAULT 0, -- Injured checkbox on the admin Players page (Kyle, 2026-10-02). See src/services/injury.js. Cleared automatically by cron the day after injured_until.
+  injured_until TEXT  -- last day (inclusive, ISO date) the injured player is out. NULL when not injured.
 );
 
 -- Single-row global settings table
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   weather_lon         REAL,
   games_won_enabled  INTEGER NOT NULL DEFAULT 1, -- per-session opt-out (Kyle, 2026-09-10) for the games-won leaderboard feature — defaults ON since it's a fun extra some groups won't want. Gates only the PLAYER-facing surfaces (schedule/lookahead/My Page links, the group entry grid, the per-player Scores page, the public leaderboard); the admin session-detail "Games won" field and both admin Stats leaderboard tables are never gated by this, same "admin isn't restricted by a player-facing toggle" pattern as reminders_enabled/weather_enabled. See db/index.js's ensureColumn() doc comment for why the default must be 1, not 0.
   games_won_reminder_lead_hours INTEGER NOT NULL DEFAULT 24, -- per-session (Kyle, 2026-09-15): hours after match_time cron.js's processScoreReminders() waits before emailing that week's ball-duty player, if any player who was scheduled to play still has no games_won entered by then. Same "configurable, not hardcoded" pattern as follow_up_lead_hours/admin_report_lead_hours/escalation_lead_hours above. Only relevant while games_won_enabled is on for this session — see that column's own comment for what it gates.
+  games_won_second_reminder_hours INTEGER NOT NULL DEFAULT 48, -- per-session (Kyle, 2026-10-02): hours after match_time for the SECOND scores-still-needed reminder to the ball-duty player (category 'score_reminder_2'), only if scores are still missing. 0 = no second reminder. Must be later than games_won_reminder_lead_hours. See cron.js's processScoreReminders().
   min_matches_for_win_pct INTEGER NOT NULL DEFAULT 2, -- per-session (Kyle, 2026-09-23): minimum matches scored before a player appears in the ranked Win % Leaderboard on /leaderboard, rather than the "still building a sample" list below it — was a hardcoded constant (gameScores.js's MIN_MATCHES_FOR_WIN_PCT) until Kyle asked whether it should be admin-configurable per session, same "configurable, not hardcoded" pattern as every other threshold on this table. The all-time win% board is cross-session with no single session that "owns" it, so public.js's /leaderboard route applies whichever session is currently selected in the session picker as the cutoff — see gameScores.js's MIN_MATCHES_FOR_WIN_PCT doc comment for the full reasoning.
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -94,7 +97,7 @@ CREATE TABLE IF NOT EXISTS blackout_dates (
   session_id    INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   date          TEXT NOT NULL,   -- ISO date
-  source        TEXT NOT NULL DEFAULT 'self', -- self | admin
+  source        TEXT NOT NULL DEFAULT 'self', -- self | admin | injury (added/removed by src/services/injury.js, Kyle 2026-10-02)
   UNIQUE(session_id, player_id, date)
 );
 
@@ -311,6 +314,7 @@ CREATE TABLE IF NOT EXISTS sub_requests (
   self_arranged_warning_sent_at  TEXT,
   self_arranged_late_alert_sent_at TEXT,
   still_open_alert_sent_at TEXT, -- set once the "still open" alert has gone out (Kyle, 2026-09-30), at still_open_alert_hours before the match or right away when nobody is left to ask.
+  injury                INTEGER NOT NULL DEFAULT 0, -- 1 = created by src/services/injury.js for an injured player (Kyle, 2026-10-02). Closed as 'resolved_injury_return' (left out of Sub History) when the player comes back before it went out.
   self_arranged         INTEGER NOT NULL DEFAULT 0 -- set only by arrangeSelfSub() ("I found a sub" — one specific named candidate), never by createSubRequest()'s normal fan-out or adminFlagNeedsSub(). Lets the Activity Log's Player Behavior stats (Kyle, 2026-09-15) count "found their own sub" separately from "waited on the app's fan-out" without re-deriving it from sub_offers row counts, which stops being reliable once a self-arranged request later escalates (it can gain more offers, same as any other still-open request — see arrangeSelfSub()'s doc comment).
 );
 
@@ -563,6 +567,18 @@ CREATE INDEX IF NOT EXISTS idx_personal_events_player ON personal_events(player_
 -- so a player can bookmark it; only the SHA-256 hash is stored, same as every
 -- other token in this app (tokens.js).
 CREATE TABLE IF NOT EXISTS personal_event_tokens (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TEXT NOT NULL,                    -- ISO timestamp (UTC)
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Emailed "edit my blackout dates" links (Kyle, 2026-10-02) — see
+-- src/services/blackoutEdit.js. Same shape and reasoning as
+-- personal_event_tokens above: reusable until expires_at, hash only. The
+-- page they open can only REMOVE upcoming blackout dates, never add one.
+CREATE TABLE IF NOT EXISTS blackout_edit_tokens (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,

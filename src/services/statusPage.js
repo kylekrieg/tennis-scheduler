@@ -64,7 +64,7 @@ function getAttentionItems() {
     .all();
 
   if (sessions.length === 0) {
-    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], staleBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [], selfArrangedSubs };
+    return { conflicts: [], needsAttentionWeeks: [], unconfirmed: [], unfilledSubs: [], missingBallDuty: [], staleBallDuty: [], pausedSessions: [], overlappingEnrollments: [], doubleBookings: [], staleSwaps: [], selfArrangedSubs, injuryWaiting: [] };
   }
 
   // Players enrolled in two non-archived sessions on the same day of week
@@ -217,7 +217,13 @@ function getAttentionItems() {
       .all(...sessionIds)
   );
 
-  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps, selfArrangedSubs };
+  // Injured players' weeks not flagged yet (Kyle, 2026-10-02) — see injury.js.
+  const injurySessionById = new Map(sessions.map((x) => [x.id, x]));
+  const injuryWaiting = require('./injury')
+    .waitingWeeks()
+    .map((r) => ({ ...r, session: injurySessionById.get(r.session_id) }))
+    .filter((r) => r.session);
+  return { conflicts, needsAttentionWeeks, unconfirmed, unfilledSubs, missingBallDuty, staleBallDuty, pausedSessions, overlappingEnrollments, doubleBookings, staleSwaps, selfArrangedSubs, injuryWaiting };
 }
 
 /**

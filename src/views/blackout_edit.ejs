@@ -1,0 +1,48 @@
+<%- include('partials/header', {title}) %>
+<%# Remove-only blackout editor (Kyle, 2026-10-02) — opened from an emailed
+    link, see src/services/blackoutEdit.js. %>
+<h1>Edit Blackout Dates</h1>
+<p class="muted"><%= player.name %>, these are your upcoming blackout dates. Remove any date you're free for after all.</p>
+
+<div class="flag" style="margin-bottom:16px;">
+  Removing a date <strong>doesn't put you into the schedule</strong>. It means you can be asked to sub or swap that week. New dates can't be added once a season has been scheduled. If you need to miss a week you're scheduled for, use <a href="/request-sub">Request a Sub</a>.
+</div>
+
+<% if (removed) { %><p class="notice">Removed <%= fmtDate(removed) %> from your blackout dates.</p><% } %>
+<% if (error) { %><p class="flag error"><%= error %></p><% } %>
+
+<% if (dates.length === 0) { %>
+  <p class="notice">You have no upcoming blackout dates.</p>
+<% } else { %>
+  <div class="table-scroll">
+  <table class="wide">
+    <thead><tr><th style="white-space:nowrap;">Date</th><th>Session</th><th></th></tr></thead>
+    <tbody>
+      <% dates.forEach(function(d) { %>
+        <tr>
+          <td style="white-space:nowrap;"><%= fmtDate(d.date) %></td>
+          <td>
+            <% if (d.sessions.length === 0) { %>
+              <span class="muted">No match of yours that day</span>
+            <% } else { d.sessions.forEach(function(s) { %>
+              <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<%= sessionColor(s) %>;margin-right:4px;"></span><%= sessionPublicLabel(s) %></div>
+            <% }) } %>
+          </td>
+          <td>
+            <form method="POST" action="/blackout/edit/<%= encodeURIComponent(token) %>/remove" class="inline" onsubmit="return confirm('Remove <%= fmtDate(d.date) %> from your blackout dates? You can\'t add it back yourself.');">
+              <input type="hidden" name="date" value="<%= d.date %>">
+              <button type="submit" class="btn small red">Remove</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+<% } %>
+
+<div class="actions" style="margin-top:16px;">
+  <a class="btn neutral" href="/me/<%= player.slug || player.id %>">My Page</a>
+</div>
+<p class="muted" style="font-size:calc(13px * var(--text-scale, 1));margin-top:8px;">This link works for 7 days from when it was sent. Don't share it.</p>
+<%- include('partials/footer') %>

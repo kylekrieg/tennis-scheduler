@@ -307,6 +307,30 @@ const TEMPLATES = {
     fn: 'sendPersonalEventsLink',
     build: (ctx) => ({ player: ctx.player, editToken: fakeToken(), test: true }),
   },
+  injury_notice: {
+    // Injured notice (Kyle, 2026-10-02). Sample: out through 6 weeks from
+    // the player's own week, listing their real weeks in that range.
+    label: 'Injured — "you\'re marked out" notice to the player',
+    fn: 'sendInjuryNotice',
+    needsSession: true,
+    build: (ctx) => {
+      const { addDays } = require('./tz');
+      const until = addDays(ctx.week.match_date, 41);
+      const weeks = db
+        .prepare(
+          `SELECT w.match_date, s.* FROM week_assignments wa JOIN weeks w ON w.id = wa.week_id JOIN sessions s ON s.id = w.session_id
+           WHERE wa.player_id = ? AND w.match_date >= ? AND w.match_date <= ? AND s.session_type = 'regular' ORDER BY w.match_date`
+        )
+        .all(ctx.player.id, ctx.week.match_date, until)
+        .map((r) => ({ match_date: r.match_date, session: r }));
+      return { player: ctx.player, until, weeks, test: true };
+    },
+  },
+  blackout_edit_link: {
+    label: 'My Page / Blackout Dates — "edit my blackout dates" link',
+    fn: 'sendBlackoutEditLink',
+    build: (ctx) => ({ player: ctx.player, editToken: fakeToken(), test: true }),
+  },
   self_arranged_invite: {
     label: 'Found your own sub — invite to the sub',
     fn: 'sendSelfArrangedSubInvite',
@@ -596,6 +620,18 @@ const TEMPLATES = {
       test: true,
     }),
   },
+  score_reminder_2: {
+    label: 'Ball duty — scores still needed, second reminder',
+    fn: 'sendScoreReminder',
+    build: (ctx) => ({
+      recipient: ctx.player,
+      week: ctx.week,
+      session: ctx.session,
+      missingCount: 2,
+      second: true,
+      test: true,
+    }),
+  },
 };
 
 function listTemplates() {
@@ -609,20 +645,15 @@ function listTemplates() {
  * scheduled yet). Never throws for those expected cases; a genuine bug in a
  * template's own render code still propagates like any other exception, the
  * same as a real send would. */
-async function sendTestEmail(templateKey, playerId) {
-  const tpl = TEMPLATES[templateKey];
-  if (!tpl) return { ok: false, error: 'Unknown template.' };
-  const player = loadPlayer(playerId);
-  if (!player) return { ok: false, error: 'Player not found.' };
-
-  let ctx = { player, others: otherActivePlayers(player.id, 3) };
-
-  if (NEEDS_SESSION_WEEK.has(tpl.fn) || tpl.fn.startsWith('sendSwap') || tpl.fn.startsWith('sendAdhoc')) {
+/** Builds `ctx` for a template (see TEMPLATES' doc comment). Returns
+ * `{ ctx }` or `{ error }` when there's no session/week to build from. */
+function buildContext(tpl, player) {
+  const ctx = { player, others: otherActivePlayers(player.id, 3) };
+  if (NEEDS_SESSION_WEEK.has(tpl.fn) || tpl.fn.startsWith('sendSwap') || tpl.fn.startsWith('sendAdhoc') || tpl.needsSession) {
     const sessionType = tpl.fn.startsWith('sendAdhoc') ? 'adhoc' : null;
     const found = findSessionAndWeek(player.id, sessionType) || findSessionAndWeek(player.id, null);
     if (!found) {
       return {
-        ok: false,
         error:
           sessionType === 'adhoc'
             ? 'No ad-hoc session with any scheduled week exists yet — nothing to build a preview from.'
@@ -635,10 +666,56 @@ async function sendTestEmail(templateKey, playerId) {
       ctx.week2 = findSecondWeek(found.session.id, found.week.id);
     }
   }
+  return { ctx };
+}
 
-  const args = tpl.build(ctx);
+async function sendTestEmail(templateKey, playerId) {
+  const tpl = TEMPLATES[templateKey];
+  if (!tpl) return { ok: false, error: 'Unknown template.' };
+  const player = loadPlayer(playerId);
+  if (!player) return { ok: false, error: 'Player not found.' };
+
+  const built = buildContext(tpl, player);
+  if (built.error) return { ok: false, error: built.error };
+
+  const args = tpl.build(built.ctx);
   const result = await email[tpl.fn](args);
   return { ok: !!result, error: result ? null : 'Send failed — see the Email Log for details.' };
 }
 
-module.exports = { listTemplates, sendTestEmail, TEMPLATES };
+/**
+ * Template previews (Kyle, 2026-10-02): "a page on the admin side that shows
+ * what all the generated emails will look like." Runs each template exactly
+ * as a test send would (same sample data, same fake links), but inside
+ * email.captureEmails(), so nothing is sent and nothing is written to the
+ * Email Log. `test: false` so the subject reads like the real thing
+ * (no "[TEST]" prefix) — safe because capture stops the send entirely.
+ * Returns one entry per template, in TEMPLATES order:
+ * `{ key, label, emails: [{ to, subject, html, category }], error }`.
+ * `onlyKey` limits it to one template (the preview popup's iframe).
+ */
+async function renderPreviews(playerId, onlyKey = null) {
+  const player = loadPlayer(playerId);
+  if (!player) return [];
+  const out = [];
+  for (const key of Object.keys(TEMPLATES)) {
+    if (onlyKey && key !== onlyKey) continue;
+    const tpl = TEMPLATES[key];
+    const entry = { key, label: tpl.label, emails: [], error: null };
+    try {
+      const built = buildContext(tpl, player);
+      if (built.error) {
+        entry.error = built.error;
+      } else {
+        const args = { ...tpl.build(built.ctx), test: false };
+        entry.emails = await email.captureEmails(() => email[tpl.fn](args));
+      }
+    } catch (err) {
+      entry.error = `Couldn't render this one: ${err.message}`;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
+module.exports = { listTemplates, sendTestEmail, renderPreviews, TEMPLATES };

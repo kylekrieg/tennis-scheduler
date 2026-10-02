@@ -1,4 +1,4 @@
-<%- include('../partials/admin_header', {title, flashMsg}) %>
+<%- include('../partials/admin_header', {title, flashMsg, wideMain}) %>
 <h1>Players</h1>
 
 <h2>Add a player</h2>
@@ -19,8 +19,10 @@
 
 <h2>Roster players</h2>
 <p class="muted">Everyone who's ever been enrolled on a season's roster (<code>session_players</code>) — including past/archived seasons, not just this year's.</p>
+<p class="muted" id="injured"><strong>Injured:</strong> check the box, pick the last day they're out, and click Set. Every week of theirs through that date becomes <span class="badge needs_sub">needs sub</span> right away, but the sub request for each week only goes out when that week's normal confirmation reminder does. Ball-duty weeks are flagged for you to reassign. The player gets one email. Move the date later and the new weeks are flagged too. Move it earlier or uncheck the box and any week whose sub request hasn't gone out yet goes back to scheduled. The box clears itself the day after the date.</p>
+<div class="table-scroll">
 <table class="wide">
-  <thead><tr><th>Full name (admin/emails)</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Status</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Full name (admin/emails)</th><th>Public name</th><th>Email</th><th>URL slug</th><th>Status</th><th>Injured</th><th>Actions</th></tr></thead>
   <tbody>
     <% rosterPlayers.forEach(function(p) { %>
       <tr>
@@ -39,7 +41,16 @@
           <input type="text" name="slug" value="<%= p.slug %>" form="edit-<%= p.id %>" style="width:110px;">
           <div class="muted" style="font-size:11px;">/me/<%= p.slug %></div>
         </td>
-        <td><%= p.active ? 'active' : 'inactive' %></td>
+        <td><%= p.active ? 'active' : 'inactive' %><% if (p.injured && p.injured_until) { %><div><span class="badge needs_sub">injured</span></div><% } %></td>
+        <td style="white-space:nowrap;">
+          <%# Injured (Kyle, 2026-10-02) — see services/injury.js. %>
+          <form method="post" action="/admin/players/<%= p.id %>/injury" style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" name="injured" value="1" id="inj-<%= p.id %>" <%= p.injured ? 'checked' : '' %> aria-label="Injured">
+            <label for="inj-<%= p.id %>" style="margin:0;font-weight:400;font-size:calc(12px * var(--text-scale, 1));">Out through</label>
+            <input type="date" name="injured_until" value="<%= p.injured ? (p.injured_until || '') : '' %>" min="<%= today %>" style="width:auto;display:inline-block;margin:0;">
+            <button class="btn small neutral" type="submit">Set</button>
+          </form>
+        </td>
         <td>
           <button class="btn small neutral" type="submit" form="edit-<%= p.id %>">Save</button>
           <% if (p.active) { %>
@@ -51,10 +62,11 @@
       </tr>
     <% }) %>
     <% if (!rosterPlayers.length) { %>
-      <tr><td colspan="6" class="muted">No one's been enrolled on a season roster yet.</td></tr>
+      <tr><td colspan="7" class="muted">No one's been enrolled on a season roster yet.</td></tr>
     <% } %>
   </tbody>
 </table>
+</div>
 
 <h2>Subs &amp; one-time players</h2>
 <p class="muted">A real player record exists for these people — they claimed a sub slot, were subbed in by an admin, or were added as a one-time sub — but they've never actually been on a season roster. Fully editable the same as roster players (handy for fixing a name like "Derek Holloway" down to "Derek H" after a sub claims a spot for the first time), just kept separate so they don't get mistaken for a regular.</p>

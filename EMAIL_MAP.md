@@ -16,6 +16,7 @@ Every email the app sends: when it goes out, who gets it, and which setting cont
 | Wednesday, 1:30 PM | Sub still open alert (4h before) | The player who asked + admin report addresses, if a sub request still isn't taken |
 | Wednesday, 5:30 PM | Match starts: week locks | No email. Every link for that week stops working; open swaps expire; still-open sub requests are flagged unfilled |
 | Thursday, 5:30 PM | Scores reminder (24h after) | That week's ball-duty player, if any scores are missing |
+| Friday, 5:30 PM | Second scores reminder (48h after) | That week's ball-duty player, if scores are still missing |
 
 ## Weekly confirmations
 
@@ -90,6 +91,7 @@ Not paused by the reminders toggle.
 | Email | Sent when | Who gets it | Setting | Email Log category |
 |---|---|---|---|---|
 | Scores still needed | games_won_reminder_lead_hours after the match (default 24), if any games-won are missing | That week's ball-duty player | Ball duty scores reminder hours (only when Stats is on) | `score_reminder` |
+| Scores still needed — second reminder | games_won_second_reminder_hours after the match (default 48, 0 = off), if games-won are still missing | That week's ball-duty player | Ball duty scores second reminder hours (only when Stats is on) | `score_reminder_2` |
 
 ## Admin and manual emails
 
@@ -100,6 +102,8 @@ Not paused by the reminders toggle.
 | Season sign-ups are open | Admin clicks "Notify candidates" on the sign-ups page | Sign-up candidates | — | `signup_notice` |
 | Custom email | Admin sends from Send Email or "Send email to players" | Whoever the admin picks | — | `custom` |
 | "My Other Dates" link | Player asks for it on My Page | That player | — | `personal_events_link` |
+| Injured notice | Admin marks a player Injured on the Players page, or changes their "out through" date | That player | Players page | `injury_notice` |
+| Edit blackout dates link | Player clicks "Edit dates" on My Page or the Blackout Dates page | That player | — | `blackout_edit_link` |
 
 ## Rules that apply to every email
 

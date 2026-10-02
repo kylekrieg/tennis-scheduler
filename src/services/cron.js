@@ -468,16 +468,41 @@ async function processScoreReminders() {
         const ballDutyPlayer = db.prepare('SELECT * FROM players WHERE id = ?').get(week.ball_duty_player_id);
         if (!ballDutyPlayer) continue;
 
-        const already = db
-          .prepare(`SELECT id FROM email_log WHERE category = 'score_reminder' AND related_week_id = ? AND to_email = ?`)
-          .get(week.id, ballDutyPlayer.email);
-        if (already) continue;
+        const sentAlready = (category) =>
+          !!db
+            .prepare(`SELECT id FROM email_log WHERE category = ? AND related_week_id = ? AND to_email = ?`)
+            .get(category, week.id, ballDutyPlayer.email);
 
+        if (!sentAlready('score_reminder')) {
+          await email.sendScoreReminder({
+            recipient: ballDutyPlayer,
+            week,
+            session,
+            missingCount: week.missing_count,
+          });
+          // Never send both on the same tick (e.g. after downtime that
+          // skipped past both times) — the second one waits for the next tick.
+          continue;
+        }
+
+        // Second reminder (Kyle, 2026-10-02): "two reminders hours after a
+        // match." 0 = off. Only once the first has gone out, and only while
+        // scores are still missing (the missing_count check above).
+        const secondHours = Number(session.games_won_second_reminder_hours) || 0;
+        if (secondHours <= session.games_won_reminder_lead_hours) continue;
+        const secondAt = new Date(matchAt.getTime() + secondHours * 60 * 60 * 1000);
+        if (now < secondAt) continue;
+        // Catch up at most a day late. Without this, the deploy that added
+        // the second reminder would have sent one for every older week of
+        // the season that's still missing a score.
+        if (now.getTime() - secondAt.getTime() > 24 * 60 * 60 * 1000) continue;
+        if (sentAlready('score_reminder_2')) continue;
         await email.sendScoreReminder({
           recipient: ballDutyPlayer,
           week,
           session,
           missingCount: week.missing_count,
+          second: true,
         });
       }
     } catch (err) {
@@ -559,6 +584,13 @@ async function tick() {
   if (running) return; // avoid overlap if a previous tick is still finishing
   running = true;
   try {
+    // Injured players first (Kyle, 2026-10-02), so a week flagged this tick
+    // gets its fan-out from processReminders below if its reminder is due.
+    try {
+      require('./injury').processInjuries();
+    } catch (err) {
+      console.error('[cron] processInjuries failed:', err.message);
+    }
     await processReminders();
     await processFollowUps();
     await processAdminReports();

@@ -4,7 +4,7 @@
 
 <h2>Needs attention</h2>
 <%
-  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.staleBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length + attention.selfArrangedSubs.length;
+  var totalAttention = attention.conflicts.length + attention.needsAttentionWeeks.length + attention.unfilledSubs.length + attention.unconfirmed.length + attention.missingBallDuty.length + attention.staleBallDuty.length + attention.overlappingEnrollments.length + attention.doubleBookings.length + attention.staleSwaps.length + attention.selfArrangedSubs.length + (attention.injuryWaiting || []).length;
 %>
 <% if (totalAttention === 0) { %>
   <p class="notice">All clear across every session — nothing needs attention right now.</p>
@@ -26,6 +26,16 @@
     <p class="muted">Usually a short-staffed week the scheduler filled with who was available instead of blocking the season — see "Add a player" on the session page. Sometimes a ball-duty reassignment after a sub request.</p>
     <% attention.needsAttentionWeeks.forEach(function(w) { %>
       <div class="flag error"><a href="/admin/sessions/<%= w.session_id %>"><strong><%= sessionFullTitle(w.session) %></strong></a> — <%= fmtDate(w.match_date) %>: <%= w.notes %></div>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (attention.injuryWaiting && attention.injuryWaiting.length > 0) { %>
+  <div class="card wide">
+    <h3 style="margin-top:0;">Injured players — weeks not marked needs sub yet</h3>
+    <p class="muted">See Players → Injured. "Another sub request is open" clears up on its own once that request closes. "Schedule not locked" needs you: re-run Schedule these players (the injury dates count as blackout dates) or lock the schedule.</p>
+    <% attention.injuryWaiting.forEach(function(r) { %>
+      <div class="flag"><a href="/admin/sessions/<%= r.session_id %>"><strong><%= sessionFullTitle(r.session) %></strong></a> — <%= fmtDate(r.match_date) %>: <%= r.playerName %> — <%= r.reason === 'concurrent' ? 'another sub request is open that week' : r.reason === 'not_locked' ? 'schedule not locked yet' : 'will be marked within a minute' %></div>
     <% }) %>
   </div>
 <% } %>
