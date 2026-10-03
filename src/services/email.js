@@ -438,12 +438,26 @@ function footer(session, player) {
  * for the match this email is about — distinct from nextWeeksPreviewHtml's
  * list, which only shows ball duty for *other*, later weeks. Compares
  * player_id (present on both the week_assignments-joined recipient rows and
- * the admin resend route's `assignment` row) against week.ball_duty_player_id. */
-function ballDutyNotice(player, week) {
+ * the admin resend route's `assignment` row) against week.ball_duty_player_id.
+ *
+ * Scores duty (Kyle, 2026-10-02): "if a player is scheduled to bring balls,
+ * ... it's also their responsibility to enter in the match scores after the
+ * match. Giving them a direct link to the scores for their match would be
+ * good too." Only when the session tracks games won (regular sessions with
+ * games_won_enabled). The link carries a scoreLinkTokens token so a save
+ * from it is logged under this player's name, same as the post-match
+ * score_reminder email. Before the match the page says it isn't open yet. */
+function ballDutyNotice(player, week, session) {
   if (!player || !week || player.player_id !== week.ball_duty_player_id) return '';
   const when = weekPhrase(week.match_date);
   const label = when === 'that week' ? "You're on ball duty for this match" : `You're on ball duty ${when}`;
-  return `<p class="flag" style="border:1px solid #ffd77a;background:#fff8e6;border-radius:8px;padding:10px 14px;margin:12px 0;"><strong>${label}</strong> — please bring the balls.</p>`;
+  let scoresPart = '';
+  if (session && session.games_won_enabled && session.session_type !== 'adhoc') {
+    const t = scoreLinkTokens.issue(player.player_id, week.id);
+    const scoresUrl = `${siteUrl()}/scores?session=${session.id}&week=${week.id}&t=${t}`;
+    scoresPart = `<br>You're also responsible for entering everyone's scores (games won and total games played) after the match: <a href="${scoresUrl}"><strong>Enter scores for this match</strong></a>`;
+  }
+  return `<p class="flag" style="border:1px solid #ffd77a;background:#fff8e6;border-radius:8px;padding:10px 14px;margin:12px 0;"><strong>${label}</strong> — please bring the balls.${scoresPart}</p>`;
 }
 
 /**
@@ -590,7 +604,7 @@ async function sendConfirmationReminder({ player, week, session, confirmToken, n
     <p>Hi ${fullName(player)},</p>
     <p>You're scheduled to play doubles on <strong>${fmtDate(week.match_date)}</strong> at ${fmtTime(session.match_time)}.</p>
     ${actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPlaced })}
-    ${ballDutyNotice(player, week)}
+    ${ballDutyNotice(player, week, session)}
     ${weatherBlockHtml(session, week)}
     ${nextWeeksPreviewHtml(upcomingWeeks)}
     ${footer(session, player)}
@@ -608,7 +622,7 @@ async function sendFollowUpReminder({ player, week, session, confirmToken, needS
     <p>Hi ${fullName(player)},</p>
     <p>Quick nudge — you haven't confirmed for ${dayPhrase.possessive} doubles match at ${fmtTime(session.match_time)}, and it's coming up. Please let us know either way:</p>
     ${actionButtonsBlock({ confirmUrl, needSubUrl, foundSubToken, manuallyPlaced })}
-    ${ballDutyNotice(player, week)}
+    ${ballDutyNotice(player, week, session)}
     ${footer(session, player)}
   `;
   return sendMail({ to: player.email, subject, html, category: 'followup_reminder', relatedWeekId: week.id, session, test });

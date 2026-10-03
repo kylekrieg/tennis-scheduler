@@ -18,6 +18,9 @@
   --badge-muted-bg: #eeeeee;
   --amber: #9a6700;
   --badge-reminded-bg: #fff8e6;
+  --thread-head-bg: #e3ecf9;
+  --thread-child-bg: #eef4fc;
+  --thread-accent: #4a7fd0;
   --shadow: none;
   --text-scale: 1;
   --border-width: 1px;
@@ -43,6 +46,9 @@
   --badge-muted-bg: #21262d;
   --amber: #d4a72c;
   --badge-reminded-bg: #2b2410;
+  --thread-head-bg: #172235;
+  --thread-child-bg: #111a29;
+  --thread-accent: #5b8fdc;
 }
 
 /* Larger text (Kyle, 2026-08-27): some players have poor eyesight, so this
@@ -498,3 +504,15 @@ a.news-banner-text:hover .news-banner-more { text-decoration: underline; }
 .news-preview[hidden], .news-textarea[hidden] { display: none; }
 .news-card a.news-more { color: var(--ink); font-weight: 600; }
 .news-body a { color: inherit; }
+
+/* Email Log grouped view (Kyle, 2026-10-03): the rows inside an expanded
+   group are tinted, indented and carry a blue left rail, and the group's last
+   row has a closing edge, so the next ungrouped email below never looks like
+   part of the group. */
+tr.thread-head { background: var(--thread-head-bg); }
+tr.thread-head > td:first-child { border-left: 4px solid transparent; }
+tr.thread-head.open > td:first-child { border-left-color: var(--thread-accent); }
+tr.thread-child > td { background: var(--thread-child-bg); }
+tr.thread-child > td:first-child { border-left: 4px solid var(--thread-accent); padding-left: 40px; }
+tr.thread-child > td.thread-stage { padding-left: 28px; font-weight: 600; font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); }
+tr.thread-child.thread-last > td { border-bottom: 3px solid var(--thread-accent); }

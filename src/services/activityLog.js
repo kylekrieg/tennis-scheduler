@@ -56,7 +56,7 @@ function logGroupScoreActivity({ playerName, action, description, sessionId = nu
   db.prepare(
     `INSERT INTO admin_activity_log (admin_id, admin_name, action, description, session_id)
      VALUES (?, ?, ?, ?, ?)`
-  ).run(null, enteredBy ? `${enteredBy} (score reminder link)` : `${playerName} (group entry)`, action, description, sessionId);
+  ).run(null, enteredBy ? `${enteredBy} (emailed score link)` : `${playerName} (group entry)`, action, description, sessionId);
 }
 
 /**

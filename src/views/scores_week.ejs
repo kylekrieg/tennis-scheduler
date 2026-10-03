@@ -3,6 +3,9 @@
 <p class="muted">Everybody confirmed to have actually played the week below is listed here. Total games played is one shared number for the whole match — enter it once<% if (multiCourt) { %> per court<% } %> and it applies to everybody who played it; games won is entered individually, by each player or by whoever's filling in the group. Each field stays editable for 24 hours after it's first saved; after that, ask an admin to fix it.</p>
 <%- include('partials/session_picker', {sessions, session}) %>
 
+<% if (notYetOpenWeek) { %>
+  <div class="flag">Scores for <strong><%= fmtDate(notYetOpenWeek.match_date) %></strong> open once that match starts. Come back to this same link after you play.</div>
+<% } %>
 <% if (saved > 0) { %>
   <div class="flag"><%= saved %> score<%= saved === 1 ? '' : 's' %> saved.</div>
 <% } else if (errorCode) { %>

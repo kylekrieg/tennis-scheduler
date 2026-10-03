@@ -65,7 +65,7 @@ Every player has two names, both set on the **Players** page. The **Public name*
 -   **Out longer?** Move the date later and the new weeks are flagged the same way.
 -   **Back early?** Move the date earlier or uncheck the box. Any week whose sub request hasn't gone out yet goes back to scheduled. If it has already gone out, it plays out, and if a sub already took the spot, it stays that way.
 -   The box clears itself the day after the date.
--   Only one sub request can be open per week. If another player already has one open that week, the injured player's week waits, shows on the **Status page**, and is flagged as soon as the other request closes. Weeks in a session whose schedule isn't locked yet can't be flagged either. They show on the Status page, and re-running "Schedule these players" will move the player off those dates.
+-   If another player already has a sub request open that week, the injured player's week joins it right away instead of waiting (see "Two players need a sub the same week" below). Weeks in a session whose schedule isn't locked yet can't be flagged either. They show on the Status page, and re-running "Schedule these players" will move the player off those dates.
 
 ![Roster players table on the Players page with an Injured column: a checkbox, an Out through date and a Set button on each row, and one player marked injured.](../src/public/img/admin-guide/players-injured.png)
 
@@ -200,7 +200,7 @@ Paused for a session when "Send automatic reminders" is off. Manual sends still 
 
 #### Request a Sub
 
-Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked.
+Players who have that date blacked out are never asked. Anyone already in that week (playing, or gave their own spot up) is never asked. If another player already needs a sub for the same match, see "Two players need a sub the same week" below.
 
 | Email | Sent when | Who gets it | Setting |
 | --- | --- | --- | --- |
@@ -212,6 +212,20 @@ Players who have that date blacked out are never asked. Anyone already in that w
 | Your sub is confirmed | Same time | The player who needed the sub | — |
 | Your spot still needs a sub | still\_open\_alert\_hours before the match (default 4) if nobody has taken it, or right away if there is nobody left to ask. Once per request. | The player who needed the sub | Sub still open alert hours |
 | Sub still needed (admin) | Same time | Admin report addresses | Admin report emails |
+
+#### Two players need a sub the same week
+
+Each player keeps their own request, but they share one outreach. Every "I'll play" link from it stays live until ALL of the shared requests are filled, and each click fills the oldest still-open request (order requested), whichever email the link came from. If the earlier request(s) were already filled or cleared when the next player asks, the next one starts over with a fresh roster email (everyone already saw "Sub found"). An admin "— Needs a sub —" flag or an injured player's week joins an open request right away (joining sends nothing). Clearing one player's request keeps the links live for the other. The session page shows "1st in line" / "2nd in line" on each badge, with its own Clear button. If the result looks wrong (the "wrong" sub covered someone), fix it with Reassign.
+
+| Email | Sent when | Who gets it | Setting |
+| --- | --- | --- | --- |
+| Sub needed (roster) | Only for the FIRST request. A request that comes in while an earlier one for the same match is still open sends no roster email. If the earlier one(s) are already all filled or cleared, it sends a fresh one as normal. | Roster players not playing that week (a sub who already took the first spot is playing, so isn't asked) | — |
+| Your request went out (joined) | Right away when a request joins an open one | The player who just asked. Says another player already needs a sub, lists who was already asked, and that the open spots fill in the order they were requested | — |
+| Sub still needed (sub list) | Once for the whole group, at escalation\_lead\_hours before the match. If it already went out when a request joins, nothing new is sent and the new request counts as escalated straight away. | This session's sub list | Escalate to broader sub list hours; Status page Suspend / Send now |
+| Sub found | Each time a spot is taken. While another spot that week is still open it adds "This match still needs one more sub." | Everyone playing that week, including the sub | — |
+| Your sub is confirmed | When that player's own spot is taken (each player gets their own, right away) | The player whose spot was taken | — |
+| Still open alerts | Per player, as in Request a Sub. The admin copy counts the links from the whole shared outreach. | The player and admin report addresses | Sub still open alert hours |
+| "I found a sub" in the same week | Stays on its own while the named sub has time to answer (the named sub's link always fills that player's spot). At its deadline, if another request is still open, it joins that one: no roster or sub-list email, just this note to the player. If nothing else is open, it opens up on its own as in I Found a Sub. | The player who named the sub | "I found a sub" open-up hours |
 
 #### I Found a Sub
 
@@ -400,6 +414,8 @@ Not paused by the reminders toggle.
     > Flagged on the dashboard and the Status page. You can add someone with the "Add a player…" dropdown on the week's card, or the week plays one short.
 
 *Note:* You can close this out at any point with **Reassign**, **Mark confirmed**, or **Clear sub request** if it was a mistake. Clearing it puts the player back to "scheduled," and they'll get the normal reminder.
+
+*Note:* **Two players need a sub the same week.** The first request emails the roster as usual. If a second player asks while the first is still open, nobody is emailed again: the second request joins the first, and that player's confirmation says so. Every "I'll play" link stays live until both spots are filled. The first click covers the first request and the second click covers the second, whichever email the link came from (the claim page tells the sub whose spot they're covering). The sub list is emailed once for both. If the first request was already filled before the second player asked, the second one starts over with a fresh email to the roster. An "I found a sub" request stays on its own while the named sub has time to answer, then joins the open request (no new emails) if it opens up. On the session page each request has its own badge ("1st in line", "2nd in line") and its own Clear button. If the subs end up on the wrong spots, fix it with Reassign. The [email map](#email-map) lists every email for this case.
 
 ### I Found a Sub
 

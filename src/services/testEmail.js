@@ -217,6 +217,42 @@ const TEMPLATES = {
       test: true,
     }),
   },
+  // Ball-duty versions of the two reminders above (Kyle, 2026-10-02: "Are
+  // those in the email templates too?"). The real templates only show the
+  // ball-duty box (bring balls + enter scores after the match, with a direct
+  // scores link) when the recipient is that week's ball-duty player, which a
+  // test recipient usually isn't. These force it so the box can be previewed.
+  // games_won_enabled is forced on too, since the scores line only appears
+  // for sessions that track scores.
+  reminder_ball_duty: {
+    label: 'Confirmation reminder — ball duty version',
+    fn: 'sendConfirmationReminder',
+    build: (ctx) => ({
+      player: asAssignmentShapedPlayer(ctx.player),
+      week: { ...ctx.week, ball_duty_player_id: ctx.player.id },
+      session: { ...ctx.session, games_won_enabled: 1 },
+      confirmToken: fakeToken(),
+      needSubToken: fakeToken(),
+      foundSubToken: fakeToken(),
+      manuallyPlaced: false,
+      upcomingWeeks: subFlow.upcomingWeeksPreview(ctx.session.id, ctx.week.match_date, 3),
+      test: true,
+    }),
+  },
+  follow_up_ball_duty: {
+    label: 'Follow-up reminder — ball duty version',
+    fn: 'sendFollowUpReminder',
+    build: (ctx) => ({
+      player: asAssignmentShapedPlayer(ctx.player),
+      week: { ...ctx.week, ball_duty_player_id: ctx.player.id },
+      session: { ...ctx.session, games_won_enabled: 1 },
+      confirmToken: fakeToken(),
+      needSubToken: fakeToken(),
+      foundSubToken: fakeToken(),
+      manuallyPlaced: false,
+      test: true,
+    }),
+  },
   sub_request_verification: {
     label: 'Sub request — "confirm it\'s you" gate',
     fn: 'sendSubRequestVerification',

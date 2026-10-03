@@ -264,6 +264,14 @@ router.get('/scores', (req, res) => {
   const weeks = gameScores.scoreEntryWeeksForSession(session.id);
   const requestedId = Number(req.query.week);
   const selectedWeek = weeks.length ? weeks.find((w) => w.id === requestedId) || weeks[0] : null;
+  // The ball-duty line in the pre-match reminder links straight to that
+  // week's scores (Kyle, 2026-10-02). Clicked before the match, that week
+  // isn't scoreable yet, so say so instead of silently showing another week.
+  let notYetOpenWeek = null;
+  if (requestedId && !weeks.some((w) => w.id === requestedId)) {
+    const w = db.prepare('SELECT id, match_date, locked FROM weeks WHERE id = ? AND session_id = ?').get(requestedId, session.id);
+    if (w && !w.locked) notYetOpenWeek = w;
+  }
 
   // Games played is one shared number per court (see gameScores.js's top
   // doc comment) — grouped here into one block per court, each with its own
@@ -301,6 +309,7 @@ router.get('/scores', (req, res) => {
     multiCourt: courts.length > 1,
     saved: Number(req.query.saved) || 0,
     errorCode: req.query.error || null,
+    notYetOpenWeek,
     maxGames: gameScores.MAX_GAMES,
     // Score-reminder link token (Kyle, 2026-10-02), carried into the form as
     // a hidden field only if it's valid for the week being shown, so the
@@ -393,7 +402,7 @@ router.post('/scores', scoreEntryLimiter, (req, res) => {
         playerName: fullName(player),
         action: wasFirstEntry ? 'score.enter' : 'score.update',
         description: enteredBy
-          ? `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} by ${enteredBy} via the score reminder email link`
+          ? `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} by ${enteredBy} via their emailed score link`
           : `${fullName(player)}'s games won for ${week.match_date} ${wasFirstEntry ? 'entered' : 'updated'} to ${row.games_won} via the group entry page`,
         sessionId: row.session_id,
         enteredBy,

@@ -60,7 +60,7 @@
 
 <% function emailRow(r, opts) { opts = opts || {}; %>
       <tr<% if (opts.parent) { %> class="thread-child" data-parent="<%= opts.parent %>"<% } %>>
-        <td class="muted" style="white-space:nowrap;<% if (opts.parent) { %>padding-left:28px;<% } %>">
+        <td class="muted" style="white-space:nowrap;">
           <%= r.sentDateDisplay %>, <%= r.sentTimeDisplay %>
         </td>
         <td><% if (r.playerNames) { %><%= r.playerNames %><% } else { %><span class="muted">—</span><% } %></td>
@@ -90,7 +90,7 @@
     <% items.forEach(function(item) { %>
       <% if (item.type === 'row') { emailRow(item.row); return; } %>
       <% if (item.type === 'batch') { var b = item, br = b.rows[0]; %>
-      <tr class="thread-head" data-thread="<%= b.domId %>" style="background:var(--bg-soft);">
+      <tr class="thread-head" data-thread="<%= b.domId %>">
         <td class="muted" style="white-space:nowrap;"><%= br.sentDateDisplay %>, <%= br.sentTimeDisplay %></td>
         <td colspan="6">
           <button type="button" class="btn small neutral thread-toggle" data-thread="<%= b.domId %>" aria-expanded="false" style="margin-right:6px;">▸</button>
@@ -102,7 +102,7 @@
       </tr>
       <% b.rows.forEach(function (r) { emailRow(r, { parent: b.domId }); }); return; } %>
       <% var g = item, info = g.info; %>
-      <tr class="thread-head" data-thread="<%= g.domId %>" style="background:var(--bg-soft);">
+      <tr class="thread-head" data-thread="<%= g.domId %>">
         <td class="muted" style="white-space:nowrap;"><%= g.latest.sentDateDisplay %>, <%= g.latest.sentTimeDisplay %></td>
         <td colspan="6">
           <button type="button" class="btn small neutral thread-toggle" data-thread="<%= g.domId %>" aria-expanded="<%= thread ? 'true' : 'false' %>" style="margin-right:6px;"><%= thread ? '▾' : '▸' %></button>
@@ -120,8 +120,8 @@
         </td>
       </tr>
       <% g.stages.forEach(function (st) { %>
-        <tr class="thread-child" data-parent="<%= g.domId %>">
-          <td colspan="7" style="padding-left:28px;font-weight:600;font-size:0.9em;"><%= st.label %> <span class="muted" style="font-weight:normal;">(<%= st.rows.length %>)</span></td>
+        <tr class="thread-child thread-stage-row" data-parent="<%= g.domId %>">
+          <td colspan="7" class="thread-stage"><%= st.label %> <span class="muted" style="font-weight:normal;">(<%= st.rows.length %>)</span></td>
         </tr>
         <% st.rows.forEach(function (r) { emailRow(r, { parent: g.domId }); }); %>
       <% }) %>
@@ -136,7 +136,15 @@
     document.querySelectorAll('tr.thread-child[data-parent="' + id + '"]').forEach(function (tr) { tr.style.display = open ? '' : 'none'; });
     var btn = document.querySelector('.thread-toggle[data-thread="' + id + '"]');
     if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? '▾' : '▸'; }
+    var head = document.querySelector('tr.thread-head[data-thread="' + id + '"]');
+    if (head) head.classList.toggle('open', open);
   }
+  // Mark each group's last row so CSS can draw a closing edge under it and
+  // the next (ungrouped) email doesn't read as part of the group.
+  document.querySelectorAll('tr.thread-head').forEach(function (h) {
+    var kids = document.querySelectorAll('tr.thread-child[data-parent="' + h.getAttribute('data-thread') + '"]');
+    if (kids.length) kids[kids.length - 1].classList.add('thread-last');
+  });
   document.querySelectorAll('.thread-toggle').forEach(function (btn) {
     var id = btn.getAttribute('data-thread');
     setOpen(id, expandAll);

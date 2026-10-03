@@ -85,7 +85,7 @@ The button brings you here with your name already picked:
 
 If you know ahead of time that you'll miss a match, go to **Request a Sub**, pick your name, and click "Need a sub for this week" next to the date. You don't have to wait for the reminder email.
 
-Because this page has no login, clicking the button doesn't email anyone yet. First you'll get an email asking you to confirm it was you. Once you click the link in that email, everyone who isn't already playing that week gets asked to fill in, and the first one to answer gets the spot. Your confirmation email also tells you who was asked, when it goes to the sub list if nobody takes it, and what to do if nobody ever does, so you don't have to keep checking back. If you see a red "double booked" badge next to a date, that's usually the one to request a sub for (more on that below).
+Because this page has no login, clicking the button doesn't email anyone yet. First you'll get an email asking you to confirm it was you. Once you click the link in that email, everyone who isn't already playing that week gets asked to fill in, and the first one to answer gets the spot. Your confirmation email also tells you who was asked, when it goes to the sub list if nobody takes it, and what to do if nobody ever does, so you don't have to keep checking back. If someone else already asked for a sub for the same match, your request is added to theirs instead of emailing everyone again: the first person to say yes covers their spot, and the next one covers yours. If you see a red "double booked" badge next to a date, that's usually the one to request a sub for (more on that below).
 
 Here's the email everyone else on the roster gets:
 
